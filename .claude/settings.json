@@ -1,0 +1,108 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Edit",
+      "Write",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(pytest)",
+      "Bash(pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(ruff *)",
+      "Bash(python manage.py *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(npm ci)",
+      "Bash(npx prettier *)",
+      "Bash(npx eslint *)",
+      "Bash(npx vitest *)",
+      "Bash(docker compose *)"
+    ],
+    "ask": [
+      "Edit(docs/SPEC.md)",
+      "Write(docs/SPEC.md)",
+      "Edit(docs/REQUIREMENTS.md)",
+      "Write(docs/REQUIREMENTS.md)",
+      "Bash(git push *)",
+      "Bash(pip install *)",
+      "Bash(npm install *)",
+      "Bash(npm i *)"
+    ],
+    "deny": [
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)",
+      "Bash(git rebase *)",
+      "Bash(git commit --amend *)",
+      "Bash(git checkout -- *)",
+      "Bash(rm -rf *)",
+      "Read(./.env)",
+      "Read(./backend/.env)",
+      "Read(./frontend/.env)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/session_start.py"],
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(git commit *)",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/pre_commit_gate.py"],
+            "timeout": 600,
+            "statusMessage": "Pre-commit gate: lint and tests"
+          },
+          {
+            "type": "command",
+            "if": "Bash(pip install *)",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/dependency_note.py"]
+          },
+          {
+            "type": "command",
+            "if": "Bash(npm install *)",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/dependency_note.py"]
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/post_edit.py"],
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
