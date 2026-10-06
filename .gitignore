@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+backend/staticfiles/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Node
+node_modules/
+frontend/dist/
+frontend/coverage/
+
+# Env and local settings
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
