@@ -402,11 +402,13 @@ Coverage target 85% on `apps/compensation`, `apps/imports` and `apps/insights`. 
 
 ## 14. Deployment
 
-- Multi-stage `Dockerfile`: stage 1 `node:20` runs `npm ci && npm run build`. Stage 2 `python:3.12-slim` installs backend deps, copies `frontend/dist` into Django's static root, runs `collectstatic`.
+- Node version is pinned once in `frontend/.nvmrc` as `24` (Active LTS). `package.json` mirrors it with `"engines": {"node": "24.x"}` and `frontend/.npmrc` sets `engine-strict=true`, so a wrong local Node fails `npm ci` immediately. The Dockerfile and CI read the same number, never a different one.
+- Multi-stage `Dockerfile`: stage 1 `node:24-slim` runs `npm ci && npm run build`. Stage 2 `python:3.12-slim` installs backend deps, copies `frontend/dist` into Django's static root, runs `collectstatic`.
 - Runtime: `gunicorn acme_salary.wsgi --workers 2 --threads 4`. WhiteNoise serves hashed static files and `index.html` for any non-`/api` path.
 - `entrypoint.sh`: `migrate`, then `seed_data` if the employee table is empty, then gunicorn. The seed is deterministic, so an ephemeral disk rebuilds identical data on each cold start.
 - Config from environment: `SECRET_KEY`, `DEBUG=0`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS`, `DATABASE_PATH=/data/db.sqlite3`, `SEED_ADMIN_PASSWORD`.
-- `docker compose up` for local parity. GitHub Actions workflow: lint, test, build image.
+- `docker compose up` for local parity.
+- GitHub Actions workflow `.github/workflows/ci.yml` on every push and pull request, two jobs. Backend: `actions/setup-python` with `python-version: "3.12"` and `cache: pip`, then `ruff format --check`, `ruff check`, `pytest -q`. Frontend: `actions/setup-node` with `node-version-file: frontend/.nvmrc` and `cache: npm` with `cache-dependency-path: frontend/package-lock.json`, then `npm ci`, `npm run lint`, `npm test -- --run`, `npm run build`. A third job builds the Docker image after both pass. `package-lock.json` is committed, `npm install` never runs in CI.
 - Hosting is required: a live public URL on one container host (Fly.io, Railway or Render) with a persistent volume for the SQLite file so the 10k seed runs once, not on every cold start. Served from a subdomain of nutanprabhat.dev: a CNAME to the host, which issues the TLS certificate. `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` carry the subdomain from the environment. The URL goes in the README.
 - Demo video: screen recording of the hosted URL. Login, import the sample file, skip a flagged row, approve, open the employee, dashboard filters, export.
 
