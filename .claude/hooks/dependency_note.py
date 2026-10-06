@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""PreToolUse hook for pip install / npm install: remind about rule 9.
+"""PreToolUse hook on Bash: when the command installs a package, remind about rule 9.
 
-No permission decision is returned, so the normal flow (an ask rule) still applies.
+Exits silently for every other command. No permission decision is returned, so the
+normal flow (an ask rule for installs) still applies.
 """
 import json
+import re
 import sys
 
 try:
-    json.load(sys.stdin)
+    data = json.load(sys.stdin)
 except Exception:
-    pass
+    sys.exit(0)
+
+command = (data.get("tool_input") or {}).get("command", "")
+if not re.search(r"\b(pip|pip3|uv|poetry)\s+(install|add)\b|\bnpm\s+(install|i|add)\b|\bpnpm\s+add\b|\byarn\s+add\b", command):
+    sys.exit(0)
 
 print(
     json.dumps(

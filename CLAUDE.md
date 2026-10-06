@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Project conventions for Claude Code. Four documents govern the work. `docs/REQUIREMENTS.md` says what is in and out of scope. `docs/SPEC.md` says what the system is: data model, API, rules, acceptance criteria. `docs/DECISIONS.md` says why. `docs/PLAN.md` and `docs/DESIGN.md`, once the owner approves them, say what gets built, in what order, and how. Code is built from the approved plan and design, and they are derived from the spec.
+Project conventions for Claude Code. Four documents govern the work. `docs/REQUIREMENTS.md` says what is in and out of scope. `docs/SPEC.md` (v2, which folds in the 6 Oct review) says what the system is: data model, API, rules, acceptance criteria. `docs/DECISIONS.md` says why. `docs/PLAN.md` and `docs/DESIGN.md`, once the owner approves them, say what gets built, in what order, and how. Code is built from the approved plan and design, and they are derived from the spec.
 
 ## Before any task
 
@@ -14,15 +14,13 @@ Project conventions for Claude Code. Four documents govern the work. `docs/REQUI
 
 ## Plugin skills and connectors
 
-At the start of every step, list what is installed with `/plugins` and `/mcp`, pick what fits the step, and say so in one line. Preferred uses, when the plugin or connector is present:
+The owner installs plugins and connectors. Claude uses the ones that appear in its own skill and tool lists and never tries to install anything. Installed on this machine, and how to use each:
 
-- UI work (steps 3 to 7): `frontend-design` for visual direction and component styling, `ui-ux-pro-max` for layout and interaction patterns, `modern-web-guidance` before any non-trivial CSS or browser API, `design:accessibility-review` before closing a UI step, `design:ux-copy` for empty states, errors and button labels.
-- Engineering: `engineering:testing-strategy` when planning a step's tests, `engineering:code-review` as a second opinion after the project reviewers, `engineering:debug` for any failure that is not obvious in five minutes.
-- Charts: `data:data-visualization` when choosing or styling a chart in the insights work.
-- Library facts: the `Context7` connector to read current documentation for Django, DRF, SimpleJWT, openpyxl, MUI X, Recharts, TanStack Query before using an API from memory.
-- Ship step only: the `Cloudflare` connector for the subdomain's DNS record and, if the owner asks, a WAF or rate-limit rule in front of the login endpoint. Never store a Cloudflare token or any credential in the repo.
+- `frontend-design`: visual direction and component styling in steps 3 to 8.
+- `ui-ux-pro-max`: layout and interaction patterns for the grids, forms and dashboard.
+- `Context7` connector: read current documentation for Django 6.1, DRF 3.18, SimpleJWT, openpyxl, MUI X 9, Recharts 3 and TanStack Query 5 before using any API from memory. The pinned majors are newer than training data.
 
-Project skills in `.claude/skills/` win over plugin skills where they overlap. A plugin skill's advice never overrides a rule in this file or in `docs/SPEC.md`. If a plugin is not installed, say so once and continue without it.
+At the start of every step, say in one line which of these apply. DNS and host configuration are done by the owner by hand. Project skills in `.claude/skills/` win over plugin skills where they overlap, and a plugin's advice never overrides a rule in this file or `docs/SPEC.md`.
 
 ## What this is
 
@@ -30,9 +28,9 @@ Salary management for ACME, 10,000 employees across six countries. One HR Manage
 
 ## Commands
 
-Backend, from `backend/` with the venv active:
+Backend, from `backend/`. The virtualenv is `backend/.venv`, created with `uv venv` and populated with `uv sync`. The session-start hook puts it on PATH.
 
-- `pip install -e ".[dev]"` then `python manage.py migrate`
+- `uv sync` then `python manage.py migrate`
 - `python manage.py seed_data --employees 10000 --seed 42` (add `--reset` to wipe and rebuild)
 - `pytest` runs the whole suite in under 60 s. `pytest -m "not slow"` skips the seed test.
 - `ruff format . && ruff check .`
@@ -58,11 +56,11 @@ Whole app: `docker compose up` from the repo root, then open http://localhost:80
 
 ## Reviews
 
-Four read-only subagents live in `.claude/agents/`: `code-reviewer`, `spec-checker`, `test-reviewer`, `security-reviewer`. `/finish-step` runs them before a step is committed. Every Blocker they raise is fixed before the commit. A `Question for the human` from any reviewer stops the work until it is answered.
+Five read-only subagents live in `.claude/agents/`: `eng-manager-spec-review` for the planning documents, and `code-reviewer`, `spec-checker`, `test-reviewer`, `security-reviewer` for build steps. `/finish-step` runs the four build reviewers, all of them, every step, before a step is committed. Every Blocker they raise is fixed before the commit. A `Question for the human` from any reviewer stops the work until it is answered.
 
 ## Hooks
 
-`.claude/settings.json` wires three hooks. Editing a file formats it and checks a few rules (FloatField, logic in views, non-deterministic tests). Every `git commit` runs ruff, pytest, eslint and vitest first and blocks the commit if anything fails. A blocked commit means fix the failure, never bypass the hook or skip tests. Session start prints the repo state and the skill list.
+`.claude/settings.json` wires five hook scripts. `session_start.py` puts the repo state, the gate status and the skill list into context and exports the venv onto PATH. `post_edit.py` formats every edited file and checks a few rules (FloatField, logic in API modules, non-deterministic tests). `pre_commit_gate.py` runs ruff, pytest, eslint and vitest before every `git commit` and blocks on failure. `git_guard.py` blocks any command that rewrites history, whatever its spelling. `dependency_note.py` reminds about rule 9 on installs. A blocked commit means fix the failure, never bypass the hook or skip tests. `.pre-commit-config.yaml` runs the same gate on commits made from a terminal.
 
 ## Tests
 
@@ -78,7 +76,7 @@ Four read-only subagents live in `.claude/agents/`: `code-reviewer`, `spec-check
 - Small and coherent. One change per commit, with its tests.
 - Imperative subject under 70 characters. Add a body when the why is not obvious from the diff.
 - Conventional Commits: `type(scope): subject`. Types are `feat`, `fix`, `test`, `docs`, `refactor`, `perf`, `build`, `ci`, `chore`. Scope is the app or area (`import`, `fx`, `directory`, `dashboard`) and is optional. `perf` for changes made for speed, `build` for Dockerfile, pyproject and package.json, `ci` for the GitHub Actions workflow, `chore` for everything else that is not code or docs. Name the step in the subject when closing one.
-- Never rewrite history. `--amend`, `rebase`, `reset --hard` and force pushes are denied in settings. The commit log is part of the submission.
+- Never rewrite history. `--amend`, `rebase`, `reset --hard`, force pushes and `--no-verify` are blocked by `git_guard.py`. The commit log is part of the submission, with Claude Code's `Co-Authored-By` trailer left in place.
 
 ## Scope
 

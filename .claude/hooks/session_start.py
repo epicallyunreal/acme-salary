@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
-"""SessionStart hook: give Claude the repo state and the list of project skills.
-
-Plain stdout from a SessionStart hook is added to Claude's context.
+"""SessionStart hook: put repo state, gate status and the skill list into context,
+and export the backend virtualenv onto PATH for the rest of the session.
 """
 import os
 import pathlib
 import subprocess
 
-ROOT = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+ROOT = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
 def run(cmd):
     try:
-        return subprocess.run(
-            cmd, cwd=ROOT, capture_output=True, text=True, timeout=10
-        ).stdout.strip()
+        return subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True, timeout=10).stdout.strip()
     except Exception:
         return ""
 
+
+# Put backend/.venv/bin on PATH for every later Bash call in this session.
+venv_bin = pathlib.Path(ROOT, "backend", ".venv", "bin")
+env_file = os.environ.get("CLAUDE_ENV_FILE")
+venv_note = "backend/.venv not created yet (step 1 creates it with `uv venv && uv sync`)."
+if venv_bin.is_dir():
+    venv_note = f"backend/.venv is on PATH for this session ({venv_bin})."
+    if env_file:
+        with open(env_file, "a", encoding="utf-8") as fh:
+            fh.write(f'export PATH="{venv_bin}:$PATH"\nexport VIRTUAL_ENV="{venv_bin.parent}"\n')
 
 branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"]) or "(no git yet)"
 log = run(["git", "log", "--oneline", "-10"]) or "(no commits yet)"
@@ -34,30 +41,28 @@ for skill in sorted(pathlib.Path(ROOT, ".claude", "skills").glob("*/SKILL.md")):
 
 agents = sorted(p.stem for p in pathlib.Path(ROOT, ".claude", "agents").glob("*.md"))
 
-reviews = sorted(pathlib.Path(ROOT, "docs", "reviews").glob("spec-review-*.md"))
-if not reviews:
-    gate = "no spec review yet. The only task before development is /review-spec."
-else:
-    latest = reviews[-1]
-    head = latest.read_text(encoding="utf-8")[:400].lower()
-    if "owner decision: approved" in head:
-        gate = f"approved ({latest.name})."
-    elif "owner decision: rework" in head:
-        gate = f"rework requested ({latest.name}). Make the owner's changes, then run /review-spec again."
-    else:
-        gate = f"pending owner decision ({latest.name}). Development waits."
 
-
-def doc_state(name):
-    path = pathlib.Path(ROOT, "docs", name)
-    if not path.exists():
-        return "missing"
-    head = path.read_text(encoding="utf-8")[:200].lower()
+def decision_of(path, limit=600):
+    head = path.read_text(encoding="utf-8")[:limit].lower()
     if "owner decision: approved" in head:
         return "approved"
     if "owner decision: rework" in head:
         return "rework requested"
     return "pending owner decision"
+
+
+reviews = sorted(pathlib.Path(ROOT, "docs", "reviews").glob("spec-review-*.md"), key=lambda p: p.stat().st_mtime)
+if not reviews:
+    gate = "no spec review yet. The only task before development is /review-spec."
+else:
+    latest = reviews[-1]
+    gate = f"{decision_of(latest)} ({latest.name}, latest by modification time)."
+
+
+def doc_state(name):
+    path = pathlib.Path(ROOT, "docs", name)
+    return decision_of(path, 200) if path.exists() else "missing"
+
 
 plan_state = f"PLAN.md {doc_state('PLAN.md')}, DESIGN.md {doc_state('DESIGN.md')}"
 
@@ -68,14 +73,15 @@ Recent commits:
 {log}
 Uncommitted changes:
 {status}
+Environment: {venv_note}
 
-Build order is the approved docs/PLAN.md, derived from SPEC section 15. The next step is the first one not covered by the commits above. Before any task, check the project skills below for a match and say which one applies.
-
-Project skills:
-{chr(10).join(skills) or '- (none found)'}
+Read docs/SPEC.md (v2). Build order is the approved docs/PLAN.md. The next step is the first one not covered by the commits above. Before any task, check the project skills below for a match and say which one applies.
 
 Spec review gate: {gate}
 Plan and design gate: {plan_state}. Order is /review-spec, approve, /plan-and-design, approve, then /start-step 1.
-Reviewer subagents: {', '.join(agents) or '(none found)'}. /finish-step runs them before a step is committed.
-Hooks active: post-edit formatting and rule checks, lint and tests before every git commit."""
+Reviewer subagents: {', '.join(agents) or '(none found)'}. /finish-step runs the four build reviewers before a step is committed.
+Hooks active: git_guard (history rewrites blocked), pre_commit_gate (lint and tests before every commit), post_edit (format and rule checks), dependency_note (rule 9 on installs).
+
+Project skills:
+{chr(10).join(skills) or '- (none found)'}"""
 )

@@ -15,7 +15,8 @@ You are the Engineering Manager who proposed this spec. In two days you defend i
 3. `docs/DECISIONS.md`
 4. `CLAUDE.md`
 5. Everything under `.claude/` (settings, hooks, agents, skills)
-6. Any assessment brief or client correspondence in `docs/` or the repo root, if present
+6. Any prior report in `docs/reviews/`, to check that its accepted findings were actually applied
+7. Any assessment brief or client correspondence in `docs/` or the repo root, if present
 
 ## Verification rules
 

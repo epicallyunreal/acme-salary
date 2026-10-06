@@ -8,7 +8,7 @@ Context: the first draft had HRA, LTA, PF, Professional Tax and Gratuity as colu
 
 Decision: a `SalaryComponent` table (global or per country, kind of earning, deduction or employer contribution) and one `CompensationLine` per component on each record. Header totals (gross, net, total cost) are denormalised on the record.
 
-Consequences: forms and the import template need the component list for the employee's country. Any question about a component is a query, not a Python loop. A JSON column was considered and rejected because SQLite can filter JSON but cannot index into it.
+Consequences: forms and the import template need the component list for the employee's country. Any question about a component is a query, not a Python loop. A JSON column was considered and rejected: a row per component gives integrity per component and aggregation by kind without parsing.
 
 ## D2. Effective-dated revisions, not a monthly salary history table
 
@@ -34,13 +34,13 @@ Decision: one seeded HR Manager account, JWT access and refresh via `djangorestf
 
 Consequences: a public URL with editable salary data is not open. Every write records `actor`, so roles later are a permissions layer, not a data migration.
 
-## D5. One container, SQLite on a volume, hosting conditional
+## D5. One container, SQLite on a volume, hosting required
 
 Context: the first draft planned to run the dev server locally. `runserver` is single-threaded, does not serve static files safely and is not a deployment. The brief says "fully functional deployed software", which could mean a public URL or a one-command Docker run plus the demo video.
 
 Decision: a multi-stage Dockerfile, gunicorn plus WhiteNoise serving the API and the built SPA from one container, SQLite in WAL mode on a persistent volume, `docker compose up` for local parity. Hosted on a container host with a persistent volume, as Incubyte confirmed on 6 Oct that a live public URL is required and local-only Docker is not enough.
 
-Consequences: one deployable, no CORS between services in production, no second database to run. SQLite's single-writer limit does not bite with one container. Postgres later is a settings change.
+Consequences: one deployable, no CORS between services in production, no second database to run. SQLite's single-writer limit does not bite with one container. The ORM makes Postgres a migration later, not a rewrite.
 
 ## D6. MUI with MUI X DataGrid, Recharts, Vitest
 
@@ -70,7 +70,7 @@ Consequences: live data never changes before approval and never partially. The r
 
 ## D9. No hard deletes, audit log on every write
 
-Context: salary data is sensitive and the HR Manager is the only editor. Mistakes need to be traceable and reversible.
+Context: salary data is sensitive and the HR Manager is the only editor. Mistakes need to be traceable and corrected by a new revision, never by editing history.
 
 Decision: employees are marked exited, compensation records are superseded, nothing is deleted. Every create, update, exit, revise and import apply writes an `AuditLog` row with actor, before and after JSON, and the batch id where relevant.
 
@@ -115,6 +115,46 @@ Context: with `code` unique on `SalaryComponent`, a per-country `BONUS` would ne
 Decision: `bonus_annual` on `CompensationRecord`, default 0, non-negative, included in gross. A signing or yearly bonus can go to any employee in any country, and it is one amount, so it is record data. The component table stays what it is for: country-specific pay structure.
 
 Consequences: ten components instead of eleven. The template carries `bonus_annual` as a fixed column before the component codes. Gross = earning lines + bonus, so distribution and pay-by-level include variable pay, and base-vs-gross comparisons use the `BASE` line.
+
+## D15. Scheduling supported, half-open intervals, a version per revision
+
+Context: the spec review (6 Oct) showed three defects from the same root. The inclusive end date made a next-day revision fail its own check constraint. A future-dated revision became current pay the moment it was saved. Exited employees were in or out of the insights depending on which file the implementer read.
+
+Decision: intervals are half-open, `effective_to` equals the next `effective_from`. Current means current on the reporting date, today by default. A future `effective_from` is a scheduled revision and may be cancelled until it takes effect. Exit closes the open record at `last_date` plus one day. Each record carries a `version` number per employee. `Employee.status` is derived, not stored. SPEC v2 section 4 rules 3 and 6, and F3.
+
+Consequences: HR can enter next April's raise in March. Point-in-time reporting comes for free through `on=`. The constraint and the partial unique index stay as written. The directory, insights and exports all use one date predicate.
+
+## D16. Stack pinned to the latest that deploys, on Python 3.14
+
+Context: the review found Django 5.0 out of support, React 18 pinning an old router, MSW on a new major with changed imports, and no backend lock file. The owner's machine runs Python 3.14.
+
+Decision: Python 3.14, Django 6.1 (the only line that supports it), DRF 3.18, SimpleJWT 5.5 with the blacklist app, Node 26, React 19, react-router 8, TypeScript 6.0, Vite 8, Vitest 5, MUI 9, MUI X 9, Recharts 3, TanStack Query 5, MSW 3.0. `uv.lock` for the backend. drf-spectacular dropped: types are hand-written and the schema sat behind auth for nobody. SPEC v2 section 1.
+
+Consequences: SimpleJWT and gunicorn declare support only to 3.13. Both are pure Python and CI on 3.14 verifies them on day one. The fallback is Python 3.13, one line in two files. Code written from memory for older majors will be caught by the pinned versions, not by a reviewer later.
+
+## D17. Deploy first, on Fly.io
+
+Context: the live URL is the client's one hard requirement and the review found it scheduled last, with a persistence model that contradicted itself and a static-serving claim that was wrong.
+
+Decision: Fly.io on a paid plan, owner pays, one 512 MB machine, one 1 GB volume, deployed in step 1 as an empty skeleton with the custom subdomain and TLS. A Django catch-all view serves the SPA. gunicorn binds explicitly. The seed runs only when the Employee table is empty. SPEC v2 section 14.
+
+Consequences: the hard requirement is proven before any feature exists and every later step deploys onto a working target. One volume with daily snapshots is the accepted risk for v1.
+
+## D18. Scope kept beyond the client's examples, with reasons
+
+Context: the review listed six things that go past Incubyte's reply: the by-level and gender-gap insights, EUR reporting, insight exports in three formats, the OpenAPI schema and Django admin.
+
+Decision: by-level stays, pay by level is the first question any compensation review asks. The gender gap stays, labelled unadjusted, with no gap planted in the seed, so the chart shows what the data shows. EUR stays, it is one row per currency in a table that already exists. Insight exports stay, they are the same writers as the directory export. The schema and Django admin go. Admin bypasses every rule in CLAUDE.md and is not installed at all.
+
+Consequences: the dashboard answers six questions, not four, at a cost of two queries and two charts. Nothing in the product edits data outside the services.
+
+## D19. Full scope for an 8 October morning submission
+
+Context: with the review in hand the owner weighed cutting components, history and two insights to ship the same day, against building the spec as reviewed and submitting the next morning.
+
+Decision: full scope, submission the morning of 8 October 2026 IST so the reviewers see it first thing. SPEC v2 folds the review's outcomes into one document, and this log keeps the history.
+
+Consequences: roughly 30 to 35 focused hours against a fixed clock, with the P1 list as the release valve. If a step slips, the order of what shrinks is unchanged: export and hardening first, nothing from the data layer, import or deployment.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

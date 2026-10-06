@@ -9,7 +9,7 @@ argument-hint: <step number>
 Step: `$ARGUMENTS`.
 
 1. Gate locally first. Backend: `ruff format --check . && ruff check . && pytest -q -m "not slow"` from `backend/`. Frontend, if it exists: `npm run lint && npm test -- --run` from `frontend/`. Fix anything red before going on.
-2. Run the reviewers in parallel with the Agent tool: `code-reviewer`, `spec-checker`, `test-reviewer`, and `security-reviewer` when the step touched the API, settings, auth, imports or exports. Give each the step number and the range to review (`git diff <first commit of the step>^..HEAD` plus uncommitted work).
+2. Run all four reviewers in parallel with the Agent tool: `code-reviewer`, `spec-checker`, `test-reviewer`, `security-reviewer`. Give each the step number and the range to review (`git diff <first commit of the step>^..HEAD` plus uncommitted work).
 3. Fix every Blocker. For Should-fix items, fix now if it takes under five minutes, otherwise list them in the commit body. Leave Nits unless trivial.
 4. If a reviewer raised `Question for the human`, stop and ask before continuing.
 5. Docs in the same commit:

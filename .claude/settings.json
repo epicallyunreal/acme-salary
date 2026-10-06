@@ -14,41 +14,62 @@
       "Bash(git show *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git branch *)",
+      "Bash(git branch)",
+      "Bash(git branch --show-current)",
+      "Bash(uv *)",
       "Bash(pytest)",
       "Bash(pytest *)",
       "Bash(python -m pytest *)",
       "Bash(ruff *)",
-      "Bash(python manage.py *)",
+      "Bash(django-admin *)",
+      "Bash(python manage.py migrate *)",
+      "Bash(python manage.py migrate)",
+      "Bash(python manage.py makemigrations *)",
+      "Bash(python manage.py makemigrations)",
+      "Bash(python manage.py check)",
+      "Bash(python manage.py collectstatic *)",
+      "Bash(python manage.py seed_data *)",
+      "Bash(python manage.py make_import_file *)",
+      "Bash(python manage.py reset_demo *)",
+      "Bash(python manage.py set_exchange_rate *)",
+      "Bash(python manage.py timing)",
+      "Bash(python manage.py runserver *)",
       "Bash(npm run *)",
       "Bash(npm test *)",
       "Bash(npm ci)",
+      "Bash(npm create *)",
       "Bash(npx prettier *)",
       "Bash(npx eslint *)",
       "Bash(npx vitest *)",
-      "Bash(docker compose *)"
+      "Bash(docker build *)",
+      "Bash(docker compose *)",
+      "Bash(fly status *)",
+      "Bash(fly logs *)",
+      "Bash(flyctl status *)",
+      "Bash(flyctl logs *)"
     ],
     "ask": [
-      "Edit(docs/SPEC.md)",
-      "Write(docs/SPEC.md)",
-      "Edit(docs/REQUIREMENTS.md)",
-      "Write(docs/REQUIREMENTS.md)",
+      "Edit(/docs/SPEC.md)",
+      "Edit(/docs/REQUIREMENTS.md)",
+      "Edit(/docs/PLAN.md)",
+      "Edit(/docs/DESIGN.md)",
+      "Edit(/docs/reviews/**)",
       "Bash(git push *)",
+      "Bash(fly deploy *)",
+      "Bash(flyctl deploy *)",
+      "Bash(fly *)",
+      "Bash(flyctl *)",
+      "Bash(curl *)",
       "Bash(pip install *)",
       "Bash(npm install *)",
-      "Bash(npm i *)"
+      "Bash(npm i *)",
+      "Bash(python manage.py *)"
     ],
     "deny": [
-      "Bash(git push --force *)",
-      "Bash(git push -f *)",
-      "Bash(git reset --hard *)",
-      "Bash(git rebase *)",
-      "Bash(git commit --amend *)",
-      "Bash(git checkout -- *)",
-      "Bash(rm -rf *)",
-      "Read(./.env)",
-      "Read(./backend/.env)",
-      "Read(./frontend/.env)"
+      "Read(/.env)",
+      "Read(/backend/.env)",
+      "Read(/frontend/.env)",
+      "Bash(rm -rf *)"
     ]
   },
   "hooks": {
@@ -57,8 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/session_start.py"],
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.py",
             "timeout": 20
           }
         ]
@@ -70,23 +90,18 @@
         "hooks": [
           {
             "type": "command",
-            "if": "Bash(git commit *)",
-            "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/pre_commit_gate.py"],
-            "timeout": 600,
-            "statusMessage": "Pre-commit gate: lint and tests"
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/git_guard.py",
+            "timeout": 10
           },
           {
             "type": "command",
-            "if": "Bash(pip install *)",
-            "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/dependency_note.py"]
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_commit_gate.py",
+            "timeout": 900
           },
           {
             "type": "command",
-            "if": "Bash(npm install *)",
-            "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/dependency_note.py"]
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/dependency_note.py",
+            "timeout": 10
           }
         ]
       }
@@ -97,8 +112,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/post_edit.py"],
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post_edit.py",
             "timeout": 60
           }
         ]

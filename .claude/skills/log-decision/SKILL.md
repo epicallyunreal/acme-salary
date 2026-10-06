@@ -6,7 +6,7 @@ argument-hint: <one-line title>
 
 # Log a decision
 
-Append to `docs/DECISIONS.md`, after the last `D<n>` entry and before the Open questions table. Number it `D<n+1>`. Keep it under ten lines.
+Append to `docs/DECISIONS.md`, after the last `D<n>` entry and before the "Clarifications from Incubyte" section. Number it `D<n+1>`. Keep it under ten lines.
 
 ```
 ## D<n>. <title: $ARGUMENTS>

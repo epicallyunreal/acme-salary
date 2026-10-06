@@ -7,7 +7,7 @@ Status: planning. Build order is in `docs/PLAN.md` once approved, derived from `
 ## Documents
 
 - `docs/REQUIREMENTS.md`, the one-page requirements document
-- `docs/SPEC.md`, the engineering spec
+- `docs/SPEC.md`, the engineering spec (v2, after the spec review)
 - `docs/DECISIONS.md`, why things are the way they are
 - `docs/PERFORMANCE.md`, measured timings
 - `docs/reviews/`, Engineering Manager spec reviews, the latest approved before development began

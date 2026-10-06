@@ -1,0 +1,11 @@
+# Runs the same gate as the Claude Code hook on commits made from a terminal.
+# Install once: `uv tool install pre-commit` (or `pip install pre-commit`), then `pre-commit install`.
+repos:
+  - repo: local
+    hooks:
+      - id: acme-gate
+        name: lint and tests (same gate as .claude/hooks/pre_commit_gate.py)
+        entry: env ACME_GATE_FORCE=1 python3 .claude/hooks/pre_commit_gate.py
+        language: system
+        pass_filenames: false
+        always_run: true

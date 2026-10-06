@@ -16,7 +16,7 @@ Procedure.
 2. Acceptance criteria. For each `Given ... then ...` line in the step's functional requirement (section 6), find the test that covers it. Search `backend/tests` and `frontend/src` for the scenario's nouns and values. Mark each criterion covered, partial, or missing, with the test's path.
 3. API. Every endpoint the step adds appears in the section 8 table with the same method, path and query parameters. List extra endpoints and mismatches.
 4. Data model. Model fields, types, nullability, constraints and indexes match section 5. List drift.
-5. P1 leakage. Grep for anything the spec marks P1: inline row editing, `PATCH /compensation/{id}`, the deferred insights, generated TypeScript types, column mapping. Report if any of it was built.
+5. P1 leakage. Grep for anything SPEC section 16 marks P1. Report if any of it was built.
 6. Scope creep. Anything built that the plan's section for this step does not list, or that no line of the spec asks for. Also the reverse: anything the plan listed for this step that was not built, with no recorded reason.
 7. Docs. If the step made a choice a reviewer might ask about, is there a `docs/DECISIONS.md` entry. If a dependency was added, is it noted.
 
