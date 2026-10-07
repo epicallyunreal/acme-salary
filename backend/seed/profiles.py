@@ -1,0 +1,215 @@
+"""Every design parameter of the demo dataset (SPEC section 11, DESIGN section 5), as plain data.
+
+Nothing here is a sourced statistic. Changing any value changes the seed and therefore the golden
+hash in tests/seed/golden.txt, which the same commit regenerates.
+"""
+
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+REFERENCE_DATE = date(2026, 10, 6)
+REFERENCE_DATETIME = datetime(2026, 10, 6, tzinfo=UTC)
+
+HR_MANAGER_EMAIL = "hr@acme.example"
+EMAIL_DOMAIN = "acme.example"
+EMPLOYEE_CODE_FORMAT = "ACME-{:06d}"
+
+NOISE_SIGMA = 0.18
+BASE_ROUNDING = 100
+
+
+@dataclass(frozen=True)
+class ComponentSpec:
+    code: str
+    name: str
+    kind: str
+    country: str | None
+    sort_order: int
+
+
+COMPONENTS = (
+    ComponentSpec("BASE", "Base salary", "earning", None, 10),
+    ComponentSpec("HRA", "House rent allowance", "earning", "IN", 20),
+    ComponentSpec("ALLOWANCES", "Allowances", "earning", "IN", 30),
+    ComponentSpec("HOLIDAY_ALLOWANCE", "Holiday allowance", "earning", "NL", 20),
+    ComponentSpec("AWS", "Annual wage supplement", "earning", "SG", 20),
+    ComponentSpec("TAX", "Income tax", "deduction", None, 50),
+    ComponentSpec("NATIONAL_INSURANCE", "National Insurance", "deduction", "GB", 60),
+    ComponentSpec("SOCIAL_INSURANCE", "Social insurance", "deduction", "DE", 60),
+    ComponentSpec("CPF", "CPF contribution", "deduction", "SG", 60),
+    ComponentSpec(
+        "EMPLOYER_CONTRIBUTION", "Employer contribution", "employer_contribution", None, 90
+    ),
+)
+
+
+@dataclass(frozen=True)
+class CountrySpec:
+    code: str
+    name: str
+    currency: str
+    share: float
+    anchor: int  # level-3 base, annual, local currency
+    min_gross: int
+    employer_share: float  # EMPLOYER_CONTRIBUTION as a share of base
+    components: dict[str, float]  # country component code -> share of base
+    bonus_probability: float
+    faker_locale: str
+
+
+COUNTRIES = (
+    CountrySpec(
+        "IN",
+        "India",
+        "INR",
+        0.45,
+        1_450_000,
+        400_000,
+        0.12,
+        {"HRA": 0.40, "ALLOWANCES": 0.25},
+        0.25,
+        "en_IN",
+    ),
+    CountrySpec("US", "United States", "USD", 0.20, 135_000, 35_000, 0.08, {}, 0.50, "en_US"),
+    CountrySpec(
+        "GB",
+        "United Kingdom",
+        "GBP",
+        0.12,
+        68_000,
+        24_000,
+        0.14,
+        {"NATIONAL_INSURANCE": 0.10},
+        0.45,
+        "en_GB",
+    ),
+    CountrySpec(
+        "DE",
+        "Germany",
+        "EUR",
+        0.10,
+        75_000,
+        26_000,
+        0.20,
+        {"SOCIAL_INSURANCE": 0.20},
+        0.45,
+        "de_DE",
+    ),
+    CountrySpec(
+        "NL",
+        "Netherlands",
+        "EUR",
+        0.08,
+        72_000,
+        26_000,
+        0.18,
+        {"HOLIDAY_ALLOWANCE": 0.08},
+        0.30,
+        "nl_NL",
+    ),
+    # Faker has no Singapore locale; names come from en_US.
+    CountrySpec(
+        "SG",
+        "Singapore",
+        "SGD",
+        0.05,
+        100_000,
+        30_000,
+        0.17,
+        {"AWS": 1 / 12, "CPF": 0.20},
+        0.30,
+        "en_US",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class DepartmentSpec:
+    code: str
+    name: str
+    share: float
+    multiplier: float
+    role: str  # the noun designations are built from
+
+
+DEPARTMENTS = (
+    DepartmentSpec("engineering", "Engineering", 0.30, 1.15, "Engineer"),
+    DepartmentSpec("product", "Product", 0.05, 1.0, "Product Manager"),
+    DepartmentSpec("design", "Design", 0.04, 1.0, "Designer"),
+    DepartmentSpec("data", "Data", 0.05, 1.0, "Data Scientist"),
+    DepartmentSpec("sales", "Sales", 0.15, 1.0, "Account Executive"),
+    DepartmentSpec("marketing", "Marketing", 0.05, 1.0, "Marketing Specialist"),
+    DepartmentSpec("customer-support", "Customer Support", 0.12, 0.8, "Support Specialist"),
+    DepartmentSpec("finance", "Finance", 0.05, 1.0, "Financial Analyst"),
+    DepartmentSpec("hr", "HR", 0.04, 1.0, "HR Partner"),
+    DepartmentSpec("legal", "Legal", 0.02, 1.0, "Counsel"),
+    DepartmentSpec("it", "IT", 0.05, 1.0, "IT Engineer"),
+    DepartmentSpec("operations", "Operations", 0.08, 1.0, "Operations Analyst"),
+)
+
+LEVELS = (1, 2, 3, 4, 5, 6)
+LEVEL_SHARES = {1: 0.25, 2: 0.25, 3: 0.20, 4: 0.15, 5: 0.10, 6: 0.05}
+LEVEL_MULTIPLIERS = {1: 0.55, 2: 0.75, 3: 1.0, 4: 1.4, 5: 2.0, 6: 3.0}
+LEVEL_TITLES = {
+    1: "Associate {role}",
+    2: "{role}",
+    3: "Senior {role}",
+    4: "Lead {role}",
+    5: "Principal {role}",
+    6: "Head of {department}",
+}
+
+
+def designation(department: DepartmentSpec, level: int) -> str:
+    return LEVEL_TITLES[level].format(role=department.role, department=department.name)
+
+
+# TAX as a share of gross by level band: a recorded projection, never computed from tax law.
+TAX_SHARE_BY_LEVEL = {1: 0.10, 2: 0.10, 3: 0.20, 4: 0.20, 5: 0.30, 6: 0.30}
+
+COMPONENT_JITTER = 0.05  # each component share is multiplied by uniform(1 - j, 1 + j)
+
+BONUS_RANGE = (0.05, 0.15)  # share of base, for employees who get one
+
+GENDER_SHARES = {"female": 0.48, "male": 0.50, "other": 0.01, "undisclosed": 0.01}
+
+JOINING_RANGE = (date(2015, 1, 1), date(2026, 9, 30))
+EXIT_SHARE = 0.08
+EXIT_MIN_TENURE_DAYS = 30
+RAISE_RANGE = (0.04, 0.12)
+KEPT_RAISES = 3  # the joining record plus the three most recent raises
+
+# Sixteen monthly rows (D22): four currencies to USD and four to EUR, September and October 2026.
+RATES = (
+    ("INR", "USD", date(2026, 9, 1), Decimal("0.01195")),
+    ("GBP", "USD", date(2026, 9, 1), Decimal("1.3410")),
+    ("EUR", "USD", date(2026, 9, 1), Decimal("1.1720")),
+    ("SGD", "USD", date(2026, 9, 1), Decimal("0.7790")),
+    ("INR", "EUR", date(2026, 9, 1), Decimal("0.01020")),
+    ("GBP", "EUR", date(2026, 9, 1), Decimal("1.1440")),
+    ("USD", "EUR", date(2026, 9, 1), Decimal("0.8530")),
+    ("SGD", "EUR", date(2026, 9, 1), Decimal("0.6650")),
+    ("INR", "USD", date(2026, 10, 1), Decimal("0.01200")),
+    ("GBP", "USD", date(2026, 10, 1), Decimal("1.3450")),
+    ("EUR", "USD", date(2026, 10, 1), Decimal("1.1750")),
+    ("SGD", "USD", date(2026, 10, 1), Decimal("0.7810")),
+    ("INR", "EUR", date(2026, 10, 1), Decimal("0.01021")),
+    ("GBP", "EUR", date(2026, 10, 1), Decimal("1.1447")),
+    ("USD", "EUR", date(2026, 10, 1), Decimal("0.8511")),
+    ("SGD", "EUR", date(2026, 10, 1), Decimal("0.6647")),
+)
+
+# The business tables in the determinism scope (SPEC section 11 rule 8), in truncation order.
+BUSINESS_TABLES = (
+    "audit.AuditLog",
+    "compensation.CompensationLine",
+    "compensation.CompensationRecord",
+    "imports.ImportRow",
+    "imports.ImportBatch",
+    "employees.Employee",
+    "core.ExchangeRate",
+    "core.SalaryComponent",
+    "core.Department",
+    "core.Country",
+)

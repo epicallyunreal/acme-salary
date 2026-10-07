@@ -42,6 +42,13 @@ INSTALLED_APPS = [
     "corsheaders",
     "apps.accounts",
     "apps.core",
+    "apps.employees",
+    "apps.compensation",
+    "apps.imports",
+    "apps.insights",
+    "apps.exports",
+    "apps.audit",
+    "seed",
 ]
 
 # No sessions and no Django auth middleware: the API authenticates with a JWT per request.
@@ -110,6 +117,12 @@ REST_FRAMEWORK = {
         "rest_framework.parsers.JSONParser",
         "rest_framework.parsers.MultiPartParser",
     ],
+    "DEFAULT_PAGINATION_CLASS": "apps.core.pagination.StandardPagination",
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+    ],
+    "EXCEPTION_HANDLER": "apps.core.exceptions.handler",
     "DEFAULT_THROTTLE_RATES": {"login": "5/min"},
     # Fly's proxy is the one trusted hop, so a client cannot mint throttle buckets.
     "NUM_PROXIES": 1,
