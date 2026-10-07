@@ -121,7 +121,7 @@ Commits:
 
 Hours: 4.5.
 
-Acceptance closed: SPEC F3 lines 261 to 267 through the API; F7 line 312 through the API; section 8 rows at lines 377 (POST), 378 (PATCH), 379 to 382 and 384.
+Acceptance closed: SPEC F3's seven criteria through the API, except the insights half of the scheduled-revision and exit criteria, which closes in step 6; F7's one-entry-per-write-path criterion through the API; section 8 rows `POST /employees/`, `PATCH /employees/{id}/`, `POST /employees/{id}/exit/`, `GET` and `POST /employees/{id}/compensation/`, `DELETE /compensation/{id}/` and `GET /employees/{id}/audit/`.
 
 Risks: the first-record form carries up to six amount inputs that depend on the chosen country, so the component list must load before the lines render; zod 4 changed its API from zod 3 and react-hook-form 7's resolver is checked on Context7; the detail page is the densest page and the first real test of the visual direction.
 
@@ -146,7 +146,7 @@ Commits:
 
 Hours: 5.
 
-Acceptance closed: SPEC F1 lines 212 to 219; F2 lines 244 to 247; section 8 rows at lines 385 to 389 and 391; section 7 header rows at lines 333 to 335 through the upload tests.
+Acceptance closed: SPEC F1's eight criteria (the 10,000-row staging time `[measured]`); F2's four; section 8 rows `GET /imports/template/`, `GET` and `POST /imports/`, `GET /imports/{id}/`, `GET /imports/{id}/rows/`, `POST /imports/{id}/rows/{rowId}/skip/` and `/unskip/`, and `POST /imports/{id}/approve/` and `/discard/`; section 7's three header rows (required column missing, unknown column in header, file not UTF-8) through the upload tests.
 
 Risks: the 30 s staging budget is spent in Python validation and the context build, both measured on the first 10,000-row run (commit 2) with `make_import_file --all --raises 1000`; 10,000 `ImportRow` objects before `bulk_create` are the memory peak and are measured there too. openpyxl returns dates as `datetime` and numbers as floats, both covered by the parser tests. The review grid has the most columns of any page.
 
@@ -169,7 +169,7 @@ Commits:
 
 Hours: 4.
 
-Acceptance closed: SPEC F5 lines 286 `[measured]` and 287; section 9 lines 400 to 411 (population, maths, every definition); section 8 line 392; section 12 line 467 insight row (the fixture with an exited employee, a scheduled revision, an empty group and a small gender group).
+Acceptance closed: SPEC F5's two criteria (every insight under 500 ms `[measured]`, the filter refetch and include-exited headcount `[test]`); section 9's population rule, maths and six definitions; section 8 row `GET /insights/{name}/`; section 12's service-test row for insights (the fixture with an exited employee, a scheduled revision, an empty group and a small gender group); and the insights half of F3's scheduled-revision and exit criteria as two named tests: the DESIGN 9 fixture's U1 shows its scheduled revision under `on=2027-01-01`, and an exited employee is counted with `on=` its `last_date` and gone with `on=` its `last_date + 1`.
 
 Risks: Recharts 3 changed its API (`ErrorBar` on `Scatter` for the by-level whiskers, `ReferenceLine` for the markers) and is checked on Context7 before the chart commit; medians pull up to 10,000 values into Python per request, which is well inside 500 ms but is measured; the five charts are where the visual direction is most visible and the dataviz mark specs are applied as written.
 
@@ -192,7 +192,7 @@ Commits:
 
 Hours: 2.
 
-Acceptance closed: SPEC F6 lines 301, 302 `[measured]` and 303; section 8 lines 393 and 394.
+Acceptance closed: SPEC F6's three criteria (filtered rows across all pages, the 10,000-row unfiltered export `[measured]`, formula escaping in CSV and XLSX); section 8 rows `GET /exports/employees/` and `GET /exports/insights/{name}/`.
 
 Risks: a 10,000-row XLSX is built in memory (a few megabytes, fine on 1 GB); streaming CSV under gunicorn threads holds a database cursor open for the duration, acceptable with one user. This step shrinks first if time runs short (below).
 
@@ -214,7 +214,7 @@ Commits:
 
 Hours: 2.
 
-Acceptance closed: the `[measured]` lines consolidated into one PERFORMANCE row on the final code: SPEC F1 line 212, F4 line 278, F5 line 286, F6 line 302, section 11 line 433, section 14 line 499; section 10 line 429 (error and empty states on every page); section 13 line 489 (accessibility row).
+Acceptance closed: the `[measured]` criteria consolidated into one PERFORMANCE row on the final code: SPEC F1's staging time, F4's directory p95, F5's insight response time, F6's unfiltered export, section 11's seed time and section 14's first boot; section 10's error and empty states on every page; section 13's accessibility row.
 
 Risks: a missed target discovered here has the least time to fix; that is why the directory, import and insight timings are each measured at the end of their own step and only consolidated here. This step shrinks second (below).
 
@@ -235,7 +235,7 @@ Commits:
 
 Hours: 1.5, of which the demo recording is the owner's.
 
-Acceptance closed: SPEC section 14 line 503 (demo video); REQUIREMENTS line 27 (live URL, Docker, recorded demo) and lines 52 to 54 (success criteria on the deployed instance).
+Acceptance closed: SPEC section 14's demo video; REQUIREMENTS in-scope item 9 (live URL, Docker, recorded demo) and its three success criteria (on the deployed instance).
 
 Risks: a deploy in the last hour; the video takes longer than planned. Nothing in this step is optional.
 

@@ -344,6 +344,14 @@ Decision: `LoginRateThrottle` in `apps/accounts/views.py` reduces an IPv6 client
 
 Consequences: a /64 behind one NAT or one household shares the five attempts a minute, which is the intent. Pages and assets keep their caching. The session-lifetime question the review raised is the owner's call and is not changed here.
 
+## D42. Plan acceptance names criteria, and F3's insights half closes in step 6
+
+Context: at the start of step 4 the plan's SPEC line numbers had drifted with v2.3 and v2.4, so step 4's "379 to 382" covered the P1 `POST /meta/exchange-rates/` row. F3's scheduled-revision and exit criteria also name insights, which arrive in step 6. Asked "replace the numbers with names, renumber, or leave them?" and "close the insights half in step 6?", the owner chose names and step 6. Renumbering was the alternative.
+
+Decision: PLAN steps 4 to 9 cite criteria by name and section 8 rows by route path. Step 4 closes F3 and F7 through the API. Step 6 adds two named tests, the DESIGN 9 fixture's U1 under `on=2027-01-01` and an exited employee counted with `on=` its `last_date` and gone the day after. SPEC's title reads v2.4 to match its preamble. The audit list is paginated as DESIGN 1.3 and section 8 say.
+
+Consequences: SPEC edits no longer break the plan's references. The plan's scope and order are unchanged, so its approval stands. Steps 1 to 3 keep their line numbers as the record of what they closed.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.
