@@ -349,6 +349,8 @@ def check_base_required(row: NormalizedRow, ctx: ValidationContext) -> list[Mess
     """A blank BASE is missing; a given one below 10, zero included, is too small (D49). A
     negative one is the non-negative rule's."""
     base = row.amounts.get("BASE")
+    if base is None and any(problem.field == "BASE" for problem in row.parse_messages):
+        return []  # a sheet cell that is not a number has its own message already
     if base is None:
         return [error("BASE", "base_required")]
     if ZERO <= base < MIN_BASE:

@@ -454,6 +454,14 @@ Decision: `check_dates_in_range` refuses a `joining_date`, `last_date` or `effec
 
 Consequences: no stored date is near the end of the calendar, so every `+ 1 day` in the services exists. A real date past 2100 would need this ceiling raised in one constant, `validators.DATE_MAX`.
 
+## D54. The import header: one legacy code column, each column once
+
+Context: SPEC F1 reads the old code headers (`EmployeeID`, `Employee Code`, `Emp ID`, `employee_code`) as `legacy_code` when a sheet has none, but said nothing of a sheet with two of them, or with any template column twice. Asked before step 5, the owner chose to refuse both, and to keep `employee_code` as an alias although the app now uses that name for `ACME-<id>` (D48).
+
+Decision: two or more old code headers and no `legacy_code` column refuse the upload with `EmployeeID and Emp ID could both be the legacy code; rename the right one to legacy_code`, and three or more say `could all be`. A template column given twice refuses it with `email appears twice in the header; remove one`. `employee_code` stays an alias. It normalises to the same header as `Employee Code`, which legacy sheets use, so dropping one would drop both.
+
+Consequences: no value is read from a column the user did not mean. Keeping the alias is safe. An export from the app always carries a `legacy_code` column, which wins over `employee_code`, and a sheet whose `ACME-<id>` column is read as legacy codes fails the email check row by row, so it never matches the wrong employee. SPEC F1 and section 7.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

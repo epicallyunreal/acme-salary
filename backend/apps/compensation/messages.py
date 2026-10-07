@@ -8,6 +8,15 @@ MESSAGES = {
     "missing_column": "Missing required column: {column}",
     "unknown_column": "Ignored unknown column: {column}",
     "not_utf8": "file is not UTF-8",
+    "file_extension": "file must end in .xlsx or .csv, got {name}",
+    "file_content_type": "file content type {content_type} does not match {extension}",
+    "file_unreadable": "file is not a readable .xlsx workbook",
+    "file_no_header": "file has no header row",
+    "row_limit": "file has {count} data rows, limit {limit}",
+    "column_twice": "{column} appears twice in the header; remove one",
+    "legacy_ambiguous": (
+        "{columns} could {quantity} be the legacy code; rename the right one to legacy_code"
+    ),
     "legacy_required": "legacy_code is required",
     "legacy_too_long": "legacy_code is longer than {limit} characters",
     "legacy_duplicate": "Duplicate legacy_code in rows {first} and {second}",
