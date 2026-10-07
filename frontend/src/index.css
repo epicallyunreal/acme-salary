@@ -1,0 +1,13 @@
+/* Minimal base until the MUI theme lands in step 3. */
+:root {
+  color-scheme: light;
+  font-family: system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
