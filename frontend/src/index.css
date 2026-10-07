@@ -1,11 +1,8 @@
-/* Minimal base until the MUI theme lands in step 3. */
+/* The theme in src/lib/theme.ts owns colour and type; this file only keeps the page honest
+   before the first paint. */
 :root {
   color-scheme: light;
-  font-family: system-ui, sans-serif;
-}
-
-* {
-  box-sizing: border-box;
+  background: #f4f5f1;
 }
 
 body {

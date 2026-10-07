@@ -310,6 +310,22 @@ Decision: `seed_data` runs Django's `validate_password` on `SEED_ADMIN_PASSWORD`
 
 Consequences: a weak owner-chosen password fails the first boot at the entrypoint with a clear `CommandError` instead of fronting every salary row. The step 1 guard in `prod.py` already refuses the placeholders.
 
+## D38. Content-Security-Policy from Django 6.1's own middleware
+
+Context: SPEC F8 asks for security headers and the owner chose the directives at the step 1 close. Django 6.1 ships `ContentSecurityPolicyMiddleware`, so the alternative, `django-csp`, would be one more dependency for the same header.
+
+Decision: `SECURE_CSP` in `settings/base.py` with `default-src 'self'`, `script-src 'self'`, `connect-src 'self'`, `img-src 'self' data:`, `font-src 'self'`, `style-src 'self' 'unsafe-inline'`, `frame-ancestors 'none'`, `object-src 'none'`. `style-src` needs `'unsafe-inline'` because MUI's Emotion injects style tags at runtime. The fonts are bundled by Vite and served from `/assets/`, so `font-src 'self'` holds. `tests/core/test_security_headers.py` asserts the header on an API response, the health check and the SPA shell.
+
+Consequences: an injected script cannot run and the page cannot be framed. A nonce for `style-src` would need Emotion's cache configured per response, and the SPA shell is one static file, so `'unsafe-inline'` stays until the app renders HTML per request, which v1 does not.
+
+## D39. Frontend runtime packages added in step 3
+
+Context: rule 9 asks for a line per runtime dependency. SPEC section 1 names React, react-router, MUI, MUI X, TanStack Query, react-hook-form and zod. Five packages installed with them are not named there.
+
+Decision: `@fontsource/ibm-plex-sans` bundles IBM Plex Sans 400, 500 and 600 (DESIGN section 7) so the font is served from the app's own origin under `font-src 'self'` (D38) instead of a Google Fonts request. `@mui/icons-material` supplies the navigation and action icons as React components, MUI's own icon package. `@emotion/react` and `@emotion/styled` are MUI 9's required peer dependencies, its styling engine. `@hookform/resolvers` is the bridge that lets react-hook-form run a zod schema, published by react-hook-form itself. `@mui/x-data-grid` is in SPEC section 1 and lands with the grid in the next commit.
+
+Consequences: no third-party font or icon request at runtime, so the CSP stays at `'self'`. The bundle grows by the three font files and the icons that are imported one by one.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.
