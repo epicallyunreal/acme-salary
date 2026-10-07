@@ -10,6 +10,7 @@ api_v1_patterns = [
     path("", include("apps.accounts.urls")),
     path("", include("apps.core.urls")),
     path("", include("apps.employees.urls")),
+    path("", include("apps.compensation.urls")),
 ]
 
 urlpatterns = [

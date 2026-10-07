@@ -392,17 +392,14 @@ def test_detail_shape(api, cast):
     assert record["net_annual"] == "1250000.00"
     assert record["total_cost_annual"] == "1570000.00"
     assert record["source"] == "ui"
-    assert [(line["component"]["code"], line["annual_amount"]) for line in record["lines"]] == [
-        ("BASE", "1000000.00"),
-        ("HRA", "400000.00"),
-        ("TAX", "200000.00"),
-        ("EMPLOYER_CONTRIBUTION", "120000.00"),
+    assert record["employee"] == asha.pk
+    # Codes, as the audit snapshot writes them; names and kinds come from /meta/components/ (D34).
+    assert record["lines"] == [
+        {"component": "BASE", "annual_amount": "1000000.00"},
+        {"component": "HRA", "annual_amount": "400000.00"},
+        {"component": "TAX", "annual_amount": "200000.00"},
+        {"component": "EMPLOYER_CONTRIBUTION", "annual_amount": "120000.00"},
     ]
-    assert record["lines"][0]["component"] == {
-        "code": "BASE",
-        "name": "Base salary",
-        "kind": "earning",
-    }
     assert record["converted"] == {
         "currency": "USD",
         "rate": "0.01200000",
@@ -462,3 +459,177 @@ def test_detail_query_count(api, cast, django_assert_num_queries):
     their lines, rates. The fixture's records carry an author, so the pin covers a real one."""
     with django_assert_num_queries(5):
         api.get(f"/api/v1/employees/{cast['asha'].pk}/")
+
+
+# Writes: create, edit identity, exit (SPEC F3, section 8)
+
+
+def new_employee(**overrides) -> dict:
+    body = {
+        "full_name": "Meera Iyer",
+        "email": "Meera.Iyer@acme.example",
+        "department": "engineering",
+        "designation": "Engineer",
+        "level": 2,
+        "country_code": "IN",
+        "gender": "female",
+        "joining_date": "2026-11-01",
+        "bonus_annual": "0",
+        "note": "offer",
+        "lines": [
+            {"component": "BASE", "annual_amount": "900000.00"},
+            {"component": "HRA", "annual_amount": "360000.00"},
+            {"component": "TAX", "annual_amount": "90000.00"},
+        ],
+    }
+    body.update(overrides)
+    return body
+
+
+def test_create_assigns_the_code_and_answers_with_the_detail(api, rates):
+    response = api.post(LIST, new_employee(gross_annual="1.00"), format="json")
+
+    body = response.json()
+    assert response.status_code == 201, response.content
+    assert body["employee_code"] == "ACME-000001"
+    assert body["email"] == "meera.iyer@acme.example"
+    assert (body["status"], body["shown_label"]) == ("upcoming", "from 2026-11-01")
+    record = body["current_record"]
+    assert (record["version"], record["effective_from"], record["is_scheduled"]) == (
+        1,
+        "2026-11-01",
+        True,
+    )
+    # gross_annual in the body is ignored: totals come from the lines (SPEC F3).
+    assert (record["gross_annual"], record["net_annual"]) == ("1260000.00", "1170000.00")
+    assert [line["component"] for line in record["lines"]] == ["BASE", "HRA", "TAX"]
+    assert record["note"] == "offer"
+    assert body["warnings"] == []
+
+
+def test_create_with_a_code_in_use_is_a_400(api, cast):
+    """A client may name a code, but not one in use (D44)."""
+    response = api.post(LIST, new_employee(employee_code="ACME-000001"), format="json")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "employee_code": [
+            "employee_code ACME-000001 already exists; omit employee_code to have one assigned"
+        ]
+    }
+    assert api.get(LIST).json()["count"] == 6
+
+
+def test_create_reports_shape_and_rule_errors_per_field(api, cast):
+    missing = new_employee()
+    del missing["full_name"]
+
+    shape = api.post(LIST, missing, format="json")
+    rules = api.post(LIST, new_employee(department="Growth", level=9, gender="x"), format="json")
+    email = api.post(LIST, new_employee(email="ASHA@acme.example"), format="json")
+
+    assert (shape.status_code, shape.json()) == (400, {"full_name": ["This field is required."]})
+    assert (rules.status_code, rules.json()) == (
+        400,
+        {
+            "department": ["Unknown department: Growth"],
+            "level": ["level must be between 1 and 6"],
+            "gender": ["gender must be one of female, male, other, undisclosed"],
+        },
+    )
+    assert (email.status_code, email.json()) == (
+        400,
+        {"email": ["email already belongs to ACME-000001"]},
+    )
+
+
+def test_patch_edits_identity_and_answers_with_the_detail(api, cast):
+    url = f"/api/v1/employees/{cast['asha'].pk}/"
+
+    response = api.patch(
+        url, {"designation": "Staff Engineer", "level": 4, "department": "product"}, format="json"
+    )
+
+    body = response.json()
+    assert response.status_code == 200, response.content
+    assert (body["designation"], body["level"]) == ("Staff Engineer", 4)
+    assert body["department"] == {"code": "product", "name": "Product"}
+    assert body["current_record"]["version"] == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"), [("employee_code", "ACME-000099"), ("country_code", "US")]
+)
+def test_patch_cannot_change_the_code_or_the_country(api, cast, field, value):
+    response = api.patch(f"/api/v1/employees/{cast['asha'].pk}/", {field: value}, format="json")
+
+    assert response.status_code == 400
+    assert response.json() == {field: [f"{field} cannot be changed"]}
+
+
+def test_patch_cannot_move_joining_date_past_the_first_record(api, cast):
+    response = api.patch(
+        f"/api/v1/employees/{cast['asha'].pk}/", {"joining_date": "2020-01-02"}, format="json"
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "joining_date": ["joining_date is after the first record (effective 2020-01-01)"]
+    }
+
+
+def test_put_is_not_offered(api, cast):
+    response = api.put(f"/api/v1/employees/{cast['asha'].pk}/", new_employee(), format="json")
+
+    assert response.status_code == 405
+
+
+def test_exit_closes_the_open_record_and_a_second_exit_is_a_409(api, cast):
+    url = f"/api/v1/employees/{cast['asha'].pk}/exit/"
+
+    response = api.post(url, {"last_date": "2026-09-30"}, format="json")
+    again = api.post(url, {"last_date": "2026-09-30"}, format="json")
+
+    body = response.json()
+    assert response.status_code == 200, response.content
+    assert (body["last_date"], body["status"], body["shown_label"]) == (
+        "2026-09-30",
+        "exited",
+        "exited 2026-09-30",
+    )
+    assert body["current_record"]["effective_to"] == "2026-10-01"
+    assert (again.status_code, again.json()) == (
+        409,
+        {"detail": "employee already exited on 2026-09-30"},
+    )
+
+
+def test_exit_errors_name_the_field_or_the_conflict(api, cast, hr_user):
+    chloe = cast["chloe"]
+    compensation.revise(chloe, record_input(date(2025, 4, 1), BASE="85000"), actor=hr_user)
+
+    def exit_on(person, day):
+        return api.post(f"/api/v1/employees/{person.pk}/exit/", {"last_date": day}, format="json")
+
+    before_joining = exit_on(cast["ben"], "2018-06-14")
+    before_record = exit_on(chloe, "2025-03-15")
+    scheduled = exit_on(cast["farah"], "2026-10-15")
+    missing = api.post(f"/api/v1/employees/{chloe.pk}/exit/", {}, format="json")
+
+    assert (before_joining.status_code, before_joining.json()) == (
+        400,
+        {"last_date": ["last_date precedes joining_date"]},
+    )
+    assert (before_record.status_code, before_record.json()) == (
+        400,
+        {"last_date": ["last_date precedes the current record (effective 2025-04-01)"]},
+    )
+    assert (scheduled.status_code, scheduled.json()) == (
+        409,
+        {"detail": "scheduled revision on 2026-11-01 must be cancelled before exit"},
+    )
+    assert (missing.status_code, missing.json()) == (
+        400,
+        {"last_date": ["This field is required."]},
+    )
+    assert exit_on(EmployeeFactory.build(pk=999999), "2026-09-30").status_code == 404

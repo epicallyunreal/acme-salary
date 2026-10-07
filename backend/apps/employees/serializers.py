@@ -1,37 +1,61 @@
-"""Output shapes for the directory and the employee detail (SPEC section 8, DESIGN 1.3).
+"""Shapes for the directory, the employee detail, the history, the audit list and the employee
+writes (SPEC section 8, DESIGN 1.3).
 
-Serializers read; they never compute totals. Converted amounts come from the RateTable in the
-context through core/fx.py, so no conversion lives here.
+Output serializers read; they never compute totals. Converted amounts come from the RateTable in
+the context through core/fx.py. The record and employee shapes are what audit.snapshot_record and
+audit.snapshot_employee write, plus the request-dependent keys, and tests/audit/test_snapshots.py
+holds them equal (D34). Input serializers check shape and types only: the rules run in the
+services, so the API answers with SPEC section 7's messages.
 """
 
 from rest_framework import serializers
 
+from apps.audit.models import AuditLog
 from apps.compensation.models import CompensationLine, CompensationRecord
+from apps.compensation.serializers import RecordInputSerializer
 from apps.core.money import q8, render
 from apps.employees.models import Employee
 from apps.employees.queries import is_current, pick_shown, shown_label, status_on
 
+IDENTITY_FIELDS = (
+    "employee_code",
+    "full_name",
+    "email",
+    "department",
+    "designation",
+    "level",
+    "country_code",
+    "gender",
+    "joining_date",
+)
+
+
+class SnapshotDateTimeField(serializers.DateTimeField):
+    """ISO text as the audit snapshots write it (`+00:00`, where DRF would write `Z`), so an
+    audit entry's before and after equal what this API shows (D34)."""
+
+    def to_representation(self, value):
+        return render(value)
+
 
 class LineSerializer(serializers.ModelSerializer):
-    component = serializers.SerializerMethodField()
+    """A line as the audit snapshot writes it: the component's code. The client reads names and
+    kinds from /meta/components/ (D34)."""
+
+    component = serializers.SlugRelatedField(slug_field="code", read_only=True)
 
     class Meta:
         model = CompensationLine
         fields = ("component", "annual_amount")
-
-    def get_component(self, line):
-        return {
-            "code": line.component.code,
-            "name": line.component.name,
-            "kind": line.component.kind,
-        }
 
 
 class CompensationRecordSerializer(serializers.ModelSerializer):
     lines = LineSerializer(many=True, read_only=True)
     is_current = serializers.SerializerMethodField()
     is_scheduled = serializers.SerializerMethodField()
+    cancelled_at = SnapshotDateTimeField(read_only=True)
     cancelled_by = serializers.SerializerMethodField()
+    created_at = SnapshotDateTimeField(read_only=True)
     created_by = serializers.SerializerMethodField()
     converted = serializers.SerializerMethodField()
 
@@ -39,6 +63,7 @@ class CompensationRecordSerializer(serializers.ModelSerializer):
         model = CompensationRecord
         fields = (
             "id",
+            "employee",
             "version",
             "effective_from",
             "effective_to",
@@ -160,6 +185,8 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     shown_label = serializers.SerializerMethodField()
     current_record = serializers.SerializerMethodField()
+    created_at = SnapshotDateTimeField(read_only=True)
+    updated_at = SnapshotDateTimeField(read_only=True)
 
     class Meta:
         model = Employee
@@ -197,3 +224,72 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         if record is None:
             return None
         return CompensationRecordSerializer(record, context=self.context).data
+
+
+class AuditEntrySerializer(serializers.ModelSerializer):
+    """One audit row as the employee page lists it: who, when, what changed (SPEC F7)."""
+
+    timestamp = SnapshotDateTimeField(read_only=True)
+    actor = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = (
+            "id",
+            "timestamp",
+            "actor",
+            "action",
+            "entity_type",
+            "entity_id",
+            "before",
+            "after",
+            "import_batch",
+        )
+        read_only_fields = fields
+
+    def get_actor(self, entry):
+        return entry.actor.email if entry.actor_id else None
+
+
+# Input
+
+
+class EmployeeCreateSerializer(RecordInputSerializer):
+    """`POST /employees/`: identity, bonus and the first record's lines in one body. The code is
+    assigned by the service when left out."""
+
+    employee_code = serializers.CharField(required=False)
+    full_name = serializers.CharField(max_length=120)
+    email = serializers.CharField(max_length=254)
+    department = serializers.CharField()
+    designation = serializers.CharField(max_length=80)
+    level = serializers.IntegerField()
+    country_code = serializers.CharField()
+    gender = serializers.CharField()
+    joining_date = serializers.DateField()
+
+    def identity(self) -> dict:
+        return {
+            name: self.validated_data[name]
+            for name in IDENTITY_FIELDS
+            if name in self.validated_data
+        }
+
+
+class EmployeeIdentitySerializer(serializers.Serializer):
+    """`PATCH /employees/{id}/`: any identity field. `employee_code` and `country_code` are read
+    so the service refuses a change with a 400 instead of the serializer dropping it."""
+
+    employee_code = serializers.CharField(required=False)
+    country_code = serializers.CharField(required=False)
+    full_name = serializers.CharField(max_length=120, required=False)
+    email = serializers.CharField(max_length=254, required=False)
+    department = serializers.CharField(required=False)
+    designation = serializers.CharField(max_length=80, required=False)
+    level = serializers.IntegerField(required=False)
+    gender = serializers.CharField(required=False)
+    joining_date = serializers.DateField(required=False)
+
+
+class ExitSerializer(serializers.Serializer):
+    last_date = serializers.DateField()

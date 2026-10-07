@@ -26,6 +26,7 @@ from django.db.models import (
     When,
 )
 
+from apps.audit.models import AuditLog
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core import fx
 from apps.employees.models import Employee
@@ -110,20 +111,45 @@ def gross_bound(value: Decimal, side: Literal["min", "max"]) -> Decimal:
     return value - TOLERANCE if side == "min" else value + TOLERANCE
 
 
+def lines_in_order() -> Prefetch:
+    """A record's lines with their components, in the order the audit snapshot writes them."""
+    lines = CompensationLine.objects.select_related("component").order_by(
+        "component__sort_order", "component__code"
+    )
+    return Prefetch("lines", queryset=lines)
+
+
 def live_records(*, with_lines: bool = False) -> QuerySet[CompensationRecord]:
     """Non-cancelled records newest first, with their authors; `with_lines` adds the lines in
-    component order for the detail and history views."""
+    component order for the detail view."""
     queryset = (
         CompensationRecord.objects.filter(cancelled_at__isnull=True)
         .select_related("created_by", "cancelled_by")
         .order_by("-effective_from")
     )
     if with_lines:
-        lines = CompensationLine.objects.select_related("component").order_by(
-            "component__sort_order", "component__code"
-        )
-        queryset = queryset.prefetch_related(Prefetch("lines", queryset=lines))
+        queryset = queryset.prefetch_related(lines_in_order())
     return queryset
+
+
+def history_queryset(employee_id: int) -> QuerySet[CompensationRecord]:
+    """Every record of one employee, cancelled ones included, newest first. A cancelled row may
+    share its date with a live one (D43), so the tie goes to the higher version."""
+    return (
+        CompensationRecord.objects.filter(employee_id=employee_id)
+        .select_related("created_by", "cancelled_by")
+        .prefetch_related(lines_in_order())
+        .order_by("-effective_from", "-version")
+    )
+
+
+def audit_queryset(employee_id: int) -> QuerySet[AuditLog]:
+    """One employee's audit entries newest first, through the indexed AuditLog.employee (F7)."""
+    return (
+        AuditLog.objects.filter(employee_id=employee_id)
+        .select_related("actor")
+        .order_by("-timestamp", "-id")
+    )
 
 
 def live_records_prefetch(*, with_lines: bool = False) -> Prefetch:

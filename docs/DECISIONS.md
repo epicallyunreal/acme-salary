@@ -288,6 +288,8 @@ Decision: `audit.snapshot_employee` and `audit.snapshot_record` build the dicts 
 
 Consequences: two places describe the shape, kept equal by a test. The 10,000-employee seed measured 10.0 s on the laptop.
 
+Step 4, at the owner's direction: the serializers follow the snapshots, so the seeded audit rows and the golden hash stand. A line's `component` is its code, the record carries `employee`, and datetimes are written `+00:00`. The client reads component names and kinds from `/meta/components/`. `tests/audit/test_snapshots.py` holds the record and employee shapes equal.
+
 ## D35. Seed parameters the spec left open
 
 Context: SPEC section 11 gives shares, anchors and multipliers but not rounding, jitter or name sources.
@@ -375,6 +377,14 @@ Context: a PATCH could move `joining_date` after the first record's `effective_f
 Decision: `check_joining_before_first_record` answers `joining_date is after the first record (effective 2020-01-01)` for an existing employee, through the API now and the step 5 import. SPEC section 7 has the row.
 
 Consequences: a joining date entered too early cannot be moved past the first record in v1, including a future joiner whose start date slips, because version 1 cannot be cancelled (D26) and in-place correction is P1. Exit and re-create covers it until then, as D26 already says. The recipe's import test for the rule lands with the parser in step 5.
+
+## D46. Readings made while building the compensation API
+
+Context: four points the spec leaves open came up while writing the step 4 endpoints. None was worth stopping the step for.
+
+Decision: input serializers check shape and types only, so `gender`, `level`, `email` and the country are plain fields and the validators answer with SPEC section 7's messages. A component listed twice in `lines` is a 400 `BASE appears twice in lines`, the case the owner named in the constraint audit (D44). DRF 3.18 reports a bad list item as an object keyed by its index (`{"lines": {"1": {...}}}`), and the client maps the index to the line code it sent, as it would a list. `PUT /employees/{id}/` is not offered, because section 8 lists PATCH only.
+
+Consequences: an API client reads the same message text an import row would. The frontend's `applyServerErrors` reads both the list and the index-keyed shapes, so a DRF setting change cannot drop a message.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 
