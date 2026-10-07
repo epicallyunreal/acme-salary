@@ -17,6 +17,16 @@ import {
 import { PAGE_SIZES } from '../../lib/constants';
 import { EmptyState } from '../layout/EmptyState';
 
+declare module '@mui/x-data-grid' {
+  interface NoRowsOverlayPropsOverrides {
+    message: string;
+  }
+}
+
+function NoRowsOverlay({ message }: { message: string }) {
+  return <EmptyState message={message} />;
+}
+
 function GridToolbar() {
   return (
     <Toolbar>
@@ -49,6 +59,8 @@ interface ServerGridProps<Row extends GridValidRowModel> {
 // jsdom has no layout, so the virtualiser would render no rows under Vitest.
 const inTests = import.meta.env.MODE === 'test';
 
+const SLOTS: DataGridProps['slots'] = { toolbar: GridToolbar, noRowsOverlay: NoRowsOverlay };
+
 /**
  * A DataGrid with everything server-side (DESIGN section 6): the page, sort and filters live in
  * the URL, the grid only reports what the user did. The grid's own filter panel is off, the
@@ -68,11 +80,6 @@ export function ServerGrid<Row extends GridValidRowModel>({
   emptyMessage,
   height = 'calc(100vh - 280px)',
 }: ServerGridProps<Row>) {
-  const slots: DataGridProps['slots'] = {
-    toolbar: GridToolbar,
-    noRowsOverlay: () => <EmptyState message={emptyMessage} />,
-  };
-
   return (
     <DataGrid<Row>
       rows={rows}
@@ -85,7 +92,7 @@ export function ServerGrid<Row extends GridValidRowModel>({
       disableColumnFilter
       disableRowSelectionOnClick
       density="compact"
-      pageSizeOptions={PAGE_SIZES as unknown as number[]}
+      pageSizeOptions={[...PAGE_SIZES]}
       paginationModel={paginationModel}
       onPaginationModelChange={onPaginationModelChange}
       sortModel={sortModel}
@@ -94,7 +101,8 @@ export function ServerGrid<Row extends GridValidRowModel>({
       initialState={{ columns: { columnVisibilityModel: initialColumnVisibility } }}
       onRowClick={onRowClick ? (params: GridRowParams<Row>) => onRowClick(params.row) : undefined}
       showToolbar
-      slots={slots}
+      slots={SLOTS}
+      slotProps={{ noRowsOverlay: { message: emptyMessage } }}
       disableVirtualization={inTests}
       sx={{
         height,

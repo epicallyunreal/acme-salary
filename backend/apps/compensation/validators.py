@@ -24,6 +24,7 @@ from django.db.models import Q
 
 from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
+from apps.core import queries as core_queries
 from apps.core.dates import today_utc
 from apps.core.exceptions import Conflict, Invalid
 from apps.core.models import Country, Department, SalaryComponent
@@ -193,14 +194,11 @@ def build_context(
     for department in Department.objects.all():
         ctx.departments[department.code.lower()] = department
         ctx.departments[department.name.lower()] = department
-    components = list(SalaryComponent.objects.filter(is_active=True).order_by("sort_order", "code"))
-    global_components = {c.code: c for c in components if c.country_id is None}
+    components = list(core_queries.active_components())
     for country_code in ctx.countries:
-        ctx.components_by_country[country_code] = dict(global_components)
-    for component in components:
-        if component.country_id is not None:
-            ctx.components_by_country.setdefault(component.country_id, dict(global_components))
-            ctx.components_by_country[component.country_id][component.code] = component
+        ctx.components_by_country[country_code] = {
+            c.code: c for c in core_queries.components_for_country(country_code, components)
+        }
 
     matched = {employee.employee_code: employee for employee in employees}
     code_list = sorted(codes - set(matched))

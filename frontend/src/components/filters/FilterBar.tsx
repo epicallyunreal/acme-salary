@@ -183,7 +183,7 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
       />
       <CommitField
         label="Designation"
-        placeholder="Exact title"
+        placeholder="Title, any case"
         value={filters.designation.join(', ')}
         onCommit={(text) =>
           onChange({
@@ -257,9 +257,7 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         >
           <MenuItem value="usd">USD</MenuItem>
           <MenuItem value="eur">EUR</MenuItem>
-          <MenuItem value="local" disabled={!localAllowed}>
-            Local
-          </MenuItem>
+          {localAllowed ? <MenuItem value="local">Local</MenuItem> : null}
         </Select>
       </FormControl>
       {filtered ? (

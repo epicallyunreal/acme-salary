@@ -11,6 +11,8 @@ export type Query = Record<string, QueryValue>;
 
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
+  /** The JSON body, or a function that builds it when the request goes out, so the retry after
+   * a token refresh sends current values (the logout body carries the refresh token). */
   body?: unknown;
   query?: Query;
   signal?: AbortSignal;
@@ -78,14 +80,16 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
   const headers = new Headers();
   const token = getAccessToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const payload =
+    typeof options.body === 'function' ? (options.body as () => unknown)() : options.body;
+  const isForm = typeof FormData !== 'undefined' && payload instanceof FormData;
   let body: BodyInit | undefined;
-  if (options.body !== undefined) {
+  if (payload !== undefined) {
     if (isForm) {
-      body = options.body as FormData;
+      body = payload;
     } else {
       headers.set('Content-Type', 'application/json');
-      body = JSON.stringify(options.body);
+      body = JSON.stringify(payload);
     }
   }
   return fetch(apiUrl(`${path}${buildQuery(options.query)}`), {
@@ -107,7 +111,7 @@ async function parse(response: Response): Promise<unknown> {
   }
 }
 
-/** Public routes (login, refresh) skip the retry; everything else goes through it. */
+/** A request made without a session, such as login, gets no retry; everything else does. */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let response = await send(path, options);
   if (response.status === 401 && getAccessToken()) {

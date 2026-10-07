@@ -2,8 +2,11 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import { getAccessToken, setSession } from '../../lib/auth';
+import { http, HttpResponse } from 'msw/http';
+
+import { getAccessToken, getRefreshToken, setSession } from '../../lib/auth';
 import { renderApp } from '../../test/render';
+import { server } from '../../test/setup';
 
 describe('RequireAuth', () => {
   it('sends a signed-out visitor to the login page and remembers where they were', async () => {
@@ -17,6 +20,13 @@ describe('RequireAuth', () => {
 
   it('shows the shell with the signed-in email and signs out', async () => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
+    const logouts: { bearer: string | null; body: unknown }[] = [];
+    server.use(
+      http.post('/api/v1/auth/logout/', async ({ request }) => {
+        logouts.push({ bearer: request.headers.get('authorization'), body: await request.json() });
+        return HttpResponse.json({});
+      }),
+    );
     const { router } = renderApp('/employees');
     const user = userEvent.setup();
 
@@ -28,7 +38,9 @@ describe('RequireAuth', () => {
 
     await screen.findByRole('heading', { name: 'ACME Salary' });
     expect(router.state.location.pathname).toBe('/login');
+    expect(logouts).toEqual([{ bearer: 'Bearer access-1', body: { refresh: 'refresh-1' } }]);
     expect(getAccessToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
   });
 
   it('shows the not-found page inside the shell for an unknown address', async () => {

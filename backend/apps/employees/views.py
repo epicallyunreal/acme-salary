@@ -3,19 +3,15 @@
 Views parse `on` and `currency`, load one RateTable for the request, and hand off to queries.
 """
 
-from django.db.models import Prefetch
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework.filters import SearchFilter
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 
-from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core import fx
 from apps.core.dates import parse_on
-from apps.core.filters import parse_csv
+from apps.core.filters import BoundedSearchFilter, parse_csv
 from apps.core.models import Country
 from apps.employees import queries
 from apps.employees.filters import DirectoryFilterSet
-from apps.employees.models import Employee
 from apps.employees.serializers import EmployeeDetailSerializer, EmployeeListSerializer
 
 
@@ -47,7 +43,7 @@ class ReportingMixin:
 
 class EmployeeListView(ReportingMixin, ListAPIView):
     serializer_class = EmployeeListSerializer
-    filter_backends = [DjangoFilterBackend, SearchFilter]
+    filter_backends = [DjangoFilterBackend, BoundedSearchFilter]
     filterset_class = DirectoryFilterSet
     search_fields = ["full_name", "employee_code", "email"]
 
@@ -67,17 +63,7 @@ class EmployeeDetailView(ReportingMixin, RetrieveAPIView):
     filter_backends = []
 
     def get_queryset(self):
-        lines = CompensationLine.objects.select_related("component").order_by(
-            "component__sort_order", "component__code"
-        )
-        records = (
-            CompensationRecord.objects.filter(cancelled_at__isnull=True)
-            .prefetch_related(Prefetch("lines", queryset=lines))
-            .order_by("-effective_from")
-        )
-        return Employee.objects.select_related("country", "department").prefetch_related(
-            Prefetch("compensation_records", queryset=records, to_attr="live_records")
-        )
+        return queries.detail_queryset()
 
     def get_object(self):
         if not hasattr(self, "_employee"):

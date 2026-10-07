@@ -63,27 +63,52 @@ export function useAccessToken(): string | null {
 
 let inflight: Promise<boolean> | null = null;
 
-async function refresh(): Promise<boolean> {
-  const token = getRefreshToken();
-  if (!token) return false;
-  let response: Response;
+const LOCK_NAME = 'acme-refresh';
+
+async function post(token: string): Promise<Response | null> {
   try {
-    response = await fetch(apiUrl('/auth/refresh/'), {
+    return await fetch(apiUrl('/auth/refresh/'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh: token }),
     });
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * One rotation. The stored token is read here, inside the cross-tab lock, because another tab
+ * may have rotated it while this one waited; presenting a rotated-out token would revoke every
+ * session (D21). A refusal ends the session only while the storage still holds the refused
+ * token; if a newer one appeared meanwhile, it gets one try.
+ */
+async function refresh(attempt = 1): Promise<boolean> {
+  const token = getRefreshToken();
+  if (!token) return false;
+  const response = await post(token);
+  if (response === null) return false;
   if (!response.ok) {
-    clearSession();
-    return false;
+    if (response.status !== 400 && response.status !== 401) return false;
+    // A 502 during a deploy or a 429 keeps the token for later; only a refusal ends things.
+    const stored = getRefreshToken();
+    if (stored === token) {
+      clearSession();
+      return false;
+    }
+    return stored !== null && attempt === 1 ? refresh(2) : false;
   }
   const data = (await response.json()) as { access: string; refresh?: string };
   // Rotation returns a new refresh token; keep the old one only if the server did not.
   setSession({ access: data.access, refresh: data.refresh ?? token });
   return true;
+}
+
+/** Serialised across tabs through the Web Locks API; jsdom has none, so it falls back. */
+function refreshExclusively(): Promise<boolean> {
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+  if (locks) return locks.request(LOCK_NAME, () => refresh());
+  return refresh();
 }
 
 /**
@@ -92,7 +117,7 @@ async function refresh(): Promise<boolean> {
  */
 export function refreshOnce(): Promise<boolean> {
   if (!inflight) {
-    inflight = refresh().finally(() => {
+    inflight = refreshExclusively().finally(() => {
       inflight = null;
     });
   }

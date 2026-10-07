@@ -19,7 +19,7 @@ describe('applyChange', () => {
     expect(applyChange(paged, { country: ['IN'] }).page).toBe(1);
     expect(applyChange(paged, { search: 'x' }).page).toBe(1);
     expect(applyChange(paged, { ordering: '-gross' }).page).toBe(4);
-    expect(applyChange(paged, { page_size: 50, page: 1 }).page).toBe(1);
+    expect(applyChange(paged, { page_size: 50 }).page).toBe(4);
     expect(applyChange(paged, { page: 2 }).page).toBe(2);
   });
 

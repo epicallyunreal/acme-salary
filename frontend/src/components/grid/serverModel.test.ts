@@ -43,6 +43,42 @@ describe('toListParams', () => {
     });
   });
 
+  it('sends every filter under its SPEC F4 name', () => {
+    const params = toListParams({
+      paginationModel: { page: 0, pageSize: 25 },
+      sortModel: [],
+      filters: {
+        ...DEFAULT_STATE,
+        country: ['IN'],
+        department: ['engineering'],
+        designation: ['Senior Engineer'],
+        level: [3],
+        status: 'exited',
+        gross_min: '10000',
+        gross_max: '250000.50',
+        joined_after: '2020-01-01',
+        joined_before: '2026-09-30',
+        currency: 'local',
+      },
+      search: '',
+    });
+
+    expect(params).toEqual({
+      page: 1,
+      page_size: 25,
+      country: ['IN'],
+      department: ['engineering'],
+      designation: ['Senior Engineer'],
+      level: [3],
+      status: 'exited',
+      gross_min: '10000',
+      gross_max: '250000.50',
+      joined_after: '2020-01-01',
+      joined_before: '2026-09-30',
+      currency: 'local',
+    });
+  });
+
   it('ignores a sort on a column the API cannot order by', () => {
     expect(fromSortModel([{ field: 'status', sort: 'asc' }])).toBe('');
     expect(fromSortModel([{ field: 'full_name', sort: 'asc' }])).toBe('full_name');
@@ -99,15 +135,36 @@ describe('URL round trip', () => {
     expect(state.joined_after).toBe('');
   });
 
+  it('drops local when the URL does not carry exactly one country', () => {
+    expect(fromSearchParams(new URLSearchParams('currency=local')).currency).toBe('usd');
+    expect(fromSearchParams(new URLSearchParams('currency=local&country=IN,US')).currency).toBe(
+      'usd',
+    );
+    expect(fromSearchParams(new URLSearchParams('currency=local&country=IN')).currency).toBe(
+      'local',
+    );
+  });
+
+  it('ignores a reporting date in the URL, which the UI never sends (P1)', () => {
+    const state = fromSearchParams(new URLSearchParams('on=2026-01-01&page=2'));
+    const params = toListParams({
+      paginationModel: toPaginationModel(state.page, state.page_size),
+      sortModel: [],
+      filters: state,
+      search: '',
+    });
+
+    expect(toSearchParams(state).toString()).toBe('page=2');
+    expect('on' in params).toBe(false);
+  });
+
   it('derives the grid models from the URL state', () => {
     const state = { ...DEFAULT_STATE, page: 2, page_size: 50, ordering: '-gross' };
 
-    expect(toPaginationModel(state)).toEqual({ page: 1, pageSize: 50 });
-    expect(toSortModel(state)).toEqual([{ field: 'gross_reporting', sort: 'desc' }]);
-    expect(toSortModel({ ...state, ordering: 'full_name' })).toEqual([
-      { field: 'full_name', sort: 'asc' },
-    ]);
-    expect(toSortModel(DEFAULT_STATE)).toEqual([]);
+    expect(toPaginationModel(state.page, state.page_size)).toEqual({ page: 1, pageSize: 50 });
+    expect(toSortModel(state.ordering)).toEqual([{ field: 'gross_reporting', sort: 'desc' }]);
+    expect(toSortModel('full_name')).toEqual([{ field: 'full_name', sort: 'asc' }]);
+    expect(toSortModel('')).toEqual([]);
   });
 });
 

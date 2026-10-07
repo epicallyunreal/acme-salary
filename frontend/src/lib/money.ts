@@ -31,7 +31,12 @@ export function formatCompact(value: string, currency: string): string {
   return formatter(currency, 1, 'compact').format(value as Intl.StringNumericLiteral);
 }
 
-/** The annual figure divided by twelve, for the "per month" line on the detail card. Display only. */
-export function monthly(value: string, currency: string): string {
-  return formatMoney((Number(value) / 12).toFixed(2), currency);
+/** The annual figure divided by twelve, exact to the cent and rounded half up, as a decimal
+ * string for `formatMoney`. Integer arithmetic on cents, so no float touches the money. */
+export function monthly(value: string): string {
+  const [whole, fraction = ''] = value.split('.');
+  const cents = BigInt(whole) * 100n + BigInt((fraction + '00').slice(0, 2));
+  const twelfth = cents / 12n;
+  const rounded = (cents % 12n) * 2n >= 12n ? twelfth + 1n : twelfth;
+  return `${rounded / 100n}.${(rounded % 100n).toString().padStart(2, '0')}`;
 }

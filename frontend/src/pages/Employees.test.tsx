@@ -4,17 +4,35 @@ import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { setSession } from '../lib/auth';
-import { employeePage } from '../test/fixtures/employees';
+import { employeePage, employees } from '../test/fixtures/employees';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
 
+/** Sixty rows, so the directory has three pages of 25; every row is a copy of the fixture. */
+function sixtyRows(params: URLSearchParams) {
+  const page = Number(params.get('page') ?? '1');
+  const pageSize = Number(params.get('page_size') ?? '25');
+  const results = Array.from({ length: 60 }, (_, index) => ({
+    ...employees[index % employees.length],
+    id: index + 1,
+    employee_code: `ACME-${String(index + 1).padStart(6, '0')}`,
+  })).slice((page - 1) * pageSize, page * pageSize);
+  return {
+    count: 60,
+    next: page * pageSize < 60 ? 'next' : null,
+    previous: page > 1 ? 'prev' : null,
+    results,
+  };
+}
+
 /** Replaces the directory handler with one that records every query string it receives. */
-function recordRequests() {
+function recordRequests({ rows = 4 } = {}) {
   const seen: URLSearchParams[] = [];
   server.use(
     http.get('/api/v1/employees/', ({ request }) => {
-      seen.push(new URL(request.url).searchParams);
-      return HttpResponse.json(employeePage);
+      const params = new URL(request.url).searchParams;
+      seen.push(params);
+      return HttpResponse.json(rows === 60 ? sixtyRows(params) : employeePage);
     }),
   );
   return seen;
@@ -50,12 +68,37 @@ describe('Employees', () => {
     expect(screen.queryByText('asha@acme.example')).not.toBeInTheDocument();
   });
 
+  it('keeps a deep link on its page and pages forward with the filters kept', async () => {
+    const seen = recordRequests({ rows: 60 });
+    const { router } = renderApp('/employees?page=2&country=IN');
+    const user = userEvent.setup();
+
+    await screen.findByText('ACME-000026');
+    expect(seen.map((params) => params.get('page'))).toEqual(['2']);
+    expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({
+      page: '2',
+      country: 'IN',
+    });
+
+    await user.click(screen.getByRole('button', { name: /next page/i }));
+
+    await screen.findByText('ACME-000051');
+    expect(seen.at(-1)?.get('page')).toBe('3');
+    expect(seen.at(-1)?.get('country')).toBe('IN');
+    expect(seen.map((params) => params.get('page'))).toEqual(['2', '3']);
+    expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({
+      page: '3',
+      country: 'IN',
+    });
+  });
+
   it('sends the URL state to the API and a filter change goes back to page 1', async () => {
-    const seen = recordRequests();
+    const seen = recordRequests({ rows: 60 });
     renderApp('/employees?page=2&ordering=-gross&level=3');
     const user = userEvent.setup();
-    await rowsShown();
+    await screen.findByText('ACME-000026');
 
+    expect(seen).toHaveLength(1);
     expect(seen[0].get('page')).toBe('2');
     expect(seen[0].get('ordering')).toBe('-gross');
     expect(seen[0].get('level')).toBe('3');
@@ -66,6 +109,7 @@ describe('Employees', () => {
     await user.keyboard('{Escape}');
 
     await waitFor(() => expect(seen.at(-1)?.get('country')).toBe('IN'));
+    expect(seen).toHaveLength(2);
     expect(seen.at(-1)?.get('page')).toBe('1');
     expect(seen.at(-1)?.get('ordering')).toBe('-gross');
     expect(seen.at(-1)?.get('level')).toBe('3');
@@ -89,6 +133,11 @@ describe('Employees', () => {
 
     await waitFor(() => expect(seen.at(-1)?.get('country')).toBe('IN,US'));
     expect(seen.at(-1)?.has('currency')).toBe(false);
+    expect(screen.getByText('Gross (USD)')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Currency'));
+    expect(await screen.findByRole('option', { name: 'EUR' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Local' })).not.toBeInTheDocument();
   });
 
   it('searches after a pause and sorts by the reporting gross', async () => {
@@ -99,6 +148,8 @@ describe('Employees', () => {
 
     await user.type(screen.getByLabelText('Search'), 'rao');
     await waitFor(() => expect(seen.at(-1)?.get('search')).toBe('rao'));
+    // One request for the whole word, not one per keystroke.
+    expect(seen.map((params) => params.get('search'))).toEqual([null, 'rao']);
 
     await user.click(screen.getByRole('columnheader', { name: 'Gross (USD)' }));
     await waitFor(() => expect(seen.at(-1)?.get('ordering')).toBe('gross'));
@@ -146,5 +197,34 @@ describe('Employees', () => {
       'No employees match these filters. Clear a filter or change the search.',
     );
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+  });
+
+  it('says what to do when there is no data at all', async () => {
+    server.use(
+      http.get('/api/v1/employees/', () =>
+        HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      ),
+    );
+    renderApp('/employees');
+
+    await screen.findByText('No employees yet. Import a spreadsheet or add an employee.');
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
+  });
+
+  it('sends the user to login, with the way back, when the session cannot be refreshed', async () => {
+    server.use(
+      http.get('/api/v1/employees/', () =>
+        HttpResponse.json({ detail: 'expired' }, { status: 401 }),
+      ),
+      http.post('/api/v1/auth/refresh/', () =>
+        HttpResponse.json({ detail: 'Token is blacklisted' }, { status: 401 }),
+      ),
+    );
+    const { router } = renderApp('/employees?country=IN');
+
+    await screen.findByRole('heading', { name: 'ACME Salary' });
+    const { pathname, search } = router.state.location;
+    expect(pathname).toBe('/login');
+    expect(new URLSearchParams(search).get('next')).toBe('/employees?country=IN');
   });
 });

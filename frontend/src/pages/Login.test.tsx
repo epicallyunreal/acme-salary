@@ -17,13 +17,13 @@ async function signIn(password = HR_PASSWORD) {
 
 describe('Login', () => {
   it('signs in and returns to the page the user wanted', async () => {
-    const { router } = renderApp('/login?next=%2Femployees%3Fpage%3D2');
+    const { router } = renderApp('/login?next=%2Femployees%3Fcountry%3DIN');
 
     await signIn();
 
-    await screen.findByRole('heading', { name: 'Employees' });
+    await screen.findByText('Asha Rao');
     const { pathname, search } = router.state.location;
-    expect(`${pathname}${search}`).toBe('/employees?page=2');
+    expect(`${pathname}${search}`).toBe('/employees?country=IN');
     expect(getRefreshToken()).toBe('refresh-1');
     expect(await screen.findByText(HR_EMAIL)).toBeInTheDocument();
   });

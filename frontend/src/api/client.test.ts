@@ -1,9 +1,17 @@
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { clearSession, getAccessToken, getRefreshToken, setSession } from '../lib/auth';
+import {
+  clearSession,
+  getAccessToken,
+  getRefreshToken,
+  refreshOnce,
+  setSession,
+} from '../lib/auth';
+import { REFRESH_STORAGE_KEY } from '../lib/constants';
 import { HR_EMAIL, HR_PASSWORD } from '../test/handlers';
 import { server } from '../test/setup';
+import { logout } from './auth';
 import { ApiError, apiFetch, buildQuery, setUnauthenticatedHandler } from './client';
 import type { Me } from './types';
 
@@ -72,6 +80,60 @@ describe('apiFetch', () => {
     expect(getRefreshToken()).toBeNull();
   });
 
+  it('keeps and uses a newer token when another tab rotated it first', async () => {
+    const presented: string[] = [];
+    server.use(
+      http.post('/api/v1/auth/refresh/', async ({ request }) => {
+        const body = (await request.json()) as { refresh: string };
+        presented.push(body.refresh);
+        if (body.refresh === 'refresh-1') {
+          // The other tab's rotation landed in storage while this request was in flight.
+          localStorage.setItem(REFRESH_STORAGE_KEY, 'refresh-2');
+          return HttpResponse.json({ detail: 'Token is blacklisted' }, { status: 401 });
+        }
+        return HttpResponse.json({ access: 'access-new', refresh: 'refresh-3' });
+      }),
+      http.get('/api/v1/auth/me/', ({ request }) =>
+        request.headers.get('authorization') === 'Bearer access-new'
+          ? HttpResponse.json({ id: 1, email: HR_EMAIL })
+          : HttpResponse.json({ detail: 'expired' }, { status: 401 }),
+      ),
+    );
+
+    const me = await apiFetch<Me>('/auth/me/');
+
+    expect(me.email).toBe(HR_EMAIL);
+    expect(presented).toEqual(['refresh-1', 'refresh-2']);
+    expect(getRefreshToken()).toBe('refresh-3');
+  });
+
+  it('reads the stored token inside the cross-tab lock', async () => {
+    const presented: string[] = [];
+    const locks = {
+      request: async (_name: string, callback: () => Promise<boolean>) => {
+        // Another tab held the lock first and rotated the token before this tab's turn.
+        localStorage.setItem(REFRESH_STORAGE_KEY, 'refresh-2');
+        return callback();
+      },
+    };
+    Object.defineProperty(navigator, 'locks', { value: locks, configurable: true });
+    server.use(
+      http.post('/api/v1/auth/refresh/', async ({ request }) => {
+        presented.push(((await request.json()) as { refresh: string }).refresh);
+        return HttpResponse.json({ access: 'access-new', refresh: 'refresh-3' });
+      }),
+    );
+
+    try {
+      expect(await refreshOnce()).toBe(true);
+    } finally {
+      Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
+    }
+
+    expect(presented).toEqual(['refresh-2']);
+    expect(getAccessToken()).toBe('access-new');
+  });
+
   it('ends the session when the retry after a good refresh still answers 401', async () => {
     const onUnauthenticated = vi.fn();
     setUnauthenticatedHandler(onUnauthenticated);
@@ -106,6 +168,30 @@ describe('apiFetch', () => {
     expect(refreshes).toBe(0);
   });
 
+  it('signs out with the rotated refresh token when the access token had expired', async () => {
+    let refreshes = 0;
+    const blacklisted: string[] = [];
+    server.use(
+      http.post('/api/v1/auth/refresh/', () => {
+        refreshes += 1;
+        return HttpResponse.json({ access: 'access-new', refresh: 'refresh-2' });
+      }),
+      http.post('/api/v1/auth/logout/', async ({ request }) => {
+        if (request.headers.get('authorization') !== 'Bearer access-new') {
+          return HttpResponse.json({ detail: 'expired' }, { status: 401 });
+        }
+        const body = (await request.json()) as { refresh: string };
+        blacklisted.push(body.refresh);
+        return HttpResponse.json({});
+      }),
+    );
+
+    await logout();
+
+    expect(refreshes).toBe(1);
+    expect(blacklisted).toEqual(['refresh-2']);
+  });
+
   it('exposes DRF field errors on a 400', async () => {
     server.use(
       http.get('/api/v1/employees/', () =>
@@ -125,15 +211,13 @@ describe('apiFetch', () => {
     expect(error.detail()).toBeNull();
   });
 
-  it('signs in and stores both tokens', async () => {
+  it('returns both tokens on a good login', async () => {
     clearSession();
     const tokens = await apiFetch<{ access: string; refresh: string }>('/auth/login/', {
       method: 'POST',
       body: { email: HR_EMAIL, password: HR_PASSWORD },
     });
-    setSession(tokens);
 
-    expect(getAccessToken()).toBe('access-1');
-    expect(getRefreshToken()).toBe('refresh-1');
+    expect(tokens).toEqual({ access: 'access-1', refresh: 'refresh-1' });
   });
 });

@@ -14,7 +14,7 @@ def test_countries(api, lookups):
     india = next(row for row in body if row["code"] == "IN")
     assert india["name"] == "India"
     assert india["currency_code"] == "INR"
-    assert isinstance(india["min_gross_annual"], str)
+    assert india["min_gross_annual"] == "400000.00"
 
 
 def test_departments_sorted_by_name(api, lookups):
@@ -86,11 +86,19 @@ def test_exchange_rates_default_to_today_and_reject_a_bad_date(api, rates):
 
 @pytest.mark.parametrize(
     "path",
-    ["/api/v1/meta/countries/", "/api/v1/meta/components/", "/api/v1/meta/exchange-rates/"],
+    [
+        "/api/v1/meta/countries/",
+        "/api/v1/meta/departments/",
+        "/api/v1/meta/components/",
+        "/api/v1/meta/exchange-rates/",
+    ],
 )
 def test_meta_query_counts(api, rates, path, django_assert_num_queries):
-    """User from the JWT plus one query; components with a country check the country first."""
+    """User from the JWT plus one query."""
     with django_assert_num_queries(2):
         api.get(path)
+
+
+def test_components_for_a_country_check_the_country_first(api, rates, django_assert_num_queries):
     with django_assert_num_queries(3):
         api.get("/api/v1/meta/components/", {"country": "SG"})

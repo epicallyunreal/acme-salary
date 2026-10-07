@@ -21,8 +21,9 @@ describe('formatDate', () => {
 });
 
 describe('formatDateTime', () => {
-  it("adds the time in the viewer's zone", () => {
-    expect(formatDateTime('2026-10-07T12:00:00Z')).toMatch(/^7 Oct 2026, \d\d:\d\d$/);
+  it("adds the time in the viewer's zone (the tests run in New York)", () => {
+    expect(formatDateTime('2026-10-07T12:00:00Z')).toBe('7 Oct 2026, 08:00');
+    expect(formatDateTime('2026-10-08T03:30:00Z')).toBe('7 Oct 2026, 23:30');
     expect(formatDateTime(null)).toBe('');
   });
 });

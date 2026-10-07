@@ -1,4 +1,5 @@
 import { Typography } from '@mui/material';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router';
 
 import { useEmployeeList } from '../api/employees';
@@ -20,8 +21,12 @@ import { PageHeader } from '../components/layout/PageHeader';
 export function Employees() {
   const { state, set, reset } = useUrlFilters();
   const navigate = useNavigate();
-  const paginationModel = toPaginationModel(state);
-  const sortModel = toSortModel(state);
+  // Stable references: a fresh model each render makes the grid re-apply it, report a change
+  // and reset the page.
+  const { page, page_size: pageSize, ordering, currency } = state;
+  const paginationModel = useMemo(() => toPaginationModel(page, pageSize), [page, pageSize]);
+  const sortModel = useMemo(() => toSortModel(ordering), [ordering]);
+  const columns = useMemo(() => directoryColumns(currency), [currency]);
   const params = toListParams({ paginationModel, sortModel, filters: state, search: state.search });
   const employees = useEmployeeList(params);
   const filtered = isFiltered(state);
@@ -46,7 +51,7 @@ export function Employees() {
       ) : (
         <ServerGrid
           rows={employees.data?.results ?? []}
-          columns={directoryColumns(state.currency)}
+          columns={columns}
           rowCount={count ?? 0}
           loading={employees.isPending || employees.isFetching}
           paginationModel={paginationModel}

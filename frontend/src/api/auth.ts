@@ -14,8 +14,13 @@ export function login(credentials: Credentials): Promise<TokenPair> {
   return apiFetch<TokenPair>('/auth/login/', { method: 'POST', body: credentials });
 }
 
-export function logout(refresh: string): Promise<void> {
-  return apiFetch<void>('/auth/logout/', { method: 'POST', body: { refresh } });
+/** Blacklists whichever refresh token is current when the request goes out, so the retry after
+ * a rotation sends the new one rather than the one the rotation just blacklisted. */
+export function logout(): Promise<void> {
+  return apiFetch<void>('/auth/logout/', {
+    method: 'POST',
+    body: () => ({ refresh: getRefreshToken() }),
+  });
 }
 
 export function me(): Promise<Me> {
@@ -39,10 +44,9 @@ export function useLogout() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const refresh = getRefreshToken();
-      if (refresh) {
+      if (getRefreshToken()) {
         try {
-          await logout(refresh);
+          await logout();
         } catch {
           // The token may already be expired or blacklisted; signing out still succeeds locally.
         }

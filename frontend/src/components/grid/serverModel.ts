@@ -96,13 +96,20 @@ function matching(value: string | null, pattern: RegExp): string {
   return value !== null && pattern.test(value) ? value : '';
 }
 
+/** `local` is a reporting currency only while exactly one country is selected (DESIGN 6). */
+export function withCurrencyRule(state: GridState): GridState {
+  if (state.currency === 'local' && state.country.length !== 1)
+    return { ...state, currency: 'usd' };
+  return state;
+}
+
 /** Reads the URL. Anything malformed falls back to the default rather than reaching the API. */
 export function fromSearchParams(params: URLSearchParams): GridState {
   const page = Number(params.get('page'));
   const pageSize = Number(params.get('page_size'));
   const ordering = params.get('ordering') ?? '';
   const orderingField = ordering.replace(/^-/, '');
-  return {
+  return withCurrencyRule({
     search: params.get('search') ?? '',
     country: csv(params.get('country')),
     department: csv(params.get('department')),
@@ -121,7 +128,7 @@ export function fromSearchParams(params: URLSearchParams): GridState {
     page: Number.isInteger(page) && page > 0 ? page : 1,
     page_size: (PAGE_SIZES as readonly number[]).includes(pageSize) ? pageSize : DEFAULT_PAGE_SIZE,
     ordering: Object.values(SORT_FIELDS).includes(orderingField) ? ordering : '',
-  };
+  });
 }
 
 /** Writes the URL. Defaults and empties are dropped so links stay short. */
@@ -139,15 +146,16 @@ export function toSearchParams(state: GridState): URLSearchParams {
   return params;
 }
 
-export function toPaginationModel(state: GridState): GridPaginationModel {
-  return { page: state.page - 1, pageSize: state.page_size };
+/** The URL's one-based page as the grid's zero-based model. */
+export function toPaginationModel(page: number, pageSize: number): GridPaginationModel {
+  return { page: page - 1, pageSize };
 }
 
 /** `-gross` becomes a descending sort on the reporting-gross column. */
-export function toSortModel(state: GridState): GridSortModel {
-  if (!state.ordering) return [];
-  const desc = state.ordering.startsWith('-');
-  const alias = desc ? state.ordering.slice(1) : state.ordering;
+export function toSortModel(ordering: string): GridSortModel {
+  if (!ordering) return [];
+  const desc = ordering.startsWith('-');
+  const alias = desc ? ordering.slice(1) : ordering;
   const field = Object.keys(SORT_FIELDS).find((column) => SORT_FIELDS[column] === alias);
   return field ? [{ field, sort: desc ? 'desc' : 'asc' }] : [];
 }

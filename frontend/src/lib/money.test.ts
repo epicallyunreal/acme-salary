@@ -32,7 +32,13 @@ describe('formatCompact', () => {
 });
 
 describe('monthly', () => {
-  it('divides the annual figure by twelve for display', () => {
-    expect(monthly('120000.00', 'USD')).toBe(`USD${nbsp}10,000`);
+  it('divides the annual figure by twelve to the cent, half up, without a float', () => {
+    expect(monthly('120000.00')).toBe('10000.00');
+    expect(monthly('100000.00')).toBe('8333.33');
+    expect(monthly('100.05')).toBe('8.34');
+    expect(monthly('1')).toBe('0.08');
+    expect(monthly('100001.95')).toBe('8333.50');
+    expect(monthly('9007199254740993.00')).toBe('750599937895082.75');
+    expect(formatMoney(monthly('120000.00'), 'USD')).toBe(`USD${nbsp}10,000`);
   });
 });

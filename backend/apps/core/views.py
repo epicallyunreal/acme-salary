@@ -1,7 +1,6 @@
 """The health check and the four lookup endpoints under /meta/ (SPEC section 8)."""
 
 from django.contrib.auth import get_user_model
-from django.db.models import Q
 from django.http import Http404, HttpRequest, JsonResponse
 from django.views.decorators.http import require_GET
 from rest_framework import serializers
@@ -10,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core import fx
+from apps.core import queries as core_queries
 from apps.core.dates import parse_on
 from apps.core.models import Country, Department, SalaryComponent
 from apps.core.money import render
@@ -60,15 +60,15 @@ class ComponentListView(ListAPIView):
 
     serializer_class = ComponentSerializer
     pagination_class = None
+    filter_backends = []
 
     def get_queryset(self):
-        queryset = SalaryComponent.objects.filter(is_active=True).order_by("sort_order", "code")
         code = self.request.query_params.get("country")
-        if code:
-            if not Country.objects.filter(code=code).exists():
-                raise Http404(f"Unknown country_code: {code}")
-            queryset = queryset.filter(Q(country__isnull=True) | Q(country_id=code))
-        return queryset
+        if not code:
+            return core_queries.active_components()
+        if not Country.objects.filter(code=code).exists():
+            raise Http404(f"Unknown country_code: {code}")
+        return core_queries.components_for_country(code)
 
 
 class ExchangeRateView(APIView):

@@ -32,8 +32,8 @@ export function directoryColumns(reportingCurrency: string): GridColDef<Employee
     {
       field: 'country',
       headerName: 'Country',
-      width: 90,
-      valueGetter: (_value, row) => row.country.code,
+      width: 130,
+      valueGetter: (_value, row) => row.country.name,
     },
     { field: 'designation', headerName: 'Designation', width: 180 },
     { field: 'level', headerName: 'Level', type: 'number', width: 80 },

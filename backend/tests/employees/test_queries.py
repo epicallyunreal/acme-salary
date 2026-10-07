@@ -6,9 +6,18 @@ from django.db.models import Subquery
 
 from apps.compensation import services as compensation
 from apps.compensation.services import RecordInput
+from apps.core import fx
+from apps.core.money import q2
 from apps.employees import services
 from apps.employees.models import Employee
-from apps.employees.queries import pick_shown, shown_label, shown_record_subquery, status_on
+from apps.employees.queries import (
+    directory_queryset,
+    gross_bound,
+    pick_shown,
+    shown_label,
+    shown_record_subquery,
+    status_on,
+)
 from tests.factories import EmployeeFactory
 
 pytestmark = pytest.mark.django_db
@@ -93,10 +102,6 @@ def test_status_on(people, today):
 
 
 def test_directory_queryset_annotations_agree_with_the_python_rules(people, today, rates):
-    from apps.core import fx
-    from apps.core.money import q2
-    from apps.employees.queries import directory_queryset
-
     table = fx.RateTable.load(today)
     rows = {row.employee_code: row for row in directory_queryset(today, "USD", table)}
 
@@ -117,9 +122,6 @@ def test_directory_queryset_annotations_agree_with_the_python_rules(people, toda
 
 
 def test_directory_queryset_without_a_record(lookups, today, rates):
-    from apps.core import fx
-    from apps.employees.queries import directory_queryset
-
     EmployeeFactory(employee_code="ACME-000009")
 
     row = directory_queryset(today, "USD", fx.RateTable.load(today)).get()
@@ -128,7 +130,5 @@ def test_directory_queryset_without_a_record(lookups, today, rates):
 
 
 def test_gross_bound():
-    from apps.employees.queries import gross_bound
-
     assert gross_bound(Decimal("100"), "min") == Decimal("99.995")
     assert gross_bound(Decimal("100"), "max") == Decimal("100.005")

@@ -1,4 +1,4 @@
-import { createBrowserRouter, createMemoryRouter, Navigate, type RouteObject } from 'react-router';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 
 import { AppShell } from './components/layout/AppShell';
 import { RequireAuth } from './components/layout/RequireAuth';
@@ -26,9 +26,4 @@ export const routes: RouteObject[] = [
 
 export function createAppRouter() {
   return createBrowserRouter(routes);
-}
-
-/** The same routes in memory, for tests that start at a given URL. */
-export function createTestRouter(initialEntries: string[]) {
-  return createMemoryRouter(routes, { initialEntries });
 }

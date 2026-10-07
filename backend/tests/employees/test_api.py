@@ -33,9 +33,10 @@ def person(code, name, **fields):
 
 
 @pytest.fixture
-def cast(rates):
-    """Six people across three currencies. Reporting-currency gross in USD on 7 Oct 2026:
-    dev 7,200 < farah 10,800 < esha 14,400 < asha 17,400 < ben 100,000 < chloe 107,600."""
+def cast(rates, hr_user):
+    """Six people across three currencies, written by the HR Manager. Reporting-currency gross
+    in USD on 7 Oct 2026: dev 7,200 < farah 10,800 < esha 14,400 < asha 17,400 < ben 100,000 <
+    chloe 107,600."""
     asha = person("ACME-000001", "Asha Rao", joining_date=date(2020, 1, 1))
     compensation.add_first_record(
         asha,
@@ -46,6 +47,7 @@ def cast(rates):
             TAX="200000",
             EMPLOYER_CONTRIBUTION="120000",
         ),
+        actor=hr_user,
     )
     ben = person(
         "ACME-000002",
@@ -56,14 +58,14 @@ def cast(rates):
         level=4,
         joining_date=date(2018, 6, 15),
     )
-    compensation.add_first_record(ben, record_input(BASE="100000"))
+    compensation.add_first_record(ben, record_input(BASE="100000"), actor=hr_user)
     chloe = person(
         "ACME-000003", "Chloe Davies", country=country("GB"), level=5, joining_date=date(2022, 3, 1)
     )
-    compensation.add_first_record(chloe, record_input(BASE="80000"))
+    compensation.add_first_record(chloe, record_input(BASE="80000"), actor=hr_user)
     dev = person("ACME-000004", "Dev Mehta", level=2, joining_date=date(2019, 9, 1))
-    compensation.add_first_record(dev, record_input(BASE="600000"))
-    services.exit_employee(dev, date(2026, 6, 30))
+    compensation.add_first_record(dev, record_input(BASE="600000"), actor=hr_user)
+    services.exit_employee(dev, date(2026, 6, 30), actor=hr_user)
     esha = person(
         "ACME-000005",
         "Esha Nair",
@@ -71,10 +73,10 @@ def cast(rates):
         designation="Product Manager",
         joining_date=date(2027, 1, 1),
     )
-    compensation.add_first_record(esha, record_input(BASE="1200000"))
+    compensation.add_first_record(esha, record_input(BASE="1200000"), actor=hr_user)
     farah = person("ACME-000006", "Farah Khan", joining_date=date(2021, 1, 1))
-    compensation.add_first_record(farah, record_input(BASE="900000"))
-    compensation.revise(farah, record_input(date(2026, 11, 1), BASE="1100000"))
+    compensation.add_first_record(farah, record_input(BASE="900000"), actor=hr_user)
+    compensation.revise(farah, record_input(date(2026, 11, 1), BASE="1100000"), actor=hr_user)
     return {"asha": asha, "ben": ben, "chloe": chloe, "dev": dev, "esha": esha, "farah": farah}
 
 
@@ -164,6 +166,18 @@ def test_ordering_by_reporting_gross_crosses_currencies(api, cast):
     ("ordering", "expected"),
     [
         (
+            "full_name",
+            ["Asha Rao", "Ben Carter", "Chloe Davies", "Dev Mehta", "Esha Nair", "Farah Khan"],
+        ),
+        (
+            "-full_name",
+            ["Farah Khan", "Esha Nair", "Dev Mehta", "Chloe Davies", "Ben Carter", "Asha Rao"],
+        ),
+        (
+            "designation",
+            ["Ben Carter", "Esha Nair", "Asha Rao", "Chloe Davies", "Dev Mehta", "Farah Khan"],
+        ),
+        (
             "-level",
             ["Chloe Davies", "Ben Carter", "Asha Rao", "Esha Nair", "Farah Khan", "Dev Mehta"],
         ),
@@ -196,6 +210,11 @@ def test_ordering_aliases(api, cast, ordering, expected):
         ({"country": "US,GB"}, ["Ben Carter", "Chloe Davies"]),
         ({"department": "sales,product"}, ["Ben Carter", "Esha Nair"]),
         ({"designation": "Product Manager"}, ["Esha Nair"]),
+        ({"designation": "product manager"}, ["Esha Nair"]),
+        (
+            {"designation": "senior engineer,ACCOUNT EXECUTIVE"},
+            ["Asha Rao", "Ben Carter", "Chloe Davies", "Dev Mehta", "Farah Khan"],
+        ),
         ({"level": "2,5"}, ["Chloe Davies", "Dev Mehta"]),
         ({"status": "active"}, ["Asha Rao", "Ben Carter", "Chloe Davies", "Farah Khan"]),
         ({"status": "exited"}, ["Dev Mehta"]),
@@ -222,13 +241,32 @@ def test_filters_combine_with_and_and_survive_paging_and_sorting(api, cast):
     page_two = api.get(LIST, {**base, "ordering": "-gross", "page_size": "1", "page": "2"})
     assert page_two.json()["count"] == 2
     assert names(page_two) == ["Farah Khan"]
-    assert page_two.json()["previous"] is not None and page_two.json()["next"] is None
+    previous = page_two.json()["previous"]
+    assert page_two.json()["next"] is None
+    for parameter in ("country=IN", "department=engineering", "level=3", "ordering=-gross"):
+        assert parameter in previous, previous
+
+
+def test_page_size_defaults_to_25_and_is_a_parameter(api, cast):
+    default = api.get(LIST).json()
+    small = api.get(LIST, {"page_size": "5"}).json()
+
+    assert default["next"] is None and len(default["results"]) == 6
+    assert len(small["results"]) == 5
+    assert "page=2" in small["next"] and "page_size=5" in small["next"]
 
 
 def test_currency_eur(api, cast):
     rows = api.get(LIST, {"currency": "eur", "ordering": "gross"}).json()["results"]
 
-    assert [row["full_name"] for row in rows][:2] == ["Dev Mehta", "Farah Khan"]
+    assert [row["full_name"] for row in rows] == [
+        "Dev Mehta",
+        "Farah Khan",
+        "Esha Nair",
+        "Asha Rao",
+        "Ben Carter",
+        "Chloe Davies",
+    ]
     asha = next(row for row in rows if row["full_name"] == "Asha Rao")
     assert asha["shown"]["gross_reporting"] == "14804.50"
     assert asha["shown"]["reporting_currency"] == "EUR"
@@ -273,12 +311,41 @@ def test_bad_reporting_parameters_are_400(api, cast, params, field, message):
     assert response.json() == {field: [message]}
 
 
-@pytest.mark.parametrize("params", [{"ordering": "salary"}, {"status": "gone"}, {"level": "x"}])
-def test_bad_filter_values_are_400_per_field(api, cast, params):
+CHOICE = "Select a valid choice. {} is not one of the available choices."
+
+
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        ({"ordering": "salary"}, CHOICE.format("salary")),
+        ({"status": "gone"}, CHOICE.format("gone")),
+        ({"level": "x"}, CHOICE.format("x")),
+        ({"level": "7"}, CHOICE.format("7")),
+        ({"level": "99999999999999999999999"}, CHOICE.format("99999999999999999999999")),
+        ({"search": " ".join(["a"] * 11)}, "search accepts at most 10 words"),
+    ],
+)
+def test_bad_filter_values_are_400_per_field(api, cast, params, message):
     response = api.get(LIST, params)
 
     assert response.status_code == 400
-    assert list(response.json()) == list(params)
+    assert response.json() == {next(iter(params)): [message]}
+
+
+def test_gross_range_includes_a_figure_that_rounds_onto_the_bound(api, rates):
+    """SPEC F4's 0.005 tolerance: the SQL product keeps more decimals than the shown figure."""
+    lata = person("ACME-000011", "Lata Iyer", joining_date=date(2020, 1, 1))
+    compensation.add_first_record(lata, record_input(BASE="1234567.89"))  # USD 14,814.81468
+    meera = person("ACME-000012", "Meera Pillai", joining_date=date(2020, 1, 1))
+    compensation.add_first_record(meera, record_input(BASE="1234568.00"))  # USD 14,814.816
+
+    rows = {
+        row["full_name"]: row["shown"]["gross_reporting"] for row in api.get(LIST).json()["results"]
+    }
+
+    assert rows == {"Lata Iyer": "14814.81", "Meera Pillai": "14814.82"}
+    assert names(api.get(LIST, {"gross_max": "14814.81"})) == ["Lata Iyer"]
+    assert names(api.get(LIST, {"gross_min": "14814.82"})) == ["Meera Pillai"]
 
 
 def test_an_employee_without_records_has_no_shown_block(api, lookups):
@@ -318,6 +385,7 @@ def test_detail_shape(api, cast):
     assert record["is_current"] is True
     assert record["is_scheduled"] is False
     assert record["cancelled_at"] is None and record["cancelled_by"] is None
+    assert record["created_by"] == "hr@acme.example"
     assert record["currency_code"] == "INR"
     assert record["bonus_annual"] == "50000.00"
     assert record["gross_annual"] == "1450000.00"
@@ -390,6 +458,7 @@ def test_detail_without_records_and_unknown_id(api, lookups):
 
 
 def test_detail_query_count(api, cast, django_assert_num_queries):
-    """User from the JWT, the employee with its lookups, its live records, their lines, rates."""
+    """User from the JWT, the employee with its lookups, its live records with their authors,
+    their lines, rates. The fixture's records carry an author, so the pin covers a real one."""
     with django_assert_num_queries(5):
         api.get(f"/api/v1/employees/{cast['asha'].pk}/")

@@ -178,9 +178,11 @@ Consequences: rule 6 reads as an absolute. The agents get one exception for the 
 
 Context: the review asked why. The usual answer for a browser app is an httpOnly cookie, which JavaScript cannot read.
 
-Decision: the access token lives in memory and the 12-hour refresh token in `localStorage`. The app is one SPA on one origin with one user. A cookie would bring CSRF protection on every mutating call and a CORS exception for the refresh endpoint, for a threat model where the attacker already runs script on the page and could call the API directly for 30 minutes anyway. Rotation with blacklist limits a stolen refresh token to one use.
+Decision: the access token lives in memory and the 12-hour refresh token in `localStorage`. The app is one SPA on one origin with one user. A cookie would bring CSRF protection on every mutating call and a CORS exception for the refresh endpoint, for a threat model where the attacker already runs script on the page and could call the API directly for 30 minutes anyway.
 
-Consequences: a cross-site-scripting bug exposes the refresh token for its lifetime. There is no third-party script on the page and MUI escapes rendered values, so the exposure is accepted for v1 and recorded here as the first question a security reviewer will ask.
+Revised at the step 3 close, after the security review showed that SimpleJWT resets the refresh token's expiry on every rotation, so a session never ended while it was used and a stolen token bought a fresh one at each use. Rotation with a blacklist does not limit a stolen token to one use; one use buys a fresh token. Two rules now hold, both in `accounts/services.py` behind `SessionRefreshSerializer` (SPEC F8): a rotated token keeps the original `exp`, so every session ends 12 hours after login and the access token never outlives it; and a refresh token presented after it was rotated out or logged out revokes every refresh token of its user and answers 401, the reuse detection of RFC 9700 section 4.14. The user comes from the blacklisted `OutstandingToken` row that matches the presented string, never from the unverified payload. `python manage.py revoke_sessions <email>` runs the same revoke-all by hand. Two browser tabs refreshing at once would trip the reuse rule, so the frontend serialises refreshes across tabs with `navigator.locks` and reads the stored token inside the lock.
+
+Consequences: a cross-site-scripting bug exposes the refresh token until the session ends, at most 12 hours, and a stolen token is revoked the moment the legitimate browser or the thief refreshes with the older copy, or by the command. The HR Manager signs in again at most twice a day. There is no third-party script on the page and MUI escapes rendered values.
 
 ## D22. Exchange rates are monthly, two months seeded, earliest rate before that
 
@@ -312,9 +314,9 @@ Consequences: a weak owner-chosen password fails the first boot at the entrypoin
 
 ## D38. Content-Security-Policy from Django 6.1's own middleware
 
-Context: SPEC F8 asks for security headers and the owner chose the directives at the step 1 close. Django 6.1 ships `ContentSecurityPolicyMiddleware`, so the alternative, `django-csp`, would be one more dependency for the same header.
+Context: the owner chose the directives at the step 1 close and PLAN step 3 carries them; the spec itself is silent on a policy. Django 6.1 ships `ContentSecurityPolicyMiddleware`, so the alternative, `django-csp`, would be one more dependency for the same header.
 
-Decision: `SECURE_CSP` in `settings/base.py` with `default-src 'self'`, `script-src 'self'`, `connect-src 'self'`, `img-src 'self' data:`, `font-src 'self'`, `style-src 'self' 'unsafe-inline'`, `frame-ancestors 'none'`, `object-src 'none'`. `style-src` needs `'unsafe-inline'` because MUI's Emotion injects style tags at runtime. The fonts are bundled by Vite and served from `/assets/`, so `font-src 'self'` holds. `tests/core/test_security_headers.py` asserts the header on an API response, the health check and the SPA shell.
+Decision: `SECURE_CSP` in `settings/base.py` with `default-src 'self'`, `script-src 'self'`, `connect-src 'self'`, `img-src 'self' data:`, `font-src 'self'`, `style-src 'self' 'unsafe-inline'`, `frame-ancestors 'none'`, `object-src 'none'`, and, added at the step 3 close on the security review's advice, `base-uri 'none'` and `form-action 'self'`, which do not fall back to `default-src`. `style-src` needs `'unsafe-inline'` because MUI's Emotion injects style tags at runtime. The fonts are bundled by Vite and served from `/assets/`, so `font-src 'self'` holds. `tests/core/test_security_headers.py` asserts the header on an API response, the health check and the SPA shell.
 
 Consequences: an injected script cannot run and the page cannot be framed. A nonce for `style-src` would need Emotion's cache configured per response, and the SPA shell is one static file, so `'unsafe-inline'` stays until the app renders HTML per request, which v1 does not.
 
@@ -325,6 +327,22 @@ Context: rule 9 asks for a line per runtime dependency. SPEC section 1 names Rea
 Decision: `@fontsource/ibm-plex-sans` bundles IBM Plex Sans 400, 500 and 600 (DESIGN section 7) so the font is served from the app's own origin under `font-src 'self'` (D38) instead of a Google Fonts request. `@mui/icons-material` supplies the navigation and action icons as React components, MUI's own icon package. `@emotion/react` and `@emotion/styled` are MUI 9's required peer dependencies, its styling engine. `@hookform/resolvers` is the bridge that lets react-hook-form run a zod schema, published by react-hook-form itself. `@mui/x-data-grid` is in SPEC section 1 and lands with the grid in the next commit.
 
 Consequences: no third-party font or icon request at runtime, so the CSP stays at `'self'`. The bundle grows by the three font files and the icons that are imported one by one.
+
+## D40. Readings made while building the directory and the shell
+
+Context: three places where SPEC and DESIGN leave a small choice open came up in step 3, none of them worth stopping the step for. The alternatives were a 400, a lookup endpoint and an empty page.
+
+Decision: `currency=local` on `GET /employees/{id}/` resolves to that employee's own currency, the one-country case of the SPEC section 8 rule, instead of answering 400 because the detail has no country filter. The directory's designation filter is a text field matched exactly but case-insensitively, because titles have no lookup endpoint and section 8 lists none. The start page `/` redirects to `/employees` until the dashboard lands in step 6, and Dashboard and Imports join the navigation with their steps, so the shell never links to a page that does not exist yet.
+
+Consequences: the detail page in step 4 can show local figures without a second request. A designation lookup under `/meta/` is not in the spec and would be a later addition. The redirect is removed in step 6. The directory's row click goes to `/employees/:id`, which is the not-found page until step 4 builds the detail; the navigation column itself only links to built pages.
+
+## D41. Two hardenings from the step 3 security review
+
+Context: the review found that the login throttle keyed on the full IPv6 address, which a client can change per request within its /64, and that API responses carried no `Cache-Control`, so a browser could keep salary pages in its disk cache. The alternatives were a per-account bucket, which lets an attacker lock the HR Manager out, and a `Cache-Control` on every response, which would also stop WhiteNoise's immutable asset caching.
+
+Decision: `LoginRateThrottle` in `apps/accounts/views.py` reduces an IPv6 client to its /64 before counting, and `apps/core/middleware.NoStoreApiMiddleware` sets `Cache-Control: no-store` on `/api/` responses only. The same review's 500s on an out-of-range `level` and a search of more than ten words became 400s through `ChoiceInFilter` and `BoundedSearchFilter` in `apps/core/filters.py`.
+
+Consequences: a /64 behind one NAT or one household shares the five attempts a minute, which is the intent. Pages and assets keep their caching. The session-lifetime question the review raised is the owner's call and is not changed here.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

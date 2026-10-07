@@ -1,10 +1,22 @@
-"""SPEC F8: login, rotation, logout, the throttle and /auth/me/."""
+"""SPEC F8: login, rotation, logout, the throttle, the session rules and /auth/me/."""
+
+import logging
+from io import StringIO
 
 import pytest
+from django.core.management import CommandError, call_command
+from freezegun import freeze_time
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 pytestmark = pytest.mark.django_db
 
 PASSWORD = "correct-horse-battery"
+REFRESH = "/api/v1/auth/refresh/"
+LOGOUT = "/api/v1/auth/logout/"
+
+
+def refresh(client, token):
+    return client.post(REFRESH, {"refresh": token}, format="json")
 
 
 def login(client, email="hr@acme.example", password=PASSWORD):
@@ -22,7 +34,7 @@ def test_login_with_a_wrong_password_is_401(anon, hr_user):
     response = login(anon, password="wrong")
 
     assert response.status_code == 401
-    assert "detail" in response.json()
+    assert response.json() == {"detail": "No active account found with the given credentials"}
 
 
 def test_the_sixth_login_attempt_within_a_minute_is_429(anon, hr_user):
@@ -33,6 +45,24 @@ def test_the_sixth_login_attempt_within_a_minute_is_429(anon, hr_user):
 
     assert response.status_code == 429
     assert "Retry-After" in response
+
+
+def test_the_login_throttle_counts_an_ipv6_client_by_its_64_bit_prefix(anon, hr_user):
+    """NUM_PROXIES is 1, so the client address is the last hop in X-Forwarded-For."""
+
+    def attempt(address):
+        return anon.post(
+            "/api/v1/auth/login/",
+            {"email": hr_user.email, "password": "wrong"},
+            format="json",
+            HTTP_X_FORWARDED_FOR=address,
+        )
+
+    for n in range(5):
+        assert attempt(f"2a09:8280:1::1aa:467d:{n + 1}").status_code == 401
+
+    assert attempt("2a09:8280:1::1aa:467d:ffff").status_code == 429
+    assert attempt("2a09:8280:2::1").status_code == 401
 
 
 def test_the_access_token_opens_me_and_nothing_else_does(anon, api, hr_user):
@@ -75,3 +105,65 @@ def test_logout_needs_the_bearer_token(anon, hr_user):
     response = anon.post("/api/v1/auth/logout/", {"refresh": tokens["refresh"]}, format="json")
 
     assert response.status_code == 401
+
+
+def test_refresh_keeps_the_session_end_and_caps_the_access_token(anon, hr_user):
+    first = login(anon).json()  # 09:00, so the session ends at 21:00
+    session_end = RefreshToken(first["refresh"])["exp"]
+
+    with freeze_time("2026-10-07T20:45:00Z"):  # decoded here too: the new iat is 20:45
+        rotated = refresh(anon, first["refresh"]).json()
+        assert RefreshToken(rotated["refresh"])["exp"] == session_end
+        assert AccessToken(rotated["access"])["exp"] == session_end
+
+
+def test_a_reused_refresh_token_ends_every_session(anon, hr_user, caplog):
+    laptop = login(anon).json()
+    phone = login(anon).json()
+    rotated = refresh(anon, laptop["refresh"]).json()
+
+    with caplog.at_level(logging.WARNING, logger="apps.accounts.services"):
+        reused = refresh(anon, laptop["refresh"])
+
+    assert reused.status_code == 401
+    assert reused.json()["detail"] == "Token is blacklisted"
+    assert "revoked 2 live session(s)" in caplog.text
+    assert refresh(anon, rotated["refresh"]).status_code == 401
+    assert refresh(anon, phone["refresh"]).status_code == 401
+
+
+def test_a_token_presented_after_logout_ends_every_session(anon, hr_user):
+    laptop = login(anon).json()
+    phone = login(anon).json()
+    anon.credentials(HTTP_AUTHORIZATION=f"Bearer {laptop['access']}")
+    assert anon.post(LOGOUT, {"refresh": laptop["refresh"]}, format="json").status_code == 200
+    anon.credentials()
+
+    assert refresh(anon, laptop["refresh"]).status_code == 401
+
+    assert refresh(anon, phone["refresh"]).status_code == 401
+
+
+def test_an_expired_token_that_was_never_rotated_revokes_nothing(anon, hr_user):
+    old = login(anon).json()
+
+    with freeze_time("2026-10-07T22:00:00Z"):  # the 09:00 session ended at 21:00
+        fresh = login(anon).json()
+        expired = refresh(anon, old["refresh"])
+        assert expired.status_code == 401
+        assert "expired" in expired.json()["detail"]
+        assert refresh(anon, fresh["refresh"]).status_code == 200
+
+
+def test_revoke_sessions_command_ends_every_session(anon, hr_user):
+    laptop = login(anon).json()
+    phone = login(anon).json()
+    out = StringIO()
+
+    call_command("revoke_sessions", "HR@acme.example", stdout=out)
+
+    assert out.getvalue().strip() == "revoked 2 live session(s) for hr@acme.example"
+    assert refresh(anon, laptop["refresh"]).status_code == 401
+    assert refresh(anon, phone["refresh"]).status_code == 401
+    with pytest.raises(CommandError, match="no user with the email nobody@acme.example"):
+        call_command("revoke_sessions", "nobody@acme.example")

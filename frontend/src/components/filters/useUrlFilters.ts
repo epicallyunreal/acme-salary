@@ -6,6 +6,7 @@ import {
   fromSearchParams,
   type GridState,
   toSearchParams,
+  withCurrencyRule,
 } from '../grid/serverModel';
 
 const PAGING_KEYS: ReadonlySet<keyof GridState> = new Set(['page', 'page_size', 'ordering']);
@@ -20,8 +21,7 @@ export function applyChange(state: GridState, patch: Partial<GridState>): GridSt
     (key) => !PAGING_KEYS.has(key),
   );
   if (touchesFilter && patch.page === undefined) next.page = 1;
-  if (next.currency === 'local' && next.country.length !== 1) next.currency = 'usd';
-  return next;
+  return withCurrencyRule(next);
 }
 
 /** The directory's filters, page, sort and search, read from and written to the URL. */

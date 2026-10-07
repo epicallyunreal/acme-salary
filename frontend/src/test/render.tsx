@@ -5,10 +5,10 @@ import type { ReactElement, ReactNode } from 'react';
 import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 
-import { setUnauthenticatedHandler } from '../api/client';
-import { loginPath } from '../lib/navigation';
+import { redirectToLoginOnSecond401 } from '../lib/session';
 import { theme } from '../lib/theme';
-import { createTestRouter } from '../router';
+import { SessionGate } from '../components/layout/SessionGate';
+import { routes } from '../router';
 
 /** Retries off so a failing request fails the test at once. */
 export function createTestQueryClient() {
@@ -47,18 +47,15 @@ export function renderWithProviders(
   return { ...utils, router, client };
 }
 
-/** Renders the real route table in memory, starting at `initialEntry`, the way the app runs. */
-export function renderApp(initialEntry = '/') {
+/** Renders the real route table in memory, starting at `initialEntry`, the way the app runs.
+ * `gate` adds the SessionGate, so the refresh on load runs first. */
+export function renderApp(initialEntry = '/', { gate = false } = {}) {
   const client = createTestQueryClient();
-  const router = createTestRouter([initialEntry]);
-  setUnauthenticatedHandler(() => {
-    client.clear();
-    void router.navigate(loginPath(router.state.location), { replace: true });
-  });
+  const router = createMemoryRouter(routes, { initialEntries: [initialEntry] });
+  redirectToLoginOnSecond401(router, client);
+  const app = <RouterProvider router={router} />;
   const utils = render(
-    <Providers client={client}>
-      <RouterProvider router={router} />
-    </Providers>,
+    <Providers client={client}>{gate ? <SessionGate>{app}</SessionGate> : app}</Providers>,
   );
   return { ...utils, router, client };
 }

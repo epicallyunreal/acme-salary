@@ -57,6 +57,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
+    "apps.core.middleware.NoStoreApiMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -125,6 +126,9 @@ SECURE_CSP = {
     "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],
     "frame-ancestors": [CSP.NONE],
     "object-src": [CSP.NONE],
+    # Neither falls back to default-src.
+    "base-uri": [CSP.NONE],
+    "form-action": [CSP.SELF],
 }
 
 REST_FRAMEWORK = {
@@ -156,6 +160,8 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": False,
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # Keeps the session's end across rotations and revokes on reuse (SPEC F8, D21).
+    "TOKEN_REFRESH_SERIALIZER": "apps.accounts.serializers.SessionRefreshSerializer",
 }
 
 # One gunicorn worker, so the in-process cache is shared by every thread and the login

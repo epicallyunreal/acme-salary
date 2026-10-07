@@ -1,6 +1,6 @@
 # ACME Salary Management: Engineering Spec, v2.3
 
-Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D37). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
+Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D41). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. v2.4 records the owner's step 3 answers: `currency=local` on a single employee in section 8, and the session lifetime and reuse rules in F8 (D21). Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
 
 ## 1. System overview
 
@@ -323,6 +323,8 @@ Acceptance:
 
 - [ ] `[test]` Unauthenticated requests to every route except login, refresh and healthz return `401`.
 - [ ] `[test]` A rotated-out refresh token is rejected. After logout the refresh token is rejected.
+- [ ] `[test]` A rotated refresh token keeps the original expiry, so a session ends 12 hours after login however often it refreshes, and an access token never outlives its refresh token.
+- [ ] `[test]` A refresh token presented after it was rotated out or logged out revokes every refresh token of that user and answers `401`; an expired token that was never rotated revokes nothing.
 - [ ] `[test]` The sixth login attempt within a minute returns `429`.
 
 ## 7. Validation rules
@@ -366,7 +368,7 @@ One validator module, `compensation/validators.py`, called by the services for i
 
 ## 8. API
 
-REST under `/api/v1/`, paths with a trailing slash, JSON, JWT bearer on every route except login and refresh. `/healthz` is the one route at the site root, outside `/api/v1/`. List endpoints share one convention: `?page=&page_size=&ordering=&search=` plus named filters, `page_size` default 25 and maximum 100, responses `{count, next, previous, results}`. Multi-value filters are comma-separated. Department is referenced by `code`. `on=` is the reporting date, today by default. `currency` is `usd` (default), `eur`, or `local` when exactly one country is in the filter.
+REST under `/api/v1/`, paths with a trailing slash, JSON, JWT bearer on every route except login and refresh. `/healthz` is the one route at the site root, outside `/api/v1/`. List endpoints share one convention: `?page=&page_size=&ordering=&search=` plus named filters, `page_size` default 25 and maximum 100, responses `{count, next, previous, results}`. Multi-value filters are comma-separated. Department is referenced by `code`. `on=` is the reporting date, today by default. `currency` is `usd` (default), `eur`, or `local` when exactly one country is in the filter. On a single employee, `currency=local` means that employee's currency.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

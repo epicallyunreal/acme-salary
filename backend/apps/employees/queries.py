@@ -26,11 +26,12 @@ from django.db.models import (
     When,
 )
 
-from apps.compensation.models import CompensationRecord
+from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core import fx
 from apps.employees.models import Employee
 
 TOLERANCE = Decimal("0.005")
+STATUSES = ("active", "exited", "upcoming")
 
 
 def is_current(record: CompensationRecord, on: date) -> bool:
@@ -109,14 +110,34 @@ def gross_bound(value: Decimal, side: Literal["min", "max"]) -> Decimal:
     return value - TOLERANCE if side == "min" else value + TOLERANCE
 
 
-def live_records_prefetch() -> Prefetch:
-    """The page's live records, newest first, for pick_shown in the serializers."""
+def live_records(*, with_lines: bool = False) -> QuerySet[CompensationRecord]:
+    """Non-cancelled records newest first, with their authors; `with_lines` adds the lines in
+    component order for the detail and history views."""
+    queryset = (
+        CompensationRecord.objects.filter(cancelled_at__isnull=True)
+        .select_related("created_by", "cancelled_by")
+        .order_by("-effective_from")
+    )
+    if with_lines:
+        lines = CompensationLine.objects.select_related("component").order_by(
+            "component__sort_order", "component__code"
+        )
+        queryset = queryset.prefetch_related(Prefetch("lines", queryset=lines))
+    return queryset
+
+
+def live_records_prefetch(*, with_lines: bool = False) -> Prefetch:
+    """The page's live records as `employee.live_records`, for pick_shown in the serializers."""
     return Prefetch(
-        "compensation_records",
-        queryset=CompensationRecord.objects.filter(cancelled_at__isnull=True).order_by(
-            "-effective_from"
-        ),
-        to_attr="live_records",
+        "compensation_records", queryset=live_records(with_lines=with_lines), to_attr="live_records"
+    )
+
+
+def detail_queryset() -> QuerySet[Employee]:
+    """One employee with its lookups, its live records with their authors, and their lines:
+    user, employee, records, lines and rates make the five queries of the detail endpoint."""
+    return Employee.objects.select_related("country", "department").prefetch_related(
+        live_records_prefetch(with_lines=True)
     )
 
 

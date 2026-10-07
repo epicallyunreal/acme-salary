@@ -13,6 +13,8 @@ EXPECTED = {
     "style-src 'self' 'unsafe-inline'",
     "frame-ancestors 'none'",
     "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
 }
 
 
@@ -22,6 +24,12 @@ def directives(response) -> set[str]:
 
 def test_api_responses_carry_the_policy(api):
     assert directives(api.get("/api/v1/auth/me/")) == EXPECTED
+
+
+def test_api_responses_are_never_stored_by_the_browser(api, client):
+    assert api.get("/api/v1/auth/me/")["Cache-Control"] == "no-store"
+    assert api.get("/api/v1/employees/")["Cache-Control"] == "no-store"
+    assert "Cache-Control" not in client.get("/healthz")
 
 
 def test_the_health_check_and_the_spa_carry_the_policy(client):

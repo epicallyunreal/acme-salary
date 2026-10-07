@@ -92,12 +92,12 @@ class CompensationRecordSerializer(serializers.ModelSerializer):
         )
 
 
-class DepartmentField(serializers.Serializer):
+class DepartmentSummarySerializer(serializers.Serializer):
     code = serializers.CharField()
     name = serializers.CharField()
 
 
-class CountryField(serializers.Serializer):
+class CountrySummarySerializer(serializers.Serializer):
     code = serializers.CharField()
     name = serializers.CharField()
     currency_code = serializers.CharField()
@@ -106,8 +106,8 @@ class CountryField(serializers.Serializer):
 class EmployeeListSerializer(serializers.ModelSerializer):
     """One directory row. `shown` is the record current on the reporting date, else the latest."""
 
-    department = DepartmentField(read_only=True)
-    country = CountryField(read_only=True)
+    department = DepartmentSummarySerializer(read_only=True)
+    country = CountrySummarySerializer(read_only=True)
     status = serializers.CharField(read_only=True)
     shown = serializers.SerializerMethodField()
 
@@ -155,8 +155,8 @@ class EmployeeListSerializer(serializers.ModelSerializer):
 
 
 class EmployeeDetailSerializer(serializers.ModelSerializer):
-    department = DepartmentField(read_only=True)
-    country = CountryField(read_only=True)
+    department = DepartmentSummarySerializer(read_only=True)
+    country = CountrySummarySerializer(read_only=True)
     status = serializers.SerializerMethodField()
     shown_label = serializers.SerializerMethodField()
     current_record = serializers.SerializerMethodField()

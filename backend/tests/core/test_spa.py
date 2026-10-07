@@ -10,6 +10,16 @@ def bundle(settings, tmp_path):
     return tmp_path
 
 
+def test_the_served_index_carries_the_security_policy(client, bundle):
+    from tests.core.test_security_headers import EXPECTED, directives
+
+    response = client.get("/employees/12")
+
+    assert response.status_code == 200
+    assert directives(response) == EXPECTED
+    assert "Cache-Control" not in response or "no-store" not in response["Cache-Control"]
+
+
 def test_catch_all_is_404_without_a_bundle(client):
     assert client.get("/employees/12").status_code == 404
 
