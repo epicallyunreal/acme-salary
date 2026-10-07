@@ -1,8 +1,8 @@
 """`timing`: measure the directory, insights, import and seed on the 10,000-row seed.
 
-Driven by the /perf-timing skill. Step 2 ships the seed case, step 3 the directory cases and
-step 5 the import case; the insight cases land with step 6. Prints a Markdown row for
-docs/PERFORMANCE.md plus the per-case breakdown.
+Driven by the /perf-timing skill. Step 2 ships the seed case, step 3 the directory cases,
+step 5 the import case, step 6 the insight cases and step 7 the export case. Prints a Markdown
+row for docs/PERFORMANCE.md plus the per-case breakdown; the export case prints its lines only.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.test import Client
 
-CASES = ("directory", "insights", "import", "seed")
+CASES = ("directory", "insights", "import", "export", "seed")
 
 # Each directory case is the query string of one request (the /perf-timing skill names them).
 DIRECTORY_CASES = {
@@ -38,6 +38,9 @@ DIRECTORY_CASES = {
 # Each insight is timed unfiltered and with one country (the /perf-timing skill names them).
 INSIGHT_NAMES = ("summary", "by-country", "by-department", "distribution", "by-level", "gender-gap")
 INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
+
+# The unfiltered directory is exported once in each format (SPEC F6).
+EXPORT_FILES = ("csv", "xlsx", "json")
 
 
 def git_short_sha() -> str:
@@ -89,6 +92,22 @@ def time_requests(client: Client, path: str, repeats: int) -> list[float]:
         if index:
             samples.append(elapsed)
     return samples
+
+
+def exported_rows(file: str, body: bytes) -> int:
+    """Data rows in an export, the header left out."""
+    import csv
+    import json
+
+    from openpyxl import load_workbook
+
+    if file == "csv":
+        return sum(1 for _ in csv.reader(io.StringIO(body.decode("utf-8-sig")))) - 1
+    if file == "xlsx":
+        # A write-only workbook records no dimension, so the rows are counted.
+        sheet = load_workbook(io.BytesIO(body), read_only=True).active
+        return sum(1 for _ in sheet.iter_rows(values_only=True)) - 1
+    return len(json.loads(body)["rows"])
 
 
 def time_seed(scratch_db: Path, employees: int, seed: int) -> float:
@@ -164,6 +183,27 @@ class Command(BaseCommand):
                     worst = (p50, p95)
         return f"{worst[0]:.0f} / {worst[1]:.0f}"
 
+    def time_export(self) -> None:
+        """The unfiltered directory in each format: rows, size, wall time and how far it raised
+        the process's peak memory. SPEC F6 asks for all 10,000 rows."""
+        client = api_client()
+        # ru_maxrss is bytes on macOS and kilobytes on Linux.
+        scale = 1 if sys.platform == "darwin" else 1024
+        for file in EXPORT_FILES:
+            peak_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+            started = time.perf_counter()
+            response = client.get(f"/api/v1/exports/employees/?file={file}")
+            body = b"".join(response.streaming_content) if response.streaming else response.content
+            elapsed = time.perf_counter() - started
+            peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+            if response.status_code != 200:
+                raise CommandError(f"the {file} export answered {response.status_code}")
+            self.stdout.write(
+                f"export, employees as {file}: {exported_rows(file, body):,} rows, "
+                f"{len(body) / 2**20:.1f} MB in {elapsed:.1f} s, "
+                f"peak memory up {(peak_after - peak_before) / 2**20:.0f} MB"
+            )
+
     def time_import(self, seed: int) -> str:
         """Stage `make_import_file --all --raises 1000` through the API, then approve it, inside
         a transaction that is rolled back, so the database is left as it was. Prints both times
@@ -227,6 +267,10 @@ class Command(BaseCommand):
         if "import" in wanted:
             self.require_seed(options["employees"])
             results["import"] = self.time_import(options["seed"])
+
+        if "export" in wanted:
+            self.require_seed(options["employees"])
+            self.time_export()
 
         if "seed" in wanted:
             with tempfile.TemporaryDirectory() as scratch:

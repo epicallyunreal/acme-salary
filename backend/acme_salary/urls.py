@@ -13,6 +13,7 @@ api_v1_patterns = [
     path("", include("apps.compensation.urls")),
     path("", include("apps.imports.urls")),
     path("", include("apps.insights.urls")),
+    path("", include("apps.exports.urls")),
 ]
 
 urlpatterns = [

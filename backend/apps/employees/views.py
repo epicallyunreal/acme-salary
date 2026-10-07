@@ -52,7 +52,7 @@ class ReportingMixin:
             on = parse_on(params.get("on"))
             wanted = params.get("currency")
             codes, currencies = [], {}
-            if (wanted or "").strip().lower() == "local":
+            if fx.asks_local(wanted):
                 codes, currencies = self.local_scope()
             currency = fx.resolve_reporting_currency(wanted, codes, currencies)
             self._reporting = (on, currency, fx.RateTable.load(on))
@@ -87,12 +87,13 @@ class OneEmployeeMixin(ReportingMixin):
         return [country.code], {country.code: country.currency_code}
 
 
-class EmployeeListCreateView(ReportingMixin, ListCreateAPIView):
+class DirectoryMixin(ReportingMixin):
+    """The directory's rows: SPEC F4's filters, search and ordering over the annotated queryset.
+    The list pages through them and the export writes them all, so an export holds exactly the
+    rows the pages show (SPEC F6)."""
+
     filter_backends = [DjangoFilterBackend, EmployeeSearchFilter]
     filterset_class = DirectoryFilterSet
-
-    def get_serializer_class(self):
-        return EmployeeCreateSerializer if self.request.method == "POST" else EmployeeListSerializer
 
     def local_scope(self):
         codes = parse_csv(self.request.query_params.get("country"))
@@ -101,6 +102,11 @@ class EmployeeListCreateView(ReportingMixin, ListCreateAPIView):
     def get_queryset(self):
         on, currency, rates = self.reporting()
         return queries.directory_queryset(on, currency, rates)
+
+
+class EmployeeListCreateView(DirectoryMixin, ListCreateAPIView):
+    def get_serializer_class(self):
+        return EmployeeCreateSerializer if self.request.method == "POST" else EmployeeListSerializer
 
     def create(self, request, *args, **kwargs):
         self.reporting()

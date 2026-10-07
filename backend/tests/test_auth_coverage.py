@@ -49,6 +49,8 @@ def test_the_route_list_is_what_the_step_expects():
         "api/v1/employees/<int:pk>/audit/",
         "api/v1/employees/<int:pk>/compensation/",
         "api/v1/employees/<int:pk>/exit/",
+        "api/v1/exports/employees/",
+        "api/v1/exports/insights/<str:name>/",
         "api/v1/imports/",
         "api/v1/imports/<int:pk>/",
         "api/v1/imports/<int:pk>/approve/",
