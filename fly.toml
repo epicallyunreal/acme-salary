@@ -29,6 +29,10 @@ primary_region = 'sin'
     method = 'GET'
     timeout = '10s'
     path = '/healthz'
+    # Fly's checker sends the machine's internal address as Host, which ALLOWED_HOSTS
+    # rejects with 400, so the check carries the custom domain (DECISIONS D29).
+    [http_service.checks.headers]
+      Host = 'acme.nutanprabhat.dev'
 
 [[vm]]
   memory = '1gb'
