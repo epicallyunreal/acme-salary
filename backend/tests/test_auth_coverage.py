@@ -43,6 +43,12 @@ def test_the_route_list_is_what_the_step_expects():
         "api/v1/auth/logout/",
         "api/v1/auth/me/",
         "api/v1/auth/refresh/",
+        "api/v1/employees/",
+        "api/v1/employees/<int:pk>/",
+        "api/v1/meta/components/",
+        "api/v1/meta/countries/",
+        "api/v1/meta/departments/",
+        "api/v1/meta/exchange-rates/",
     ]
 
 

@@ -1,17 +1,36 @@
-"""Read-side rules for employees: which record is shown on a date (DESIGN section 1.3).
+"""Read-side rules for employees: which record is shown on a date, and the directory query.
 
-The directory queryset with the reporting-currency annotation lands in step 3.
+The directory queryset is the one query the 300 ms target depends on (SPEC F4, DESIGN 1.3).
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import date
+from decimal import Decimal
+from typing import Literal
 
-from django.db.models import Case, IntegerField, OuterRef, Q, Value, When
+from django.db.models import (
+    Case,
+    CharField,
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    QuerySet,
+    Subquery,
+    Value,
+    When,
+)
 
 from apps.compensation.models import CompensationRecord
+from apps.core import fx
 from apps.employees.models import Employee
+
+TOLERANCE = Decimal("0.005")
 
 
 def is_current(record: CompensationRecord, on: date) -> bool:
@@ -73,3 +92,56 @@ def status_on(employee: Employee, on: date) -> str:
     if employee.last_date is not None and employee.last_date < on:
         return "exited"
     return "active"
+
+
+def status_expression(on: date) -> Case:
+    """`active`, `exited` or `upcoming` on the reporting date, in SQL, so `status=` is a WHERE."""
+    return Case(
+        When(joining_date__gt=on, then=Value("upcoming")),
+        When(last_date__lt=on, then=Value("exited")),
+        default=Value("active"),
+        output_field=CharField(),
+    )
+
+
+def gross_bound(value: Decimal, side: Literal["min", "max"]) -> Decimal:
+    """SPEC F4: range filters on the reporting-currency gross use a tolerance of 0.005."""
+    return value - TOLERANCE if side == "min" else value + TOLERANCE
+
+
+def live_records_prefetch() -> Prefetch:
+    """The page's live records, newest first, for pick_shown in the serializers."""
+    return Prefetch(
+        "compensation_records",
+        queryset=CompensationRecord.objects.filter(cancelled_at__isnull=True).order_by(
+            "-effective_from"
+        ),
+        to_attr="live_records",
+    )
+
+
+def directory_queryset(
+    on: date, reporting_currency: str, rates: fx.RateTable
+) -> QuerySet[Employee]:
+    """Employees annotated with the shown record's local gross, its reporting-currency value and
+    the status on `on`. One correlated subquery per row and a CASE expression for the rate, so
+    SQLite sorts and range-filters 10,000 rows in one pass; the shown records themselves come
+    from a prefetch of the page."""
+    shown = shown_record_subquery(on)
+    return (
+        Employee.objects.select_related("country", "department")
+        .annotate(
+            gross_local=Subquery(
+                shown.values("gross_annual")[:1],
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            ),
+            gross=ExpressionWrapper(
+                F("gross_local")
+                * rates.case_expression(reporting_currency, "country__currency_code"),
+                output_field=DecimalField(max_digits=14, decimal_places=2),
+            ),
+            status=status_expression(on),
+        )
+        .prefetch_related(live_records_prefetch())
+        .order_by("full_name", "id")
+    )

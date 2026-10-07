@@ -8,6 +8,8 @@ from apps.core.views import healthz
 # Each app's urls.py is appended here in the step that builds it.
 api_v1_patterns = [
     path("", include("apps.accounts.urls")),
+    path("", include("apps.core.urls")),
+    path("", include("apps.employees.urls")),
 ]
 
 urlpatterns = [

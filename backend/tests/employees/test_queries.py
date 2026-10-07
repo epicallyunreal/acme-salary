@@ -90,3 +90,45 @@ def test_status_on(people, today):
     assert status_on(people["joiner"], date(2027, 2, 1)) == "active"
     assert status_on(people["exited"], today) == "exited"
     assert status_on(people["exited"], date(2026, 6, 30)) == "active"
+
+
+def test_directory_queryset_annotations_agree_with_the_python_rules(people, today, rates):
+    from apps.core import fx
+    from apps.core.money import q2
+    from apps.employees.queries import directory_queryset
+
+    table = fx.RateTable.load(today)
+    rows = {row.employee_code: row for row in directory_queryset(today, "USD", table)}
+
+    assert list(rows) == sorted(rows, key=lambda code: (rows[code].full_name, rows[code].pk))
+    for employee in people.values():
+        row = rows[employee.employee_code]
+        shown = pick_shown(row.live_records, today)
+        assert row.gross_local == shown.gross_annual
+        assert q2(row.gross) == table.convert(shown.gross_annual, shown.currency_code, "USD")
+        assert row.status == status_on(employee, today)
+        assert all(record.cancelled_at is None for record in row.live_records)
+    assert [row.employee_code for row in rows.values() if row.status == "exited"] == ["ACME-000003"]
+    assert set(
+        directory_queryset(today, "USD", table)
+        .filter(status="upcoming")
+        .values_list("employee_code", flat=True)
+    ) == {"ACME-000002"}
+
+
+def test_directory_queryset_without_a_record(lookups, today, rates):
+    from apps.core import fx
+    from apps.employees.queries import directory_queryset
+
+    EmployeeFactory(employee_code="ACME-000009")
+
+    row = directory_queryset(today, "USD", fx.RateTable.load(today)).get()
+    assert row.gross_local is None and row.gross is None
+    assert row.live_records == []
+
+
+def test_gross_bound():
+    from apps.employees.queries import gross_bound
+
+    assert gross_bound(Decimal("100"), "min") == Decimal("99.995")
+    assert gross_bound(Decimal("100"), "max") == Decimal("100.005")
