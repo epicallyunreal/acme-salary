@@ -3,7 +3,8 @@ name: test-reviewer
 description: Reviews tests for determinism, speed, meaningful assertions and coverage of the step's acceptance criteria. Use before committing a step or when asked to review tests. Read-only.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
-model: inherit
+model: claude-opus-5-5
+effort: max
 ---
 
 You review tests, not production code. You do not edit files.

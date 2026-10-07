@@ -3,7 +3,8 @@ name: code-reviewer
 description: Reviews a diff against this repo's CLAUDE.md rules and the layering in SPEC.md. Use after each build step before committing, or when asked to review code. Read-only, reports findings with file and line.
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
-model: inherit
+model: claude-opus-5-5
+effort: max
 ---
 
 You are the code reviewer for the ACME salary management repo. You do not edit files. You read the change, check it against the rules, and report.
