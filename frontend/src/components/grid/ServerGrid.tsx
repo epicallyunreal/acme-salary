@@ -54,6 +54,8 @@ interface ServerGridProps<Row extends GridValidRowModel> {
   emptyMessage: string;
   /** Rows of a given height let the grid size itself; a minimum keeps short lists tidy. */
   height?: number | string;
+  /** `() => 'auto'` lets a row grow to its content, for cells that hold messages. */
+  getRowHeight?: DataGridProps<Row>['getRowHeight'];
 }
 
 // jsdom has no layout, so the virtualiser would render no rows under Vitest.
@@ -79,6 +81,7 @@ export function ServerGrid<Row extends GridValidRowModel>({
   onRowClick,
   emptyMessage,
   height = 'calc(100vh - 280px)',
+  getRowHeight,
 }: ServerGridProps<Row>) {
   return (
     <DataGrid<Row>
@@ -104,6 +107,7 @@ export function ServerGrid<Row extends GridValidRowModel>({
       slots={SLOTS}
       slotProps={{ noRowsOverlay: { message: emptyMessage } }}
       disableVirtualization={inTests}
+      getRowHeight={getRowHeight}
       sx={{
         height,
         minHeight: 360,

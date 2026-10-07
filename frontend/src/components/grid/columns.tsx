@@ -1,8 +1,11 @@
 import type { GridColDef, GridColumnVisibilityModel } from '@mui/x-data-grid';
 
-import type { EmployeeRow } from '../../api/types';
+import { Button } from '@mui/material';
+
+import type { EmployeeRow, ImportRow } from '../../api/types';
 import { formatDate } from '../../lib/dates';
 import { formatMoney } from '../../lib/money';
+import { RowMessagesCell, SheetCell } from '../imports/RowCells';
 import { StatusChip } from '../layout/StatusChip';
 
 /** Why the record shown is not the one in force, in the API's order (SPEC F3): the employee has
@@ -116,3 +119,88 @@ export const DIRECTORY_HIDDEN_COLUMNS: GridColumnVisibilityModel = {
   last_date: false,
   version: false,
 };
+
+const IDENTITY_WIDTHS: Record<string, number> = {
+  email: 220,
+  department: 130,
+  designation: 160,
+  level: 70,
+  country_code: 110,
+  gender: 100,
+  joining_date: 120,
+  last_date: 120,
+  effective_from: 130,
+  bonus_annual: 120,
+};
+
+interface ImportRowColumnOptions {
+  /** Called with the row whose skip toggle was pressed. */
+  onToggleSkip: (row: ImportRow) => void;
+  /** False once the batch has left review. */
+  canSkip: boolean;
+}
+
+/** Columns of the import review grid (DESIGN section 6): the row, its status and action, the
+ * code and the name, then every column the sheet had, as typed, then the messages and the skip
+ * toggle. Rows come in sheet order, so nothing sorts. */
+export function importRowColumns(
+  sheetColumns: string[],
+  { onToggleSkip, canSkip }: ImportRowColumnOptions,
+): GridColDef<ImportRow>[] {
+  const cell = (field: string, headerName: string, width: number): GridColDef<ImportRow> => ({
+    field: `sheet:${field}`,
+    headerName,
+    width,
+    sortable: false,
+    valueGetter: (_value, row) => row.raw[field] ?? null,
+    renderCell: ({ row }) => <SheetCell row={row} field={field} />,
+  });
+  return [
+    { field: 'row_number', headerName: 'Row', width: 70, sortable: false, cellClassName: 'num' },
+    {
+      field: 'status',
+      headerName: 'Status',
+      width: 110,
+      sortable: false,
+      renderCell: ({ row }) => <StatusChip status={row.status} />,
+    },
+    {
+      field: 'action',
+      headerName: 'Action',
+      width: 100,
+      sortable: false,
+      renderCell: ({ row }) => (row.action ? <StatusChip status={row.action} /> : null),
+    },
+    cell('legacy_code', 'legacy_code', 130),
+    cell('full_name', 'Name', 180),
+    ...sheetColumns
+      .filter((field) => field !== 'legacy_code' && field !== 'full_name')
+      .map((field) => cell(field, field, IDENTITY_WIDTHS[field] ?? 120)),
+    {
+      field: 'messages',
+      headerName: 'Messages',
+      width: 380,
+      sortable: false,
+      renderCell: ({ row }) => <RowMessagesCell row={row} />,
+    },
+    {
+      field: 'skip',
+      headerName: 'Skip',
+      width: 100,
+      sortable: false,
+      renderCell: ({ row }) => {
+        const skipped = row.status === 'skipped';
+        return (
+          <Button
+            size="small"
+            disabled={!canSkip}
+            aria-label={`${skipped ? 'Unskip' : 'Skip'} row ${row.row_number}`}
+            onClick={() => onToggleSkip(row)}
+          >
+            {skipped ? 'Unskip' : 'Skip'}
+          </Button>
+        );
+      },
+    },
+  ];
+}

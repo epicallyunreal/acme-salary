@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw/http';
 
 import { auditPage, employeeDetails, histories } from './fixtures/detail';
 import { employeePage } from './fixtures/employees';
-import { batches, batchPage, reviewBatch } from './fixtures/imports';
+import { batches, batchPage, reviewBatch, reviewRows, rowsPage } from './fixtures/imports';
 import { componentsFor, countries, departments } from './fixtures/meta';
 
 // One handler per API route the app calls. Each step adds its routes with realistic fixtures.
@@ -170,6 +170,31 @@ export const importHandlers = [
     if (!hasAccessToken(request)) return unauthorized();
     const batch = batches.find((candidate) => candidate.id === Number(params.id));
     return batch ? HttpResponse.json(batch) : notFound('ImportBatch');
+  }),
+  http.get('/api/v1/imports/:id/rows/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    if (!batches.some((candidate) => candidate.id === Number(params.id))) {
+      return notFound('ImportBatch');
+    }
+    const rows = Number(params.id) === reviewBatch.id ? reviewRows : [];
+    return HttpResponse.json(rowsPage(new URL(request.url), rows));
+  }),
+  http.post('/api/v1/imports/:id/rows/:rowId/:act/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const row = reviewRows.find((candidate) => candidate.id === Number(params.rowId));
+    if (!row) return notFound('ImportRow');
+    const status = params.act === 'skip' ? 'skipped' : row.validation_status;
+    return HttpResponse.json({ ...row, status });
+  }),
+  http.post('/api/v1/imports/:id/approve/', ({ request }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    return HttpResponse.json({ detail: '1 row has errors', error_rows: 1 }, { status: 409 });
+  }),
+  http.post('/api/v1/imports/:id/discard/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const batch = batches.find((candidate) => candidate.id === Number(params.id));
+    if (!batch) return notFound('ImportBatch');
+    return HttpResponse.json({ ...batch, status: 'discarded' });
   }),
 ];
 

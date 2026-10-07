@@ -18,7 +18,7 @@ import type { EmployeeStatus, ReportingCurrency } from '../../api/types';
 import { EMPLOYEE_STATUSES, LEVELS } from '../../lib/constants';
 import type { DirectoryFilters } from '../grid/serverModel';
 
-const SEARCH_DELAY_MS = 300;
+export const SEARCH_DELAY_MS = 300;
 
 interface FilterBarProps {
   filters: DirectoryFilters;
@@ -28,7 +28,8 @@ interface FilterBarProps {
 }
 
 /** A text field that reports its value when the user pauses, presses Enter or leaves it. */
-function CommitField({
+/** A text field that reports its value on Enter, on blur, or after `delay` ms of quiet. */
+export function CommitField({
   label,
   value,
   onCommit,
