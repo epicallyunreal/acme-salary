@@ -1,7 +1,8 @@
 import { http, HttpResponse } from 'msw/http';
 
+import { auditPage, employeeDetails, histories } from './fixtures/detail';
 import { employeePage } from './fixtures/employees';
-import { countries, departments } from './fixtures/meta';
+import { componentsFor, countries, departments } from './fixtures/meta';
 
 // One handler per API route the app calls. Each step adds its routes with realistic fixtures.
 // Paths are relative, so MSW resolves them against the test page's origin.
@@ -11,6 +12,10 @@ export const HR_PASSWORD = 'correct-horse-battery';
 
 function unauthorized(detail = 'Authentication credentials were not provided.') {
   return HttpResponse.json({ detail }, { status: 401 });
+}
+
+function notFound(model: string) {
+  return HttpResponse.json({ detail: `No ${model} matches the given query.` }, { status: 404 });
 }
 
 /** True when the request carries one of the access tokens the fixtures hand out. */
@@ -52,10 +57,46 @@ function authenticated(request: Request, body: Parameters<typeof HttpResponse.js
 export const metaHandlers = [
   http.get('/api/v1/meta/countries/', ({ request }) => authenticated(request, countries)),
   http.get('/api/v1/meta/departments/', ({ request }) => authenticated(request, departments)),
+  http.get('/api/v1/meta/components/', ({ request }) =>
+    authenticated(request, componentsFor(new URL(request.url).searchParams.get('country') ?? '')),
+  ),
 ];
 
 export const employeeHandlers = [
   http.get('/api/v1/employees/', ({ request }) => authenticated(request, employeePage)),
+  http.get('/api/v1/employees/:id/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const employee = employeeDetails[Number(params.id)];
+    return employee ? HttpResponse.json(employee) : notFound('Employee');
+  }),
+  http.post('/api/v1/employees/:id/exit/', async ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const employee = employeeDetails[Number(params.id)];
+    if (!employee) return notFound('Employee');
+    const { last_date } = (await request.json()) as { last_date: string };
+    return HttpResponse.json({ ...employee, last_date });
+  }),
+  http.get('/api/v1/employees/:id/compensation/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const records = histories[Number(params.id)];
+    return records ? HttpResponse.json(records) : notFound('Employee');
+  }),
+  http.get('/api/v1/employees/:id/audit/', ({ request, params }) =>
+    authenticated(request, auditPage(Number(params.id))),
+  ),
+  http.delete('/api/v1/compensation/:id/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const record = Object.values(histories)
+      .flat()
+      .find((candidate) => candidate.id === Number(params.id));
+    if (!record) return notFound('CompensationRecord');
+    return HttpResponse.json({
+      ...record,
+      is_scheduled: false,
+      cancelled_at: '2026-10-07T09:00:00+00:00',
+      cancelled_by: HR_EMAIL,
+    });
+  }),
 ];
 
 export const handlers = [

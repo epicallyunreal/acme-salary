@@ -26,6 +26,31 @@ export function formatMoney(value: string, currency: string, { fraction = 0 } = 
   return formatter(currency, fraction, 'standard').format(value as Intl.StringNumericLiteral);
 }
 
+const amountFormatters = new Map<number, Intl.NumberFormat>();
+
+/** The figure without its code, for layouts that set the code apart: `2,392,500`. */
+export function formatAmount(value: string, { fraction = 0 } = {}): string {
+  let cached = amountFormatters.get(fraction);
+  if (!cached) {
+    cached = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: fraction,
+      maximumFractionDigits: fraction,
+    });
+    amountFormatters.set(fraction, cached);
+  }
+  return cached.format(value as Intl.StringNumericLiteral);
+}
+
+/** True for `0`, `0.00` and the like, read from the string so no float is involved. */
+export function isZero(value: string): boolean {
+  return /^0*(\.0*)?$/.test(value);
+}
+
+/** An FX rate as stored, eight places, without its trailing zeros: `0.01200000` gives `0.012`. */
+export function formatRate(rate: string): string {
+  return rate.includes('.') ? rate.replace(/0+$/, '').replace(/\.$/, '') : rate;
+}
+
 /** `USD 1.2M` for chart axes and KPI cards. */
 export function formatCompact(value: string, currency: string): string {
   return formatter(currency, 1, 'compact').format(value as Intl.StringNumericLiteral);

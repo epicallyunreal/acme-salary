@@ -1,0 +1,69 @@
+import { Alert, AlertTitle, Box, Link } from '@mui/material';
+import { useEffect, useRef } from 'react';
+
+import type { FormMessage } from './applyServerErrors';
+
+export interface FieldProblem {
+  /** The id of the input, so the summary links to it. */
+  inputId: string;
+  message: string;
+}
+
+interface ErrorSummaryProps {
+  title: string;
+  /** Field errors after a failed submit, linked to their inputs. */
+  fields?: FieldProblem[];
+  /** What the server said that no field could hold, each with the key it came under. */
+  messages?: FormMessage[];
+  /** Changes on every failed submit, so focus moves to the summary each time. */
+  attempt?: number;
+}
+
+/** The focusable summary at the top of a form: links to each invalid field, and the server's
+ * form-level messages with their keys (DESIGN section 6, ui-ux-pro-max "Focusable Error
+ * Summary"). Inline field errors stay where they are. */
+export function ErrorSummary({
+  title,
+  fields = [],
+  messages = [],
+  attempt = 0,
+}: ErrorSummaryProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const shown = fields.length + messages.length > 0;
+
+  useEffect(() => {
+    if (shown) ref.current?.focus();
+  }, [shown, attempt]);
+
+  if (!shown) return null;
+
+  const focusField = (inputId: string) => (event: React.MouseEvent) => {
+    event.preventDefault();
+    document.getElementById(inputId)?.focus();
+  };
+
+  return (
+    <Alert ref={ref} severity="error" variant="outlined" tabIndex={-1} sx={{ mb: 4 }}>
+      <AlertTitle>{title}</AlertTitle>
+      <Box component="ul" sx={{ m: 0, pl: 4 }}>
+        {fields.map(({ inputId, message }) => (
+          <li key={`field-${inputId}`}>
+            <Link href={`#${inputId}`} onClick={focusField(inputId)} color="inherit">
+              {message}
+            </Link>
+          </li>
+        ))}
+        {messages.map(({ key, message }, index) => (
+          <li key={`server-${index}`}>
+            {key ? (
+              <Box component="span" sx={{ color: 'text.secondary', mr: 1 }}>
+                {key}
+              </Box>
+            ) : null}
+            {message}
+          </li>
+        ))}
+      </Box>
+    </Alert>
+  );
+}

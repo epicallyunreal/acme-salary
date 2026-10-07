@@ -690,18 +690,23 @@ Employee detail:
 ┌ nav ─────┐┌─────────────────────────────────────────────────────────────────────┐
 │          ││ ‹ Employees                                                         │
 │          ││ Asha Rao  ACME-000017  [active]     [Edit] [Add revision] [Mark exited]│
-│          ││ Engineering · Senior Engineer · Level 3 · India · joined 3 Mar 2021 │
-│          ││ ┌ Current record  v3, effective 1 Apr 2026          ┐                │
-│          ││ │ Component            Annual (INR)   Annual (USD)   │                │
-│          ││ │ BASE                 1,450,000.00   17,400.00      │                │
-│          ││ │ HRA                    580,000.00    6,960.00      │  ...            │
-│          ││ │ Gross 2,392,500.00 · Net 1,914,000.00 · Total cost 2,566,500.00 │  │
-│          ││ │ per month INR 199,375 · October 2026 rate 0.0120                │  │
-│          ││ └──────────────────────────────────────────────────────────────────┘  │
+│          ││ Department     Designation      Level  Country      Joined          │
+│          ││ Engineering    Senior Engineer  3      India (INR)  3 Mar 2021      │
+│          ││ ┌ Current record                  Version 3, effective 1 Apr 2026 ┐ │
+│          ││ │ Gross per year        Net per year       Total cost per year     │ │
+│          ││ │ INR 2,392,500         INR 1,914,000      INR 2,566,500           │ │
+│          ││ │ USD 28,710            USD 22,968         USD 30,798              │ │
+│          ││ │ INR 199,375 a month                                              │ │
+│          ││ │ Component             Kind       Annual (INR)   Monthly (INR)    │ │
+│          ││ │ Base salary           Earning    1,450,000.00     120,833.33     │ │
+│          ││ │ House rent allowance  Earning      580,000.00      48,333.33     │ │
+│          ││ │ October 2026 rate: 1 INR = 0.012 USD                             │ │
+│          ││ └──────────────────────────────────────────────────────────────────┘ │
 │          ││ [ History ]  [ Audit ]                                              │
-│          ││ v4  from 1 Apr 2027  scheduled   gross INR 2,560,000   [Cancel]    │
-│          ││ v3  1 Apr 2026 – open            gross INR 2,392,500   "annual raise"│
-│          ││ v2  1 Apr 2025 – 1 Apr 2026      gross INR 2,200,000   cancelled (greyed when so)│
+│          ││ v4  from 1 Apr 2027             [scheduled]  INR 2,560,000  [Cancel]│
+│          ││ v3  1 Apr 2026 onwards          [current]    INR 2,392,500  annual raise│
+│          ││ v2  1 Apr 2025 to 31 Mar 2026   [ended]      INR 2,200,000          │
+│          ││ (a cancelled row is greyed, its gross struck through, "Cancelled <date> by <who>")│
 └──────────┘└─────────────────────────────────────────────────────────────────────┘
 ```
 

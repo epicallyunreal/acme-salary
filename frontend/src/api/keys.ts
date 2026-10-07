@@ -1,6 +1,6 @@
 // TanStack Query keys (DESIGN section 6). Every parameter object is part of its key.
 
-import type { ListParams } from './types';
+import type { HistoryParams, ListParams } from './types';
 
 export const keys = {
   me: ['auth', 'me'] as const,
@@ -13,7 +13,15 @@ export const keys = {
   employees: {
     all: ['employees'] as const,
     list: (params: ListParams) => ['employees', 'list', params] as const,
+    /** The detail, the history and the audit list share this prefix, so one invalidation
+     * after a write refreshes all three. */
     detail: (id: number) => ['employees', id] as const,
+    history: (id: number, params: HistoryParams) =>
+      ['employees', id, 'compensation', params] as const,
+    audit: (id: number) => ['employees', id, 'audit'] as const,
+  },
+  insights: {
+    all: ['insights'] as const,
   },
 };
 

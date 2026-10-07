@@ -79,3 +79,113 @@ export type ListParams = {
   joined_before?: string;
   currency?: ReportingCurrency;
 };
+
+export type ComponentKind = 'earning' | 'deduction' | 'employer_contribution';
+
+/** GET /meta/components/?country=: the global components plus the country's own, in order. */
+export interface SalaryComponent {
+  id: number;
+  code: string;
+  name: string;
+  kind: ComponentKind;
+  country: string | null;
+  sort_order: number;
+}
+
+/** A line as the API and the audit snapshot write it: the component's code (D34). */
+export interface RecordLine {
+  component: string;
+  annual_amount: string;
+}
+
+/** Totals converted at read time by core/fx.py at the rate effective on the reporting date. */
+export interface ConvertedTotals {
+  currency: string;
+  rate: string;
+  rate_effective_from: string | null;
+  bonus_annual: string;
+  gross_annual: string;
+  net_annual: string;
+  total_cost_annual: string;
+}
+
+export interface CompensationRecord {
+  id: number;
+  employee: number;
+  version: number;
+  effective_from: string;
+  /** Exclusive: the record ends the day before. Null while it is open-ended. */
+  effective_to: string | null;
+  is_current: boolean;
+  is_scheduled: boolean;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  currency_code: string;
+  bonus_annual: string;
+  gross_annual: string;
+  net_annual: string;
+  total_cost_annual: string;
+  source: 'ui' | 'import' | 'seed';
+  note: string;
+  created_at: string;
+  created_by: string | null;
+  lines: RecordLine[];
+  converted: ConvertedTotals;
+}
+
+export type Gender = 'female' | 'male' | 'other' | 'undisclosed';
+
+export interface EmployeeDetail {
+  id: number;
+  employee_code: string;
+  full_name: string;
+  email: string;
+  gender: Gender;
+  department: Pick<Department, 'code' | 'name'>;
+  designation: string;
+  level: number;
+  country: Pick<Country, 'code' | 'name' | 'currency_code'>;
+  joining_date: string;
+  last_date: string | null;
+  status: EmployeeStatus;
+  /** `from <date>` or `exited <date>` when the record shown is not current. */
+  shown_label: string | null;
+  current_record: CompensationRecord | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A validator message; create and revise return the warnings beside the result (D27). */
+export interface ServerMessage {
+  field: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+}
+
+export type WithWarnings<T> = T & { warnings: ServerMessage[] };
+
+export type AuditAction =
+  'create' | 'update' | 'exit' | 'revise' | 'cancel' | 'import_apply' | 'set_rate';
+
+/** One audit row. `before` and `after` are the detail shapes, minus request-dependent keys. */
+export interface AuditEntry {
+  id: number;
+  timestamp: string;
+  actor: string | null;
+  action: AuditAction;
+  entity_type: 'employee' | 'compensation_record' | 'import_batch' | 'exchange_rate';
+  entity_id: number;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  import_batch: number | null;
+}
+
+/** The history query string. The UI sends neither yet: the reporting-date picker is P1. */
+export type HistoryParams = {
+  on?: string;
+  currency?: ReportingCurrency;
+};
+
+export interface ExitInput {
+  last_date: string;
+}

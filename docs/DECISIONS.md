@@ -386,6 +386,14 @@ Decision: input serializers check shape and types only, so `gender`, `level`, `e
 
 Consequences: an API client reads the same message text an import row would. The frontend's `applyServerErrors` reads both the list and the index-keyed shapes, so a DRF setting change cannot drop a message.
 
+## D47. Readings made while building the employee page
+
+Context: the detail wireframe in DESIGN 8 showed a reporting-currency column on every line, but the record serializer converts the totals only and rule 3 keeps conversion in `core/fx.py`. Two smaller points were open: how a period reads, and what follows a successful write.
+
+Decision: lines show in the employee's currency with a monthly column, and gross, net and total cost show in both currencies. History shows a period by its last day, `effective_to` minus one, because people read periods inclusively while the API's end is exclusive. Every write ends with a short status message in the words of its button ("Revision v3 cancelled."). A server message that no field holds is listed in the form's error summary under the key it came with, as the owner asked. DESIGN 8's wireframe now shows the page as built.
+
+Consequences: no conversion runs in the browser. A per-line conversion would need `converted.lines` from the API, a small later addition if the owner wants it.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

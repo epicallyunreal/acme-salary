@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 
 import { AppShell } from './components/layout/AppShell';
 import { RequireAuth } from './components/layout/RequireAuth';
+import { EmployeeDetail } from './pages/EmployeeDetail';
 import { Employees } from './pages/Employees';
 import { Login } from './pages/Login';
 import { NotFound } from './pages/NotFound';
@@ -17,6 +18,7 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Navigate to="/employees" replace /> },
           { path: '/employees', element: <Employees /> },
+          { path: '/employees/:id', element: <EmployeeDetail /> },
           { path: '*', element: <NotFound /> },
         ],
       },
