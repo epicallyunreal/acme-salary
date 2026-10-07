@@ -7,9 +7,11 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook
 
+from apps.audit import services as audit_services
+from apps.audit.models import AuditLog
 from apps.imports.models import ImportBatch
 from apps.imports.services import stage_upload
-from tests.imports.sheets import HEADER, new_row, sheet_row, upload_of
+from tests.imports.sheets import HEADER, RAISED, new_row, sheet_row, upload_of
 
 pytestmark = pytest.mark.django_db
 
@@ -203,3 +205,81 @@ def test_list_detail_and_rows_query_counts(api, staff, django_assert_num_queries
         api.get(f"{LIST}{batch.pk}/")
     with django_assert_num_queries(4):
         api.get(f"{LIST}{batch.pk}/rows/")
+
+
+def test_skip_and_unskip_answer_with_the_row_and_move_the_counts(api, staff):
+    batch = stage_upload(upload_of(sheet_row(staff["gita"], **RAISED), new_row()), actor=None)
+    row = batch.rows.get(row_number=2)
+    url = f"{LIST}{batch.pk}/rows/{row.pk}/"
+
+    skipped = api.post(f"{url}skip/")
+    counts = api.get(f"{LIST}{batch.pk}/").json()
+    unskipped = api.post(f"{url}unskip/")
+
+    assert (skipped.status_code, skipped.json()["status"]) == (200, "skipped")
+    assert skipped.json()["validation_status"] == "error"
+    assert (counts["skipped_rows"], counts["error_rows"]) == (1, 0)
+    assert (unskipped.status_code, unskipped.json()["status"]) == (200, "error")
+
+
+def test_a_row_of_another_batch_or_an_unknown_id_is_a_404(api, lookups):
+    first = stage_upload(upload_of(new_row()), actor=None)
+    second = stage_upload(upload_of(new_row(legacy_code="HR-20002")), actor=None)
+    elsewhere = second.rows.get()
+
+    assert api.post(f"{LIST}{first.pk}/rows/{elsewhere.pk}/skip/").status_code == 404
+    assert api.post(f"{LIST}{first.pk}/rows/999999/unskip/").status_code == 404
+    assert api.post(f"{LIST}999999/approve/").status_code == 404
+    assert api.post(f"{LIST}999999/discard/").status_code == 404
+
+
+def test_approve_names_the_error_count_then_applies_once(api, staff, hr_user):
+    batch = stage_upload(upload_of(sheet_row(staff["gita"], **RAISED), new_row()), actor=None)
+
+    refused = api.post(f"{LIST}{batch.pk}/approve/")
+    api.post(f"{LIST}{batch.pk}/rows/{batch.rows.get(row_number=2).pk}/skip/")
+    approved = api.post(f"{LIST}{batch.pk}/approve/")
+    again = api.post(f"{LIST}{batch.pk}/approve/")
+
+    assert (refused.status_code, refused.json()) == (
+        409,
+        {"detail": "1 row has errors", "error_rows": 1},
+    )
+    assert approved.status_code == 200, approved.content
+    assert (approved.json()["status"], approved.json()["applied_rows"]) == ("approved", 1)
+    assert (again.status_code, again.json()) == (
+        409,
+        {"detail": "the batch is approved, not in review"},
+    )
+    assert AuditLog.objects.get(action="import_apply").actor == hr_user
+
+
+def test_a_failed_approve_is_a_409_with_the_summary(api, lookups, monkeypatch):
+    batch = stage_upload(upload_of(new_row()), actor=None)
+
+    def disk_full(entries):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(audit_services, "bulk_record", disk_full)
+
+    response = api.post(f"{LIST}{batch.pk}/approve/")
+
+    assert (response.status_code, response.json()) == (
+        409,
+        {
+            "detail": "approve failed, the batch is marked failed",
+            "error_summary": "OSError: disk full",
+        },
+    )
+    assert api.get(f"{LIST}{batch.pk}/").json()["status"] == "failed"
+
+
+def test_discard_sets_a_batch_aside_once(api, lookups):
+    batch = stage_upload(upload_of(new_row()), actor=None)
+
+    response = api.post(f"{LIST}{batch.pk}/discard/")
+
+    assert (response.status_code, response.json()["status"]) == (200, "discarded")
+    assert api.post(f"{LIST}{batch.pk}/discard/").json() == {
+        "detail": "the batch is discarded, not in review"
+    }

@@ -20,7 +20,7 @@ from apps.compensation import validators
 from apps.compensation.messages import msg
 from apps.compensation.validators import NormalizedRow, ValidationContext
 from apps.core import queries as core_queries
-from apps.core.exceptions import Invalid, PayloadTooLarge
+from apps.core.exceptions import Conflict, Invalid, PayloadTooLarge
 from apps.employees.models import LEGACY_CODE_MAX
 from apps.imports import parser
 from apps.imports.models import ImportBatch, ImportRow
@@ -129,6 +129,12 @@ def row_from_json(row_number: int, data: Mapping[str, Any]) -> NormalizedRow:
 # Batches
 
 
+def require_review(batch: ImportBatch) -> None:
+    """Skip, unskip, discard and approve act only on a batch in review (SPEC F2)."""
+    if batch.status != ImportBatch.Status.REVIEW:
+        raise Conflict(f"the batch is {batch.status}, not in review")
+
+
 def recount(batch: ImportBatch) -> ImportBatch:
     """The summary counts in one aggregate (SPEC section 5). A no-op row counts as valid too;
     a skipped one only as skipped."""
@@ -197,4 +203,40 @@ def stage_upload(upload, *, actor, today: date | None = None) -> ImportBatch:
             item.batch = batch
         ImportRow.objects.bulk_create(staged, batch_size=BATCH)
         recount(batch)
+    return batch
+
+
+def skip_row(batch: ImportBatch, row: ImportRow) -> ImportRow:
+    """Leave a row out of the approve. Skipping a skipped row changes nothing."""
+    with transaction.atomic():
+        batch.refresh_from_db()
+        require_review(batch)
+        row.refresh_from_db()
+        if row.status != ImportRow.Status.SKIPPED:
+            row.status = ImportRow.Status.SKIPPED
+            row.save(update_fields=["status"])
+        recount(batch)
+    return row
+
+
+def unskip_row(batch: ImportBatch, row: ImportRow) -> ImportRow:
+    """Put a skipped row back as the rules found it (SPEC section 5)."""
+    with transaction.atomic():
+        batch.refresh_from_db()
+        require_review(batch)
+        row.refresh_from_db()
+        if row.status != row.validation_status:
+            row.status = row.validation_status
+            row.save(update_fields=["status"])
+        recount(batch)
+    return row
+
+
+def discard(batch: ImportBatch) -> ImportBatch:
+    """Set a batch aside unapplied. Not audited: no pay data changes (DESIGN 1.5)."""
+    with transaction.atomic():
+        batch.refresh_from_db()
+        require_review(batch)
+        batch.status = ImportBatch.Status.DISCARDED
+        batch.save(update_fields=["status"])
     return batch

@@ -885,6 +885,20 @@ def validate_row(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     return run_rules(row, ctx, "import")
 
 
+def recheck_for_apply(row: NormalizedRow, ctx: ValidationContext, action: str) -> list[Message]:
+    """A staged row again, at approve, against the live tables (DESIGN 1.5). A row staged as new
+    whose legacy_code an employee holds now is refused, never matched to them (D24). Every rule
+    runs again, so a revision or an edit made since staging is seen; only errors count."""
+    employee = ctx.employee_for(row)
+    if action == "create" and employee is not None:
+        return [
+            error(
+                "legacy_code", "legacy_taken", code=row.legacy_code, employee=employee.employee_code
+            )
+        ]
+    return [message for message in validate_row(row, ctx) if message.severity == "error"]
+
+
 def worst_severity(messages: Iterable[Message]) -> str:
     severities = {message.severity for message in messages}
     if "error" in severities:

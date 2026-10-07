@@ -14,9 +14,9 @@ from rest_framework.views import APIView
 
 from apps.core.exceptions import PayloadTooLarge
 from apps.core.filters import BoundedSearchFilter
-from apps.imports import queries, services, template
+from apps.imports import applier, queries, services, template
 from apps.imports.filters import ImportRowFilterSet
-from apps.imports.models import ImportBatch
+from apps.imports.models import ImportBatch, ImportRow
 from apps.imports.parser import XLSX_TYPE
 from apps.imports.serializers import ImportBatchSerializer, ImportRowSerializer, UploadSerializer
 
@@ -73,6 +73,41 @@ class ImportRowListView(ListAPIView):
     def get_queryset(self):
         batch = get_object_or_404(ImportBatch.objects.only("pk"), pk=self.kwargs["pk"])
         return queries.rows_queryset(batch.pk)
+
+
+class ImportApproveView(APIView):
+    """POST: apply the batch in one transaction, or answer 409 with the reason (SPEC F2)."""
+
+    def post(self, request, pk):
+        batch = get_object_or_404(ImportBatch, pk=pk)
+        batch = applier.approve(batch, actor=request.user)
+        return Response(ImportBatchSerializer(batch).data)
+
+
+class ImportDiscardView(APIView):
+    """POST: set a batch in review aside, unapplied."""
+
+    def post(self, request, pk):
+        batch = services.discard(get_object_or_404(ImportBatch, pk=pk))
+        return Response(ImportBatchSerializer(batch).data)
+
+
+class ImportRowSkipView(APIView):
+    """POST: leave one row out of the approve."""
+
+    def post(self, request, pk, row_pk):
+        batch = get_object_or_404(ImportBatch, pk=pk)
+        row = services.skip_row(batch, get_object_or_404(ImportRow, pk=row_pk, batch=batch))
+        return Response(ImportRowSerializer(row).data)
+
+
+class ImportRowUnskipView(APIView):
+    """POST: put a skipped row back as the rules found it."""
+
+    def post(self, request, pk, row_pk):
+        batch = get_object_or_404(ImportBatch, pk=pk)
+        row = services.unskip_row(batch, get_object_or_404(ImportRow, pk=row_pk, batch=batch))
+        return Response(ImportRowSerializer(row).data)
 
 
 class ImportTemplateView(APIView):

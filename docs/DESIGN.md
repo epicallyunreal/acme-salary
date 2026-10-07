@@ -243,33 +243,24 @@ Models: SPEC section 5 "ImportBatch and ImportRow".
 | --- | --- |
 | `stage_upload(upload, *, actor, today=None) -> ImportBatch` | Size over 10 MB raises `PayloadTooLarge` before anything is read (the view also refuses a declared `Content-Length` over the limit, so the body is never spooled). `check_header` first: a rejected header raises `Invalid(header.errors())` and no batch exists. Every row is normalised, `build_context(rows=...)` loads what the rules need in chunked `__in` queries, and each row is validated and classified, all outside any transaction. Then one short transaction creates the batch in `review` with `warnings` (unknown columns, and headerless columns by letter), `bulk_create`s the `ImportRow`s in chunks of 1,000 and runs `recount`. Each row keeps `raw`, the cells as typed (dates as ISO text), and `normalized`, the parsed row that `row_from_json` reads back at approve. The denormalised `legacy_code` and `full_name` are cut to their columns for search; a longer value is already a row error (D55). Nothing touches `Employee` or `CompensationRecord` |
 | `classify(row, ctx) -> str | None` | Read after `validate_row` has set the row's flags: `None` when the code is blank or too long, `create` when unmatched, else `noop`, `revise` when amounts changed, `update` otherwise (an exit-only row is an `update`, D26). The table's error messages come from the rules themselves |
-| `skip_row(batch, row, *, actor)`, `unskip_row(...)` | `Conflict` unless the batch is in `review`. Skip sets `status = skipped`; unskip restores `status` from `validation_status`. Both call `recount` |
-| `discard(batch, *, actor)` | `review` to `discarded`, else `Conflict`. Not audited: no pay data changes |
+| `skip_row(batch, row)`, `unskip_row(batch, row)` | Inside one transaction, on a fresh read of the batch: `Conflict("the batch is approved, not in review")` unless it is in `review`. Skip sets `status = skipped` (skipping a skipped row changes nothing); unskip restores `status` from `validation_status`. Both call `recount`. Not audited: no pay data changes |
+| `discard(batch)` | `review` to `discarded` on a fresh read, else the same `Conflict`. Not audited: no pay data changes |
 | `recount(batch)` | One `aggregate` with conditional counts over the batch's rows. A no-op row counts as valid as well as no-op; a skipped row counts only as skipped |
 
 `imports/applier.py`:
 
-`approve(batch, *, actor, today=None) -> ImportBatch`. Refuses with `Conflict` when the batch is not in `review`, and with `Conflict("3 rows have errors", error_rows=3)` while unskipped error rows remain. Accepted rows are those with status `valid` or `warning` and action `create`, `update` or `revise`. Then:
+`approve(batch, *, actor, at=None, today=None) -> ImportBatch`. Everything happens inside one `transaction.atomic()`, whose `BEGIN IMMEDIATE` takes the write lock first:
 
-```python
-try:
-    with transaction.atomic():
-        ctx = validators.build_context(for_rows=accepted)          # fresh, from the live tables
-        failures = {row.id: msgs for row in accepted if (msgs := validators.recheck_for_apply(row_as_normalized(row), ctx))}
-        if failures:
-            raise ReValidationFailed(failures)
-        result = compensation.services.bulk_apply(build_entries(accepted, ctx), actor=actor, source="import", batch=batch, at=now, ctx=ctx)
-        audit.record("import_apply", entity=batch, actor=actor, before=None, after=counts, import_batch=batch)
-        mark approved: status, approved_at, created_rows, updated_rows, revised_rows, applied_rows, matched_employee on create rows
-except ReValidationFailed as exc:        # outside the block, the rollback is complete
-    rows get status = validation_status = "error" with the new messages, recount
-    raise Conflict(f"{n} rows failed re-validation against current data", rows=[...])
-except Exception as exc:
-    batch.status = "failed"; batch.error_summary = f"{type(exc).__name__}: {exc}"[:2000]; save
-    raise ApplyFailed(error_summary=batch.error_summary)
-```
+1. The batch is re-read: `Conflict("the batch is approved, not in review")` unless it is in `review`, and `Conflict("3 rows have errors", error_rows=3)` (`1 row has errors`) while unskipped error rows remain.
+2. The accepted rows are those with status `valid` or `warning` and action `create`, `update` or `revise`, read back with `row_from_json`.
+3. `build_context(rows=...)` is built from the live tables, and `recheck_for_apply(row, ctx, action)` runs on each accepted row.
+4. `bulk_apply(build_entries(...), source="import", batch=batch, ctx=ctx)` writes the rows and their audit entries.
+5. `matched_employee` is set on the create rows. The counts come from the staged actions: `created_rows`, `updated_rows` (identity-only and exit-only rows, D26), `revised_rows`, and `applied_rows` as their sum. The batch becomes `approved` with `approved_at`.
+6. One `import_apply` entry goes on the batch, with the counts in `after`.
 
-`recheck_for_apply` is the identity-reference, duplicate and date subset of `RULES`, run against a context rebuilt from the database so a revision added through the UI between upload and approve is seen. `build_entries` turns rows into `BulkEntry` values: a create row becomes identity plus one record; an identity-only row an update; a row with changed amounts a revise with any identity changes; a row whose `last_date` appeared or changed runs as an exit entry, which `bulk_apply` applies through the same rules as `exit_employee`. Audit entries per row follow SPEC F2: create rows write `create` on the employee and `revise` on the record, identity-only rows write `update`, revise rows write `revise` with the previous record as `before`, exit rows write `exit`; all carry `import_batch`. A row that changes identity fields or sets `last_date` as well as amounts writes its `update` or `exit` entry on the employee first and then the `revise` entry on the record, as the API path does. `updated_rows` still counts identity-only rows and `revised_rows` every row that produced a record, so the batch counts do not change.
+When rows fail the re-check, the transaction rolls back and nothing is applied. After that, outside it, those rows become `error` with their new messages, `recount` runs, the batch stays in `review`, and the call raises `Conflict("1 row failed re-validation against current data", rows=[row numbers])`. Any other exception leaves the batch `failed` with `error_summary = "OSError: disk full"` (type and message, at most 2,000 characters). The rows are kept, and `ApplyFailed` answers 409 with the summary.
+
+`recheck_for_apply` (in `validators.py`) runs every rule again and keeps the errors, against a context rebuilt from the database, so a revision or an edit made through the UI between upload and approve is seen; a row staged as `create` whose `legacy_code` an employee now holds is refused with `legacy_code HR-58213 now belongs to ACME-17; upload the sheet again` and never matched to them (D24). `build_entries` turns rows into `BulkEntry` values: a create row becomes identity plus one record; an identity-only row an update; a row with changed amounts a revise with any identity changes; a row whose `last_date` appeared or changed runs as an exit entry, which `bulk_apply` applies through the same rules as `exit_employee`. Audit entries per row follow SPEC F2: create rows write `create` on the employee and `revise` on the record, identity-only rows write `update`, revise rows write `revise` with the previous record as `before`, exit rows write `exit`; all carry `import_batch`. A row that changes identity fields or sets `last_date` as well as amounts writes its `update` or `exit` entry on the employee first and then the `revise` entry on the record, as the API path does. `updated_rows` still counts identity-only rows and `revised_rows` every row that produced a record, so the batch counts do not change.
 
 `imports/template.py`: `build_template(country: str | None) -> bytes`, a write-only openpyxl workbook with one header row (the identity columns, then the component codes for that country in `sort_order`, or every component when omitted), the header frozen. Unknown country raises `Http404`.
 

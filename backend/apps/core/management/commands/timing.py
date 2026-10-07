@@ -145,9 +145,9 @@ class Command(BaseCommand):
         return f"{worst[0]:.0f} / {worst[1]:.0f}"
 
     def time_import(self, seed: int) -> str:
-        """Stage `make_import_file --all --raises 1000` through the API inside a transaction that
-        is rolled back, so the database is left as it was. Prints the staging time and how far it
-        raised the process's peak memory. Approve is timed once it exists."""
+        """Stage `make_import_file --all --raises 1000` through the API, then approve it, inside
+        a transaction that is rolled back, so the database is left as it was. Prints both times
+        and how far staging raised the process's peak memory."""
         from django.core.management import call_command
         from django.db import transaction
 
@@ -169,17 +169,28 @@ class Command(BaseCommand):
                 started = time.perf_counter()
                 response = client.post("/api/v1/imports/", {"file": handle})
                 staging = time.perf_counter() - started
+                peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+                if response.status_code != 201:
+                    raise CommandError(
+                        f"staging answered {response.status_code}: {response.content[:300]}"
+                    )
+                started = time.perf_counter()
+                approved = client.post(f"/api/v1/imports/{response.json()['id']}/approve/")
+                approving = time.perf_counter() - started
                 transaction.set_rollback(True)
-            peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
-        if response.status_code != 201:
-            raise CommandError(f"staging answered {response.status_code}: {response.content[:300]}")
-        body = response.json()
+        if approved.status_code != 200:
+            raise CommandError(f"approve answered {approved.status_code}: {approved.content[:300]}")
+        body, applied = response.json(), approved.json()
         self.stdout.write(
             f"import, staging {body['total_rows']} rows ({body['valid_rows']} valid, "
             f"{body['warning_rows']} warning, {body['error_rows']} error, {body['noop_rows']} "
             f"no-op): {staging:.1f} s, peak memory up {(peak_after - peak_before) / 2**20:.0f} MB"
         )
-        return f"{staging:.1f} / not built yet"
+        self.stdout.write(
+            f"import, approve of {applied['applied_rows']} rows ({applied['revised_rows']} "
+            f"revised, {applied['created_rows']} created): {approving:.1f} s, rolled back"
+        )
+        return f"{staging:.1f} / {approving:.1f}"
 
     def handle(self, *args, **options):
         wanted = CASES if options["case"] == "all" else (options["case"],)
