@@ -68,7 +68,8 @@ if rel.startswith("backend/") and rel.endswith(".py"):
     is_migration = "/migrations/" in "/" + rel
     if "FloatField" in text and not is_migration:
         problems.append("FloatField found. Rule 2: money is DecimalField(14, 2) and FX rates are DecimalField(18, 8).")
-    if rel.endswith(API_MODULES):
+    # Tests are not API modules, though test_api.py ends like one.
+    if rel.endswith(API_MODULES) and not is_test:
         if "transaction.atomic" in text or "bulk_create" in text or re.search(r"\bDecimal\(", text):
             problems.append(
                 f"Business logic in {os.path.basename(rel)}. Rule 1: move it to services.py or queries.py and call it from the view."
