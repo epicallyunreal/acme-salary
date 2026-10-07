@@ -37,8 +37,8 @@ This list is a floor, not the whole job.
 - MUI X DataGrid community edition supports server-side pagination, sorting and filtering, and which features are gated to the paid tiers.
 - `djangorestframework-simplejwt` refresh rotation and blacklist settings as named.
 - `openpyxl` `read_only=True` and `data_only=True` semantics, and memory behaviour on a 10,000-row sheet.
-- `drf-spectacular` working alongside SimpleJWT.
-- WhiteNoise serving a single-page app fallback for non-`/api` paths.
+- WhiteNoise `WHITENOISE_ROOT` serving at the site root, `WHITENOISE_IMMUTABLE_FILE_TEST`, and a Django catch-all view for the SPA.
+- SQLite version in the `python:3.14-slim` image against Django's minimum.
 - The named hosts' persistent volumes, custom subdomain support and TLS issuance, and SQLite WAL mode on a mounted volume.
 - Recharts supports the chart types named in the insights table.
 - MSW and Vitest versions are compatible.

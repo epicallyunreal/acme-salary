@@ -44,6 +44,8 @@ Consequences: one deployable, no CORS between services in production, no second 
 
 ## D6. MUI with MUI X DataGrid, Recharts, Vitest
 
+Amended 7 Oct: the grid talks to DRF through an adapter (zero-based pages, single-column sort, filter panel disabled), not one-to-one. SPEC section 10.
+
 Context: the brief asks for ReactJS with a component library of choice. The app is grid-heavy: the directory and the import review are both large server-driven tables.
 
 Decision: MUI for components, MUI X DataGrid (community edition) for every grid, Recharts for charts, TanStack Query for server state, react-hook-form plus zod for forms. Tests with Vitest, React Testing Library and MSW.
@@ -70,6 +72,8 @@ Consequences: live data never changes before approval and never partially. The r
 
 ## D9. No hard deletes, audit log on every write
 
+Amended 7 Oct: cancel and set_rate are audited actions too, and cancellation marks a row rather than deleting it. See D20.
+
 Context: salary data is sensitive and the HR Manager is the only editor. Mistakes need to be traceable and corrected by a new revision, never by editing history.
 
 Decision: employees are marked exited, compensation records are superseded, nothing is deleted. Every create, update, exit, revise and import apply writes an `AuditLog` row with actor, before and after JSON, and the batch id where relevant.
@@ -91,6 +95,8 @@ Context: Incubyte confirmed that deployed means a live public URL. The seed take
 Decision: one container on a host that offers a persistent volume (Fly.io or Railway), with `DATABASE_PATH` on the volume. The entrypoint seeds only when the employee table is empty. The app is served from a subdomain of nutanprabhat.dev through a CNAME to the host. The README states the URL and notes the cold-start time if the host sleeps idle instances.
 
 Consequences: the seed runs once per deploy target. A redeploy keeps data unless `--reset` is run on purpose. Render is a fallback if the first host gives trouble, with the seed rebuilt on each deploy.
+
+Superseded by D17: Fly.io only, no Render fallback.
 
 ## D12. Components kept and trimmed after Incubyte said gross is sufficient
 
@@ -128,7 +134,11 @@ Consequences: HR can enter next April's raise in March. Point-in-time reporting 
 
 Context: the review found Django 5.0 out of support, React 18 pinning an old router, MSW on a new major with changed imports, and no backend lock file. The owner's machine runs Python 3.14.
 
-Decision: Python 3.14, Django 6.1 (the only line that supports it), DRF 3.18, SimpleJWT 5.5 with the blacklist app, Node 26, React 19, react-router 8, TypeScript 6.0, Vite 8, Vitest 5, MUI 9, MUI X 9, Recharts 3, TanStack Query 5, MSW 3.0. `uv.lock` for the backend. drf-spectacular dropped: types are hand-written and the schema sat behind auth for nobody. SPEC v2 section 1.
+Decision: Python 3.14, Django 6.1, DRF 3.18, SimpleJWT 5.5 with the blacklist app, Node 26, React 19, react-router 8, TypeScript 6.0, Vite 8, Vitest 5, MUI 9, MUI X 9, Recharts 3, TanStack Query 5, MSW 3.0. `uv.lock` for the backend. drf-spectacular dropped: types are hand-written and the schema sat behind auth for nobody. SPEC section 1.
+
+Django 6.1 over 5.2 LTS, corrected 7 Oct: the first reason recorded here ("the only line that supports 3.14") was wrong, 5.2.8 added 3.14 support. The reason that holds is that 5.2 goes to extended support in April 2027 and 6.1 is the current mainstream line, and the two behavioural changes that matter (`CheckConstraint(condition=)`, `BigAutoField` default) are what the code would use anyway. The review ran the whole backend pin set together on 3.14.3 and it works.
+
+Runtime dependencies and why: django-filter, the standard `FilterSet` for the directory's twelve filters. django-cors-headers, one line of CORS for the single origin. whitenoise, static files from the app container with no second service. openpyxl, the only maintained pure-Python xlsx reader and writer. defusedxml, openpyxl's own recommendation against XML bombs in uploads. gunicorn, the WSGI server. SimpleJWT, stateless auth with a blacklist app for logout. Faker, synthetic names and emails for the seed, in the main group because the seed runs in production on first boot.
 
 Consequences: SimpleJWT and gunicorn declare support only to 3.13. Both are pure Python and CI on 3.14 verifies them on day one. The fallback is Python 3.13, one line in two files. Code written from memory for older majors will be caught by the pinned versions, not by a reviewer later.
 
@@ -136,7 +146,7 @@ Consequences: SimpleJWT and gunicorn declare support only to 3.13. Both are pure
 
 Context: the live URL is the client's one hard requirement and the review found it scheduled last, with a persistence model that contradicted itself and a static-serving claim that was wrong.
 
-Decision: Fly.io on a paid plan, owner pays, one 512 MB machine, one 1 GB volume, deployed in step 1 as an empty skeleton with the custom subdomain and TLS. A Django catch-all view serves the SPA. gunicorn binds explicitly. The seed runs only when the Employee table is empty. SPEC v2 section 14.
+Decision: Fly.io on a paid plan, owner pays, app `acme-salary`, region `sin` (the account could not place a machine in `bom`), one shared-CPU machine with 1 GB (512 MB left no headroom for a 10,000-row import in flight), one 1 GB volume, custom domain `acme.nutanprabhat.dev`, deployed in step 1 as an empty skeleton with TLS. A Django catch-all view serves the SPA. gunicorn binds explicitly. The seed runs only when the Employee table is empty, inside one transaction. One machine stays running so a reviewer never waits on a cold start. SPEC section 14.
 
 Consequences: the hard requirement is proven before any feature exists and every later step deploys onto a working target. One volume with daily snapshots is the accepted risk for v1.
 
@@ -155,6 +165,38 @@ Context: with the review in hand the owner weighed cutting components, history a
 Decision: full scope, submission the morning of 8 October 2026 IST so the reviewers see it first thing. SPEC v2 folds the review's outcomes into one document, and this log keeps the history.
 
 Consequences: roughly 30 to 35 focused hours against a fixed clock, with the P1 list as the release valve. If a step slips, the order of what shrinks is unchanged: export and hardening first, nothing from the data layer, import or deployment.
+
+## D20. No row of pay data is ever deleted, cancellation is a mark
+
+Context: SPEC v2 made cancelling a scheduled revision the one allowed delete, as a record that was never in effect has no history to protect. The 7 Oct review showed that this contradicted rule 6 in CLAUDE.md and two reviewer agents, so every cancel would have raised a Blocker. The owner's position is stricter and simpler: a cancelled raise is itself a fact HR may need to show later.
+
+Decision: `CompensationRecord` gets `cancelled_at` and `cancelled_by`. Cancel sets them and removes nothing. Cancelled rows are excluded from every current-or-latest query and the partial unique index, and shown greyed in history. `DELETE /compensation/{id}/` stays as the verb because it is the natural HTTP shape, and the service marks. The only operations that remove rows are `seed_data --reset` and `reset_demo`, run on the owner's command against the demo database, and they also clear `sqlite_sequence` so a reseed is byte-identical to a fresh one.
+
+Consequences: rule 6 reads as an absolute. The agents get one exception for the two reset commands. Every query that means "the records that count" carries `cancelled_at IS NULL`, which is one extra predicate in the record selection the services already own.
+
+## D21. Refresh token in localStorage, not an httpOnly cookie
+
+Context: the review asked why. The usual answer for a browser app is an httpOnly cookie, which JavaScript cannot read.
+
+Decision: the access token lives in memory and the 12-hour refresh token in `localStorage`. The app is one SPA on one origin with one user. A cookie would bring CSRF protection on every mutating call and a CORS exception for the refresh endpoint, for a threat model where the attacker already runs script on the page and could call the API directly for 30 minutes anyway. Rotation with blacklist limits a stolen refresh token to one use.
+
+Consequences: a cross-site-scripting bug exposes the refresh token for its lifetime. There is no third-party script on the page and MUI escapes rendered values, so the exposure is accepted for v1 and recorded here as the first question a security reviewer will ask.
+
+## D22. Exchange rates are monthly, two months seeded, earliest rate before that
+
+Context: SPEC v2 seeded one rate per pair dated 1 October 2026 and returned 422 for any earlier date, which made point-in-time reporting fail for every date the seeded history covers. Seeding eleven years of invented FX was the alternative.
+
+Decision: rates change on the first of a month only, so a rate row is a month. The seed carries September and October 2026, sixteen rows. A date before the earliest row uses the earliest rate. `set_exchange_rate` refuses dates that are not the first of a month, dates on or before the latest row for the pair, and a second rate for the same month without `--replace`. The dashboard shows the month in use.
+
+Consequences: no 422 anywhere. The history of a rate is a short readable table. Point-in-time before September 2026 is approximate and says so by the month label.
+
+## D23. Full scope held, with a stop time
+
+Context: the 7 Oct review was right that a 30 to 35 hour estimate does not fit the hours left before the morning of 8 October. The owner chose to keep the full scope and decide at the end what to do if a step runs over.
+
+Decision: build in the order of PLAN.md with no cuts planned. The owner takes the decision on any step that is not green by its planned time, with the spec's release valve (export and hardening shrink first) as the default and nothing from data, import, directory or deployment ever cut. PLAN.md carries per-step hours so that decision is made against a number, not a feeling.
+
+Consequences: the risk is accepted knowingly and the record shows it. If the submission slips past the morning, it slips with a working deployed core, not an unfinished one.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

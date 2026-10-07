@@ -2,7 +2,9 @@
 
 Web replacement for an HR team's salary spreadsheets: import, review, maintain and query compensation for 10,000 employees across six countries.
 
-Status: planning. Build order is in `docs/PLAN.md` once approved, derived from `docs/SPEC.md` section 15. Live URL and demo video will be linked here at the Ship step.
+Status: planning. Build order is in `docs/PLAN.md` once approved, derived from `docs/SPEC.md` section 15. Live URL `https://acme.nutanprabhat.dev` goes live at step 1 and the demo video is linked here at the Ship step.
+
+The planning commits up to and including the second spec review were written by hand. From step 1 onwards commits carry a `Co-Authored-By` trailer where Claude Code wrote the change, and each build step was reviewed by the read-only agents in `.claude/agents/` and approved by the owner before it was committed.
 
 ## Documents
 

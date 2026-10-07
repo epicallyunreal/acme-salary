@@ -8,7 +8,7 @@ model: inherit
 
 You review tests, not production code. You do not edit files.
 
-Get the changed test files from `git diff --name-only` and `git status --short`, then read each one in full. Run the suite once: `cd backend && pytest -q -m "not slow"` and, if `frontend/node_modules` exists, `cd frontend && npm test -- --run`. Report the wall time of each.
+Get the changed test files from `git diff --name-only` and `git status --short`, then read each one in full. Do not run the suites yourself: `/finish-step` has already run them and the commit hook runs them again. Read the results `/finish-step` hands you (pass counts, wall time, coverage output) and judge from the test files.
 
 Check.
 
@@ -19,7 +19,7 @@ Check.
 5. Query counts. List and insight endpoints are pinned with `django_assert_num_queries`.
 6. Service tests call the service directly with plain values. API tests use `APIClient`. Nothing tests through the ORM what the service should own.
 7. Frontend. MSW handlers for every API call. Queries by role and label, not by test id or class. No snapshot-only tests.
-8. Coverage. If `pytest-cov` is installed, run `pytest -q -m "not slow" --cov=apps --cov-report=term-missing` and list any of `apps/compensation`, `apps/imports`, `apps/insights` under 85%, with the uncovered lines that matter.
+8. Coverage. From the coverage output `/finish-step` provides, list any of `apps/compensation`, `apps/imports`, `apps/insights` under 85%, with the uncovered lines that matter.
 
 Report in this shape.
 

@@ -8,13 +8,13 @@ argument-hint: <step number>
 
 Step: `$ARGUMENTS`. If no number was given, run `git log --oneline` and pick the first step in `docs/PLAN.md` whose work is not in the log.
 
-0. Gate. Three things must exist before step 1: a report in `docs/reviews/` whose first lines contain `Owner decision: approved`, and `docs/PLAN.md` and `docs/DESIGN.md` each starting with `Owner decision: approved`. If any is missing, stop and tell the owner which command to run (`/review-spec` or `/plan-and-design`) or which file to approve. Later steps need the gate again only if a planning document changed since approval.
+0. Gate. Three things must exist before step 1: the latest report in `docs/reviews/` carrying an `Owner decision:` line that begins `approved`, and `docs/PLAN.md` and `docs/DESIGN.md` each carrying `Owner decision: approved` in their first lines. If any is missing, stop and tell the owner which command to run (`/review-spec` or `/plan-and-design`) or which file to approve. Later steps need the gate again only if a planning document changed since approval.
 
 1. Read the step's section in `docs/PLAN.md` and the matching sections of `docs/DESIGN.md`. Then read the SPEC sections the plan references for this step, in full. Re-read the rules in `CLAUDE.md`.
 2. Turn the plan's section into a task list before touching code: the files, tests and commits it names, in its order. Service and its tests first, API and API tests second, UI and UI tests third. If you would do something the plan does not list, stop and ask first.
 3. Scope check. Nothing marked P1. Nothing outside the plan's section. Nothing the spec does not ask for. If the plan, the design and the spec disagree, or the step needs something none of them covers, stop and ask the owner before coding, then record the answer with `/log-decision` and in the document that was wrong.
 4. Match recipes. If the step adds an endpoint, a validation rule, an insight or a page, follow `/add-endpoint`, `/add-validation-rule`, `/add-insight` or `/frontend-page`. Say which ones apply.
-   Then check installed plugin skills and MCP connectors (`/plugins`, `/mcp`) against the list in CLAUDE.md and say which you will use for this step and for what.
+   Then check your own skill and tool lists against the plugins CLAUDE.md names and say which you will use for this step and for what.
 5. Implement in 2 to 6 commits. Commit after each green unit of work. The pre-commit hook runs lint and tests, and a blocked commit means fix the failure, not work around the hook.
 6. When every acceptance criterion in the step's functional requirement has a passing test, run `/finish-step`.
 

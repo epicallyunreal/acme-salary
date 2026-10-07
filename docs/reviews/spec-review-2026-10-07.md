@@ -1,6 +1,6 @@
 # Spec review, 2026-10-07
 
-Owner decision: pending
+Owner decision: approved, resolved in SPEC v2.1 and D20 to D23.
 
 ## Verdict
 

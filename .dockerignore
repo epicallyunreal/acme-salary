@@ -28,3 +28,9 @@
 **/.idea
 **/.vscode
 fly.toml
+
+# Not needed in the image
+.git
+docs
+.claude
+.github

@@ -16,7 +16,7 @@ Check every changed file against these, in order.
 2. Money. `DecimalField(14, 2)` for amounts, `DecimalField(18, 8)` for FX rates. No float, no `FloatField`, no `round()` on money, no totals accepted from the client. No converted amount stored on any model: conversion is read-time through `core/fx.py`, and displayed money is multiplied in Python with Decimal, never in SQL.
 3. Shared validators. Import pipeline, API and seed all call `compensation/validators.py`. Flag duplicated checks anywhere else.
 4. Transactions. Import approve runs in one atomic block. Creating a revision sets the previous record's `effective_to` in the same transaction.
-5. No hard deletes. No `.delete()` on `Employee` or `CompensationRecord` outside tests.
+5. No deletes. No `.delete()` on `Employee`, `CompensationRecord` or `CompensationLine` anywhere except the `seed_data --reset` and `reset_demo` management commands and tests. Cancelling a scheduled revision sets `cancelled_at` and `cancelled_by`; a cancel that deletes is a Blocker.
 6. Audit. Every write to employee or compensation data goes through `audit.record()`.
 7. Queries. List and insight endpoints use `select_related` or `prefetch_related`, no N+1, no Python loops doing what one aggregate could do.
 8. Readability. Names say what things are. Functions do one thing. No dead code, no commented-out code, no TODO without an owner.

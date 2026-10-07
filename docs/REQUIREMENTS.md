@@ -43,14 +43,14 @@ One persona, one role: the HR Manager. They own the salary data, approve every i
 ## Key assumptions
 
 - Amounts are annual, in local currency, stored as decimals. Converted figures are never stored. An effective-dated exchange-rate table is the single source of truth, and conversion to the reporting currency (USD by default, EUR available) happens at read time at the rate effective on the reporting date.
-- Salary components differ by country, so they are data (a component table and one line per component), not fixed columns. v1 keeps them deliberately small: three global components including a single employer-contribution line, plus one or two per country. Bonus is a plain column on the record, as anyone in any country can receive one.
+- Salary components differ by country, so they are data (a component table and one line per component), not fixed columns. v1 keeps them deliberately small: three global components including a single employer-contribution line, plus zero to two per country. Bonus is a plain column on the record, as anyone in any country can receive one.
 - "Salary history" means dated compensation revisions, not monthly payslips.
 - Import is staged: nothing touches live data until the HR Manager approves the batch.
 
 ## Success criteria
 
-- A 10,000-row spreadsheet is uploaded, validated, reviewed and approved end to end in under 2 minutes.
-- Any employee's current pay and history is found and revised in under 10 seconds.
+- A 10,000-row spreadsheet is parsed, validated and staged in under 30 seconds and approved in under 15 seconds, measured on the deployed instance.
+- Any employee is found by name or code in one search, and a revision is one form.
 - Every dashboard question is answered in one view, with no export to Excel needed.
 
 ## Clarifications from Incubyte (asked and answered 6 Oct 2026)

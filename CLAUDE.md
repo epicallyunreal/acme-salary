@@ -48,10 +48,10 @@ Whole app: `docker compose up` from the repo root, then open http://localhost:80
 3. Header totals (gross, net, total cost) are computed by `compensation/services.py` from the lines, in local currency. Serializers never accept totals from the client. Converted amounts are computed at read time by `core/fx.py` and never stored on any model.
 4. One validator module, `compensation/validators.py`, is used by the import pipeline, the API and the seed. A value that is illegal in one place is illegal everywhere.
 5. Import approval runs inside one `transaction.atomic()` block. Live tables are never written before approval.
-6. No hard deletes of employees or compensation records. Employees are marked exited, records are superseded by a new revision.
+6. No row of pay data is ever deleted. Employees are exited, records are superseded by a new revision, a scheduled revision is cancelled by setting `cancelled_at`. The only commands that remove rows are `seed_data --reset` and `reset_demo`, which rebuild the demo database when the owner runs them.
 7. Every write to employee or compensation data goes through `audit.record()` and lands in `AuditLog` with before and after snapshots.
 8. The seed is deterministic. Same arguments, same bytes. It goes through the same services as the UI so seeded data obeys the same rules.
-9. No new runtime dependency without a one-line entry in `docs/DECISIONS.md` saying why. Installing prompts for confirmation.
+9. No new runtime dependency without a one-line entry in `docs/DECISIONS.md` saying why. `uv add`, `uv pip install`, `pip install` and `npm install` prompt for confirmation.
 10. Secrets come from the environment. `.env.example` is committed, `.env` is not.
 
 ## Reviews
@@ -68,7 +68,7 @@ Five read-only subagents live in `.claude/agents/`: `eng-manager-spec-review` fo
 - Frontend: Vitest, React Testing Library, MSW for the API.
 - Tests land in the same commit as the code they cover.
 - Deterministic by construction: fixed seeds, frozen time, no network, explicit ordering before asserting order.
-- Pin query counts on list and insight endpoints with `django_assert_num_queries`.
+- Pin query counts on list, detail and insight endpoints with `django_assert_num_queries`.
 - Coverage target is 85% on `apps/compensation`, `apps/imports` and `apps/insights`. Report it, do not gate on it elsewhere.
 
 ## Commits
@@ -76,7 +76,7 @@ Five read-only subagents live in `.claude/agents/`: `eng-manager-spec-review` fo
 - Small and coherent. One change per commit, with its tests.
 - Imperative subject under 70 characters. Add a body when the why is not obvious from the diff.
 - Conventional Commits: `type(scope): subject`. Types are `feat`, `fix`, `test`, `docs`, `refactor`, `perf`, `build`, `ci`, `chore`. Scope is the app or area (`import`, `fx`, `directory`, `dashboard`) and is optional. `perf` for changes made for speed, `build` for Dockerfile, pyproject and package.json, `ci` for the GitHub Actions workflow, `chore` for everything else that is not code or docs. Name the step in the subject when closing one.
-- Never rewrite history. `--amend`, `rebase`, `reset --hard`, force pushes and `--no-verify` are blocked by `git_guard.py`. The commit log is part of the submission, with Claude Code's `Co-Authored-By` trailer left in place.
+- Never rewrite history. `--amend`, `rebase`, `reset --hard`, force pushes and `--no-verify` are blocked by `git_guard.py`. The commit log is part of the submission. Commits Claude Code writes carry its `Co-Authored-By` trailer; the README says the planning commits before step 1 were written by hand.
 
 ## Scope
 

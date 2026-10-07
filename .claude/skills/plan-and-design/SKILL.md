@@ -6,9 +6,9 @@ disable-model-invocation: true
 
 # Plan and design, before any code
 
-Gate: `docs/reviews/` must hold a report whose first lines contain `Owner decision: approved`. If not, stop and say so.
+Gate: the latest report in `docs/reviews/` (by modification time) must carry an `Owner decision:` line that begins `approved`. If not, stop and say so.
 
-Read `docs/SPEC.md`, `docs/REQUIREMENTS.md`, `docs/DECISIONS.md` and the approved review in full first. Then check which plugin skills and MCP connectors are installed (`/plugins`, `/mcp`) and use the ones CLAUDE.md names for design work, if present, to set the visual direction. Record in DESIGN.md which were used and what they contributed.
+Read `docs/SPEC.md`, `docs/REQUIREMENTS.md`, `docs/DECISIONS.md` and the approved review in full first. Then check your own skill and tool lists against the plugins CLAUDE.md names and use the ones present for design work to set the visual direction. Record in DESIGN.md which were used and what they contributed.
 
 ## docs/PLAN.md, the what
 
@@ -16,7 +16,7 @@ First line `Owner decision: pending`. Then:
 
 1. A Mermaid dependency graph of build steps 1 to 9 from SPEC section 15, showing what each step needs from the previous ones.
 2. One section per step: goal in one sentence, files to create or change, tests to write, the 2 to 6 planned commits with their subjects, an hours estimate, the SPEC acceptance criteria the step closes (quoted by section and line), risks specific to that step, and the plugin skills or connectors that step will use.
-3. A total hours line, the submission target from DECISIONS D19 (the morning of 8 Oct 2026 IST), and the order in which steps shrink if time runs short (7 and 8 first).
+3. A total hours line, the submission target from DECISIONS D19 and D23 (the morning of 8 Oct 2026 IST, full scope, the owner decides at the end on any overrun), and the order in which steps shrink if time runs short (7 and 8 first).
 4. A short list of everything the owner must do by hand: host account, DNS, env secrets, demo recording, the approval lines on the planning documents.
 
 ## docs/DESIGN.md, the how

@@ -13,7 +13,7 @@ Inputs: the step number, and the change set from `git diff` and `git log --oneli
 Procedure.
 
 1. Read the step's section in `docs/PLAN.md`, the matching parts of `docs/DESIGN.md`, and every SPEC section the plan references for the step.
-2. Acceptance criteria. For each `Given ... then ...` line in the step's functional requirement (section 6), find the test that covers it. Search `backend/tests` and `frontend/src` for the scenario's nouns and values. Mark each criterion covered, partial, or missing, with the test's path.
+2. Acceptance criteria. For each `- [ ]` checkbox line in the step's functional requirement (SPEC section 6): if tagged `[test]`, find the test that covers it by searching `backend/tests` and `frontend/src` for the scenario's nouns and values; if tagged `[measured]`, check that `docs/PERFORMANCE.md` has a row for it or that the step is before step 8. Mark each criterion covered, partial, or missing, with the test's path or the PERFORMANCE row.
 3. API. Every endpoint the step adds appears in the section 8 table with the same method, path and query parameters. List extra endpoints and mismatches.
 4. Data model. Model fields, types, nullability, constraints and indexes match section 5. List drift.
 5. P1 leakage. Grep for anything SPEC section 16 marks P1. Report if any of it was built.
