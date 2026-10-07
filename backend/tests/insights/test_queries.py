@@ -12,7 +12,7 @@ from apps.core.exceptions import Invalid
 from apps.core.money import render
 from apps.employees import services as employees
 from apps.insights import queries
-from tests.factories import CompensationRecordFactory, EmployeeFactory, country
+from tests.factories import CompensationRecordFactory, EmployeeFactory, country, department
 from tests.insights.fixture import build_fixture, us_lines
 
 pytestmark = pytest.mark.django_db
@@ -508,6 +508,29 @@ def test_a_code_given_twice_is_one_group(people):
         country_row("IN", "India", 12, "319200.00", "23750.00", "100.0")
     ]
     assert [row["department"]["code"] for row in by_department] == ["sales"]
+
+
+def test_sums_are_converted_once_per_currency_then_quantised_once(people):
+    """SPEC section 9: amounts are summed per currency in SQL, converted at the Decimal rate and
+    quantised once. Five Dutch and five British salaries of 1,000.01: 5,000.05 EUR and 5,000.05
+    GBP at 1.25 are 6,250.0625 each and 12,500.125 together, so 12,500.13. Quantised per row the
+    total would be 12,500.10, and per currency 12,500.12."""
+    for code in ("NL", "GB"):
+        for _ in range(5):
+            CompensationRecordFactory(
+                employee=EmployeeFactory(country=country(code), department=department("design")),
+                lines={"BASE": Decimal("1000.01")},
+                effective_from=date(2024, 1, 1),
+            )
+
+    (row,) = insight("by-department", department=["design"])["rows"]
+
+    assert (row["headcount"], row["total_cost"], row["mean_gross"], row["median_gross"]) == (
+        10,
+        "12500.13",
+        "1250.01",
+        "1250.01",
+    )
 
 
 def test_an_unknown_country_or_department_is_refused_with_section_7s_words(people):
