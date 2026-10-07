@@ -1,0 +1,200 @@
+"""Staging an upload for review (SPEC F1, F2, DESIGN 1.5).
+
+Staging reads, validates and classifies every row, then writes the batch and its rows in one short
+transaction. Nothing here touches Employee or CompensationRecord: the live tables wait for approve
+(CLAUDE.md rule 5).
+"""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime, time
+from decimal import Decimal
+from typing import Any
+
+from django.db import transaction
+from django.db.models import Count, Q
+
+from apps.compensation import validators
+from apps.compensation.messages import msg
+from apps.compensation.validators import NormalizedRow, ValidationContext
+from apps.core import queries as core_queries
+from apps.core.exceptions import Invalid, PayloadTooLarge
+from apps.employees.models import LEGACY_CODE_MAX
+from apps.imports import parser
+from apps.imports.models import ImportBatch, ImportRow
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+BATCH = 1000
+FULL_NAME_MAX = ImportRow._meta.get_field("full_name").max_length
+FILE_NAME_MAX = ImportBatch._meta.get_field("file_name").max_length
+
+
+# Rows
+
+
+def classify(row: NormalizedRow, ctx: ValidationContext) -> str | None:
+    """SPEC F1's decision table, read after the rules have set the row's flags. None when the
+    row has no usable code; the rules carry the table's error messages themselves."""
+    if not row.legacy_code or len(row.legacy_code) > LEGACY_CODE_MAX:
+        return None
+    if ctx.employee_for(row) is None:
+        return ImportRow.Action.CREATE
+    if row.noop:
+        return ImportRow.Action.NOOP
+    if row.amounts_changed:
+        return ImportRow.Action.REVISE
+    return ImportRow.Action.UPDATE
+
+
+def json_cell(value: Any) -> Any:
+    """A cell as the review grid shows it: what the user typed, dates as ISO text."""
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, datetime):
+        return value.date().isoformat() if value.time() == time() else value.isoformat()
+    if isinstance(value, date | time):
+        return value.isoformat()
+    return str(value)
+
+
+def raw_cells(cells: Sequence[Any], mapping: Mapping[int, str]) -> dict[str, Any]:
+    return {
+        column: json_cell(cells[index] if index < len(cells) else None)
+        for index, column in mapping.items()
+    }
+
+
+def _iso(value: date | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _text(value: Decimal | None) -> str | None:
+    return str(value) if value is not None else None
+
+
+def normalized_json(row: NormalizedRow) -> dict[str, Any]:
+    """The parsed row, kept for the grid and read back at approve by `row_from_json`."""
+    return {
+        "legacy_code": row.legacy_code,
+        "full_name": row.full_name,
+        "email": row.email,
+        "department": row.department,
+        "designation": row.designation,
+        "level": row.level,
+        "country_code": row.country_code,
+        "gender": row.gender,
+        "joining_date": _iso(row.joining_date),
+        "last_date": _iso(row.last_date),
+        "effective_from": _iso(row.effective_from),
+        "bonus_annual": _text(row.bonus_annual),
+        "amounts": {code: _text(value) for code, value in row.amounts.items()},
+        "columns": sorted(row.columns),
+        "present": sorted(row.present),
+    }
+
+
+def row_from_json(row_number: int, data: Mapping[str, Any]) -> NormalizedRow:
+    """The inverse of `normalized_json`, so approve validates the row exactly as staged."""
+
+    def day(name: str) -> date | None:
+        return date.fromisoformat(data[name]) if data.get(name) else None
+
+    def number(value: str | None) -> Decimal | None:
+        return Decimal(value) if value is not None else None
+
+    return NormalizedRow(
+        row_number=row_number,
+        legacy_code=data.get("legacy_code"),
+        full_name=data.get("full_name"),
+        email=data.get("email"),
+        department=data.get("department"),
+        designation=data.get("designation"),
+        level=data.get("level"),
+        country_code=data.get("country_code"),
+        gender=data.get("gender"),
+        joining_date=day("joining_date"),
+        last_date=day("last_date"),
+        effective_from=day("effective_from"),
+        bonus_annual=number(data.get("bonus_annual")),
+        amounts={code: number(value) for code, value in data.get("amounts", {}).items()},
+        columns=frozenset(data.get("columns", ())),
+        present=frozenset(data.get("present", ())),
+    )
+
+
+# Batches
+
+
+def recount(batch: ImportBatch) -> ImportBatch:
+    """The summary counts in one aggregate (SPEC section 5). A no-op row counts as valid too;
+    a skipped one only as skipped."""
+    counts = batch.rows.aggregate(
+        total_rows=Count("id"),
+        valid_rows=Count("id", filter=Q(status=ImportRow.Status.VALID)),
+        warning_rows=Count("id", filter=Q(status=ImportRow.Status.WARNING)),
+        error_rows=Count("id", filter=Q(status=ImportRow.Status.ERROR)),
+        skipped_rows=Count("id", filter=Q(status=ImportRow.Status.SKIPPED)),
+        noop_rows=Count(
+            "id", filter=Q(action=ImportRow.Action.NOOP) & ~Q(status=ImportRow.Status.SKIPPED)
+        ),
+    )
+    for name, value in counts.items():
+        setattr(batch, name, value)
+    batch.save(update_fields=list(counts))
+    return batch
+
+
+def stage_upload(upload, *, actor, today: date | None = None) -> ImportBatch:
+    """Read, validate and classify every row of an upload, then write the batch and its rows.
+
+    The size is checked before anything is read. A header that cannot be mapped refuses the
+    upload with no batch (SPEC F1). The reading and the rules run outside any transaction, so
+    the write lock is held only for the inserts.
+    """
+    if upload.size > MAX_UPLOAD_BYTES:
+        raise PayloadTooLarge()
+    parsed = parser.read(upload, upload.name, getattr(upload, "content_type", None))
+    component_codes = [component.code for component in core_queries.active_components()]
+    header = parser.check_header(parsed.header, component_codes)
+    if header.rejected:
+        raise Invalid(header.errors())
+    warnings = header.warnings + [
+        msg("unknown_column", column=f"column {letter}") for letter in parsed.unnamed
+    ]
+    rows = [parser.normalize(number, cells, header.mapping) for number, cells in parsed.rows]
+    ctx = validators.build_context(rows=rows, today=today)
+    staged = []
+    for row, (_, cells) in zip(rows, parsed.rows, strict=True):
+        messages = validators.validate_row(row, ctx)
+        severity = validators.worst_severity(messages)
+        staged.append(
+            ImportRow(
+                row_number=row.row_number,
+                # Denormalised for search; a value too long for the column is an error anyway.
+                legacy_code=(row.legacy_code or "")[:LEGACY_CODE_MAX],
+                full_name=(row.full_name or "")[:FULL_NAME_MAX],
+                raw=raw_cells(cells, header.mapping),
+                normalized=normalized_json(row),
+                status=severity,
+                validation_status=severity,
+                messages=[message.as_dict() for message in messages],
+                action=classify(row, ctx),
+                matched_employee=ctx.employee_for(row),
+            )
+        )
+    with transaction.atomic():
+        batch = ImportBatch.objects.create(
+            file_name=upload.name[:FILE_NAME_MAX],
+            file_size=upload.size,
+            uploaded_by=actor,
+            warnings=warnings,
+        )
+        for item in staged:
+            item.batch = batch
+        ImportRow.objects.bulk_create(staged, batch_size=BATCH)
+        recount(batch)
+    return batch

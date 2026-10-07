@@ -1,14 +1,16 @@
 """`timing`: measure the directory, insights, import and seed on the 10,000-row seed.
 
-Driven by the /perf-timing skill. Step 2 ships the seed case and step 3 the directory cases; the
-insight and import cases land with the steps that build them. Prints a Markdown row for
+Driven by the /perf-timing skill. Step 2 ships the seed case, step 3 the directory cases and
+step 5 the import case; the insight cases land with step 6. Prints a Markdown row for
 docs/PERFORMANCE.md plus the per-case breakdown.
 """
 
 from __future__ import annotations
 
+import io
 import os
 import platform
+import resource
 import subprocess
 import sys
 import tempfile
@@ -142,6 +144,43 @@ class Command(BaseCommand):
                 worst = (p50, p95)
         return f"{worst[0]:.0f} / {worst[1]:.0f}"
 
+    def time_import(self, seed: int) -> str:
+        """Stage `make_import_file --all --raises 1000` through the API inside a transaction that
+        is rolled back, so the database is left as it was. Prints the staging time and how far it
+        raised the process's peak memory. Approve is timed once it exists."""
+        from django.core.management import call_command
+        from django.db import transaction
+
+        client = api_client()
+        # ru_maxrss is bytes on macOS and kilobytes on Linux.
+        scale = 1 if sys.platform == "darwin" else 1024
+        with tempfile.TemporaryDirectory() as scratch:
+            path = Path(scratch) / "import.xlsx"
+            call_command(
+                "make_import_file",
+                out=str(path),
+                all=True,
+                raises=1000,
+                seed=seed,
+                stdout=io.StringIO(),
+            )
+            peak_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+            with transaction.atomic(), path.open("rb") as handle:
+                started = time.perf_counter()
+                response = client.post("/api/v1/imports/", {"file": handle})
+                staging = time.perf_counter() - started
+                transaction.set_rollback(True)
+            peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+        if response.status_code != 201:
+            raise CommandError(f"staging answered {response.status_code}: {response.content[:300]}")
+        body = response.json()
+        self.stdout.write(
+            f"import, staging {body['total_rows']} rows ({body['valid_rows']} valid, "
+            f"{body['warning_rows']} warning, {body['error_rows']} error, {body['noop_rows']} "
+            f"no-op): {staging:.1f} s, peak memory up {(peak_after - peak_before) / 2**20:.0f} MB"
+        )
+        return f"{staging:.1f} / not built yet"
+
     def handle(self, *args, **options):
         wanted = CASES if options["case"] == "all" else (options["case"],)
         results: dict[str, str] = {case: "" for case in CASES}
@@ -150,9 +189,12 @@ class Command(BaseCommand):
             self.require_seed(options["employees"])
             results["directory"] = self.time_directory(options["repeats"])
 
-        for case in ("insights", "import"):
-            if case in wanted:
-                results[case] = "not built yet"
+        if "insights" in wanted:
+            results["insights"] = "not built yet"
+
+        if "import" in wanted:
+            self.require_seed(options["employees"])
+            results["import"] = self.time_import(options["seed"])
 
         if "seed" in wanted:
             with tempfile.TemporaryDirectory() as scratch:

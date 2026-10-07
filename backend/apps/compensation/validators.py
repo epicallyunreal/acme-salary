@@ -48,6 +48,16 @@ TEN = Decimal("10")
 # impossible values; the warnings below are for unusual ones.
 MAX_AMOUNT = Decimal("9999999999.99")
 MIN_BASE = Decimal("10")
+# A sheet cell may be no longer than its column (D55). SQLite does not enforce VARCHAR lengths,
+# and the lookup rules repeat a value they do not know in their message.
+TEXT_LIMITS = {
+    "full_name": Employee._meta.get_field("full_name").max_length,
+    "email": Employee._meta.get_field("email").max_length,
+    "designation": Employee._meta.get_field("designation").max_length,
+    "department": 64,
+    "country_code": 64,
+    "gender": 64,
+}
 # The last date any date field may hold, so last_date + 1 day always exists (D53).
 DATE_MAX = date(2100, 12, 31)
 DATE_FIELDS = ("joining_date", "last_date", "effective_from")
@@ -295,6 +305,21 @@ def check_legacy_code(row: NormalizedRow, ctx: ValidationContext) -> list[Messag
     return []
 
 
+def _too_long(row: NormalizedRow, name: str) -> bool:
+    value = getattr(row, name)
+    return value is not None and len(value) > TEXT_LIMITS[name]
+
+
+def check_text_lengths(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A cell longer than its column is an error, never cut short (D55). An API body meets the
+    serializers' caps first, so in practice only a sheet sees these messages."""
+    return [
+        error(name, "text_too_long", field=name, limit=limit)
+        for name, limit in TEXT_LIMITS.items()
+        if _too_long(row, name)
+    ]
+
+
 def check_email_format(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     if not row.email:
         return [error("email", "email_invalid")]
@@ -306,12 +331,16 @@ def check_email_format(row: NormalizedRow, ctx: ValidationContext) -> list[Messa
 
 
 def check_country_exists(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    if _too_long(row, "country_code"):
+        return []  # reported by length, and not repeated back at any length
     if row.country_code not in ctx.countries:
         return [error("country_code", "country_unknown", value=row.country_code or "")]
     return []
 
 
 def check_department_exists(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    if _too_long(row, "department"):
+        return []  # reported by length, and not repeated back at any length
     if ctx.department_for(row.department) is None:
         return [error("department", "department_unknown", value=row.department or "")]
     return []
@@ -796,6 +825,7 @@ def rule(fn: Rule, group: str, *scopes: str) -> RuleSpec:
 
 RULES: list[RuleSpec] = [
     rule(check_legacy_code, "structure", "import"),
+    rule(check_text_lengths, "structure", "import", "identity"),
     rule(check_email_format, "structure", "import", "identity"),
     rule(check_country_exists, "structure", "import", "identity"),
     rule(check_department_exists, "structure", "import", "identity"),

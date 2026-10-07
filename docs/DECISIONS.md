@@ -462,6 +462,14 @@ Decision: two or more old code headers and no `legacy_code` column refuse the up
 
 Consequences: no value is read from a column the user did not mean. Keeping the alias is safe. An export from the app always carries a `legacy_code` column, which wins over `employee_code`, and a sheet whose `ACME-<id>` column is read as legacy codes fails the email check row by row, so it never matches the wrong employee. SPEC F1 and section 7.
 
+## D55. A sheet cell longer than its column is a row error
+
+Context: D51 capped the API's strings, but `bulk_apply` applies no caps and SQLite does not enforce VARCHAR lengths, so a 10,000-character `full_name` in a sheet would have been stored as it was. The lookup rules also repeat an unknown value in their message. Asked before step 5, the owner chose an error at each column's own length over cutting the value or leaving it.
+
+Decision: `check_text_lengths` refuses a `full_name`, `email`, `designation`, `department`, `country_code` or `gender` longer than 120, 254, 80, 64, 64 and 64 characters (`full_name is longer than 120 characters`), in the import and identity scopes. The country and department rules skip a value the length rule has refused, so no message repeats it back. SPEC section 7.
+
+Consequences: no import stores or echoes an unbounded string. An API body still meets DRF's caps first (D51), so in practice only sheets show these messages. The staged row's search columns are cut to their length, and `raw` keeps the cell as typed.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

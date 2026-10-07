@@ -547,6 +547,32 @@ def test_validate_exit_refuses_the_last_representable_date(existing):
     }
 
 
+@pytest.mark.parametrize(
+    ("field_name", "limit"),
+    [
+        ("full_name", 120),
+        ("email", 254),
+        ("designation", 80),
+        ("department", 64),
+        ("country_code", 64),
+        ("gender", 64),
+    ],
+)
+def test_a_text_cell_longer_than_its_column_is_an_error(lookups, field_name, limit):
+    """D55: an error, never a cut, and the lookup rules do not repeat the long value back."""
+    found = messages(new_row(**{field_name: "x" * (limit + 1)}))
+
+    assert_message(
+        found,
+        "text_too_long",
+        field_name,
+        "error",
+        f"{field_name} is longer than {limit} characters",
+    )
+    assert not any("x" * (limit + 1) in message.message for message in found)
+    assert find(messages(new_row(**{field_name: "x" * limit})), "text_too_long") is None
+
+
 def test_last_date_before_joining(lookups):
     assert_message(
         messages(new_row(last_date=date(2023, 1, 1))),

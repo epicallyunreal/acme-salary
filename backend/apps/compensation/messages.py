@@ -19,6 +19,7 @@ MESSAGES = {
     ),
     "legacy_required": "legacy_code is required",
     "legacy_too_long": "legacy_code is longer than {limit} characters",
+    "text_too_long": "{field} is longer than {limit} characters",
     "legacy_duplicate": "Duplicate legacy_code in rows {first} and {second}",
     "legacy_taken": "legacy_code {code} now belongs to {employee}; upload the sheet again",
     "code_assigned": "employee_code is assigned by the system",
