@@ -28,7 +28,8 @@ describe('EmployeeDetail', () => {
     renderApp('/employees/1');
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Asha Rao' })).toBeInTheDocument();
-    expect(screen.getByText('ACME-000001')).toBeInTheDocument();
+    expect(screen.getByText('ACME-1')).toBeInTheDocument();
+    expect(screen.getByText('HR-58213')).toBeInTheDocument();
     expect(screen.getByText('Senior Engineer')).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'Current record' });
     expect(within(card).getByText('1,450,000')).toBeInTheDocument();
@@ -157,7 +158,7 @@ describe('EmployeeDetail', () => {
     ).toBeInTheDocument();
     expect(within(update).getByText('Level: 2 to 3')).toBeInTheDocument();
     expect(within(create).getByText('System')).toBeInTheDocument();
-    expect(within(create).getByText('Created ACME-000001')).toBeInTheDocument();
+    expect(within(create).getByText('Created ACME-1')).toBeInTheDocument();
     expect(
       within(first).getByText('First pay record v1 from 1 Jan 2020, gross INR 1,450,000'),
     ).toBeInTheDocument();
@@ -266,6 +267,9 @@ describe('EmployeeDetail', () => {
 
     expect(await screen.findByRole('status')).toHaveTextContent('Changes saved.');
     expect(sent).toEqual([{ designation: 'Staff Engineer' }]);
+    // The codes are never the client's to send (D48).
+    expect(sent[0]).not.toHaveProperty('employee_code');
+    expect(sent[0]).not.toHaveProperty('legacy_code');
   });
 
   it('closes the edit without a request when nothing changed', async () => {

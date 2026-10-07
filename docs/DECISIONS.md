@@ -370,6 +370,8 @@ Decision: `check_code_available` answers `employee_code ACME-000017 already exis
 
 Consequences: no API write reaches a constraint unchecked. Two gaps belong to step 5. A blank `full_name`, `designation` or `joining_date` cell on an import row has no rule yet, and SQLite does not enforce column lengths, so only the API serializers cap them.
 
+Superseded in part by D48: `check_code_available` and the `EmployeeID` keying are gone, because neither code is ever set through the API.
+
 ## D45. joining_date cannot move past the first record
 
 Context: a PATCH could move `joining_date` after the first record's `effective_from`, leaving pay dated before the employee joined. Section 7 checked only the reverse. The owner chose a 400 over allowing it.
@@ -393,6 +395,14 @@ Context: the detail wireframe in DESIGN 8 showed a reporting-currency column on 
 Decision: lines show in the employee's currency with a monthly column, and gross, net and total cost show in both currencies. History shows a period by its last day, `effective_to` minus one, because people read periods inclusively while the API's end is exclusive. Every write ends with a short status message in the words of its button ("Revision v3 cancelled."). A server message that no field holds is listed in the form's error summary under the key it came with, as the owner asked. The revision form asks for its date before sending, and the API keeps section 7's message for any other client. DESIGN 8's wireframe now shows the page as built.
 
 Consequences: no conversion runs in the browser. A per-line conversion would need `converted.lines` from the API, a small later addition if the owner wants it.
+
+## D48. The employee code is the id, and legacy_code carries the sheet's code
+
+Context: a create naming `ACME-999999` broke code assignment for every later create, and a stored `ACME-NNNNNN` code could collide, overflow or be chosen by a client. The owner chose to make the code the primary key and keep the legacy system's code beside it.
+
+Decision: the employee code is `ACME-<id>` with no leading zeros, assigned by the database on every insert and never stored. `Employee.legacy_code` holds the sheet's code, set once when an import creates the employee and never changed. It is NULL for an employee created in the app, unique, and never an empty string, and migration 0002 moves the old codes into it. The template's first column is `legacy_code`, and the old `EmployeeID` headers are read as it only when a sheet has none. The API refuses either code in a create or an edit. Search reads an ACME code as a number and a `legacy_code` in any case, while import matching stays exact and case-sensitive. The seed numbers employees in joining order and gives each an `HR-` code. This supersedes the `ACME-NNNNNN` code of SPEC v2.5 and D44's `check_code_available`.
+
+Consequences: no client or sheet chooses an employee's number, so assignment cannot collide or overflow. An employee created in the app is never reached by a sheet, because the import serves the legacy system's employees only. The golden hash changed, and the live database needs `reset_demo` after the deploy, on the owner's word.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

@@ -9,11 +9,10 @@ country medians lazily, on the first rule that asks).
 
 from __future__ import annotations
 
-import re
 import statistics
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
@@ -29,9 +28,8 @@ from apps.core.dates import today_utc
 from apps.core.exceptions import Conflict, Invalid
 from apps.core.models import Country, Department, SalaryComponent
 from apps.core.money import format_amount, q2, to_str
-from apps.employees.models import Employee, Gender
+from apps.employees.models import LEGACY_CODE_MAX, Employee, Gender, employee_code_of
 
-CODE_PATTERN = re.compile(r"^ACME-\d{6}$")
 IDENTITY_FIELDS = (
     "full_name",
     "email",
@@ -78,7 +76,9 @@ class NormalizedRow:
     """One row of an import, or one API call shaped like one."""
 
     row_number: int | None = None
-    employee_code: str | None = None
+    # An import row names its employee by legacy_code; an API call names it by id (D48).
+    legacy_code: str | None = None
+    employee_id: int | None = None
     full_name: str | None = None
     email: str | None = None
     department: str | None = None
@@ -94,7 +94,6 @@ class NormalizedRow:
     columns: frozenset[str] = frozenset()
     present: frozenset[str] = frozenset()
     parse_messages: list[Message] = field(default_factory=list)
-    allow_blank_code: bool = False
     # set while validating
     is_new: bool = True
     identity_changed: bool = False
@@ -131,8 +130,9 @@ class ValidationContext:
     countries: dict[str, Country]
     departments: dict[str, Department]
     components_by_country: dict[str, dict[str, SalaryComponent]]
-    employees_by_code: dict[str, Employee] = field(default_factory=dict)
-    email_owner: dict[str, str] = field(default_factory=dict)
+    employees_by_id: dict[int, Employee] = field(default_factory=dict)
+    employees_by_legacy: dict[str, Employee] = field(default_factory=dict)
+    email_owner: dict[str, int] = field(default_factory=dict)
     first_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     latest_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     open_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
@@ -140,14 +140,17 @@ class ValidationContext:
     scheduled_by_employee: dict[int, list[date]] = field(default_factory=dict)
     current_lines_by_employee: dict[int, dict[str, Decimal]] = field(default_factory=dict)
     current_bonus_by_employee: dict[int, Decimal] = field(default_factory=dict)
-    rows_of_code: dict[str, list[int]] = field(default_factory=dict)
+    rows_of_legacy: dict[str, list[int]] = field(default_factory=dict)
     rows_of_email: dict[str, list[int]] = field(default_factory=dict)
     _medians: dict[str, Decimal] | None = field(default=None, repr=False)
 
     def employee_for(self, row: NormalizedRow) -> Employee | None:
-        if not row.employee_code:
-            return None
-        return self.employees_by_code.get(row.employee_code)
+        """The employee an API call names, else the one an import row's legacy_code matches."""
+        if row.employee_id is not None:
+            return self.employees_by_id.get(row.employee_id)
+        if row.legacy_code:
+            return self.employees_by_legacy.get(row.legacy_code)
+        return None
 
     def department_for(self, value: str | None) -> Department | None:
         if not value:
@@ -171,7 +174,7 @@ class ValidationContext:
 def build_context(
     *,
     today: date | None = None,
-    codes: Iterable[str] = (),
+    legacy_codes: Iterable[str] = (),
     emails: Iterable[str] = (),
     employees: Iterable[Employee] = (),
     rows: Iterable[NormalizedRow] = (),
@@ -179,8 +182,8 @@ def build_context(
     """The queries behind a validation run: lookups, the matched employees and their records."""
     today = today or today_utc()
     rows = list(rows)
-    codes = {code for code in codes if code} | {
-        row.employee_code for row in rows if row.employee_code
+    legacy_codes = {code for code in legacy_codes if code} | {
+        row.legacy_code for row in rows if row.legacy_code
     }
     emails = {email.lower() for email in emails if email} | {
         row.email.lower() for row in rows if row.email
@@ -201,24 +204,27 @@ def build_context(
             c.code: c for c in core_queries.components_for_country(country_code, components)
         }
 
-    matched = {employee.employee_code: employee for employee in employees}
-    code_list = sorted(codes - set(matched))
+    by_id = {employee.pk: employee for employee in employees}
+    by_legacy = {employee.legacy_code: employee for employee in employees if employee.legacy_code}
+    code_list = sorted(legacy_codes - set(by_legacy))
     for start in range(0, len(code_list), CHUNK):
         found = Employee.objects.filter(
-            employee_code__in=code_list[start : start + CHUNK]
+            legacy_code__in=code_list[start : start + CHUNK]
         ).select_related("country", "department")
         for employee in found:
-            matched[employee.employee_code] = employee
-    ctx.employees_by_code = matched
+            by_legacy[employee.legacy_code] = employee
+            by_id.setdefault(employee.pk, employee)
+    ctx.employees_by_id = by_id
+    ctx.employees_by_legacy = by_legacy
 
     email_list = sorted(emails)
     for start in range(0, len(email_list), CHUNK):
-        for email, code in Employee.objects.filter(
+        for email, owner in Employee.objects.filter(
             email__in=email_list[start : start + CHUNK]
-        ).values_list("email", "employee_code"):
-            ctx.email_owner[email.lower()] = code
+        ).values_list("email", "pk"):
+            ctx.email_owner[email.lower()] = owner
 
-    ids = [employee.pk for employee in matched.values()]
+    ids = list(by_id)
     for start in range(0, len(ids), CHUNK):
         records = CompensationRecord.objects.filter(
             employee_id__in=ids[start : start + CHUNK], cancelled_at__isnull=True
@@ -257,8 +263,8 @@ def build_context(
     for row in rows:
         if row.row_number is None:
             continue
-        if row.employee_code:
-            ctx.rows_of_code.setdefault(row.employee_code, []).append(row.row_number)
+        if row.legacy_code:
+            ctx.rows_of_legacy.setdefault(row.legacy_code, []).append(row.row_number)
         if row.email:
             ctx.rows_of_email.setdefault(row.email.lower(), []).append(row.row_number)
     return ctx
@@ -267,11 +273,12 @@ def build_context(
 # Rules. Each takes (row, ctx) and returns messages. Groups follow SPEC F1's order.
 
 
-def check_employee_code(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
-    if not row.employee_code:
-        return [] if row.allow_blank_code else [error("EmployeeID", "code_invalid")]
-    if not CODE_PATTERN.match(row.employee_code):
-        return [error("EmployeeID", "code_invalid")]
+def check_legacy_code(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A sheet names each employee by the code the legacy system gave them (D48)."""
+    if not row.legacy_code:
+        return [error("legacy_code", "legacy_required")]
+    if len(row.legacy_code) > LEGACY_CODE_MAX:
+        return [error("legacy_code", "legacy_too_long", limit=LEGACY_CODE_MAX)]
     return []
 
 
@@ -365,16 +372,11 @@ def check_email_in_use(row: NormalizedRow, ctx: ValidationContext) -> list[Messa
     if not row.email:
         return []
     owner = ctx.email_owner.get(row.email.lower())
-    if owner is not None and owner != row.employee_code:
-        return [error("email", "email_in_use", code=owner)]
-    return []
-
-
-def check_code_available(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
-    """An API create may name its code, but not one in use (D44). An import row with a known
-    code is a match, so this runs on a create only."""
-    if row.employee_code and ctx.employees_by_code.get(row.employee_code) is not None:
-        return [error("employee_code", "code_taken", code=row.employee_code)]
+    employee = ctx.employee_for(row)
+    if owner is not None and (employee is None or owner != employee.pk):
+        # An unknown legacy_code whose email belongs to someone is a mistyped code, never a
+        # second person (D48).
+        return [error("email", "email_in_use", code=employee_code_of(owner))]
     return []
 
 
@@ -397,10 +399,10 @@ def check_already_exited(row: NormalizedRow, ctx: ValidationContext) -> list[Mes
     return []
 
 
-def check_duplicate_code(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
-    rows = ctx.rows_of_code.get(row.employee_code or "", [])
+def check_duplicate_legacy(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    rows = ctx.rows_of_legacy.get(row.legacy_code or "", [])
     if len(rows) > 1:
-        return [error("EmployeeID", "code_duplicate", first=rows[0], second=rows[1])]
+        return [error("legacy_code", "legacy_duplicate", first=rows[0], second=rows[1])]
     return []
 
 
@@ -679,7 +681,7 @@ def rule(fn: Rule, group: str, *scopes: str) -> RuleSpec:
 
 
 RULES: list[RuleSpec] = [
-    rule(check_employee_code, "structure", "import", "identity"),
+    rule(check_legacy_code, "structure", "import"),
     rule(check_email_format, "structure", "import", "identity"),
     rule(check_country_exists, "structure", "import", "identity"),
     rule(check_department_exists, "structure", "import", "identity"),
@@ -692,10 +694,9 @@ RULES: list[RuleSpec] = [
     rule(check_decimal_places, "structure", "import", "record"),
     rule(check_components_applicable, "structure", "import", "record"),
     rule(check_email_in_use, "references", "import", "identity"),
-    rule(check_code_available, "references", "create"),
     rule(check_country_unchanged, "references", "import", "identity"),
     rule(check_already_exited, "references", "import", "exit"),
-    rule(check_duplicate_code, "duplicates", "import"),
+    rule(check_duplicate_legacy, "duplicates", "import"),
     rule(check_duplicate_email, "duplicates", "import"),
     rule(check_identity_changed, "changes", "import"),
     rule(check_amounts_changed, "changes", "import"),
@@ -770,8 +771,8 @@ def raise_for_errors(messages: Sequence[Message]) -> list[Message]:
 def row_from_identity(identity: Mapping[str, Any], employee: Employee | None) -> NormalizedRow:
     columns = frozenset(identity)
     return NormalizedRow(
-        employee_code=identity.get("employee_code")
-        or (employee.employee_code if employee else None),
+        legacy_code=identity.get("legacy_code"),
+        employee_id=employee.pk if employee else None,
         full_name=_or_existing(identity, "full_name", employee),
         email=_or_existing(identity, "email", employee),
         department=_department_value(identity, employee),
@@ -783,7 +784,6 @@ def row_from_identity(identity: Mapping[str, Any], employee: Employee | None) ->
         last_date=identity.get("last_date") if employee is None else employee.last_date,
         columns=columns,
         present=frozenset(name for name in columns if identity.get(name) not in (None, "")),
-        allow_blank_code=employee is None,
     )
 
 
@@ -799,26 +799,25 @@ def _department_value(identity: Mapping[str, Any], employee: Employee | None) ->
     return employee.department.code if employee else None
 
 
-# The API names the code `employee_code`; the import template calls the column `EmployeeID`.
-API_FIELDS = {"EmployeeID": "employee_code"}
+# The API never sets either code: the database numbers every employee, and only an import
+# that creates one records its legacy_code (D48).
+SYSTEM_CODES = {"employee_code": "code_assigned", "legacy_code": "legacy_import_only"}
 
 
-def _api_fields(messages: list[Message]) -> list[Message]:
-    return [replace(m, field=API_FIELDS.get(m.field, m.field)) for m in messages]
+def refuse_codes(values: Mapping[str, Any]) -> None:
+    """A create or an edit through the API that carries either code is a 400, whatever value it
+    holds, so a client cannot believe it set one."""
+    errors = {name: [msg(key)] for name, key in SYSTEM_CODES.items() if name in values}
+    if errors:
+        raise Invalid(errors)
 
 
 def validate_identity(
     identity: Mapping[str, Any], ctx: ValidationContext, *, employee: Employee | None = None
 ) -> list[Message]:
-    """Create (employee None) or edit. Raises Invalid, returns warnings.
-
-    On a create, a code the client names must be free, and that is checked first: the other
-    rules would otherwise read the employee who holds the code.
-    """
+    """Create (employee None) or edit. Raises Invalid, returns warnings."""
     row = row_from_identity(identity, employee)
-    if employee is None:
-        raise_for_errors(run_rules(row, ctx, "create"))
-    return raise_for_errors(_api_fields(run_rules(row, ctx, "identity")))
+    return raise_for_errors(run_rules(row, ctx, "identity"))
 
 
 def row_from_record(
@@ -835,7 +834,7 @@ def row_from_record(
     if last_date is not None:
         columns.add("last_date")
     row = NormalizedRow(
-        employee_code=employee.employee_code if employee else None,
+        employee_id=employee.pk if employee else None,
         country_code=country_code,
         joining_date=joining_date,
         last_date=last_date,
@@ -843,7 +842,6 @@ def row_from_record(
         bonus_annual=bonus_annual,
         amounts=dict(lines),
         columns=frozenset(columns),
-        allow_blank_code=True,
     )
     row.amounts_changed = True
     row.identity_changed = False
@@ -882,7 +880,7 @@ def validate_exit(employee: Employee, last_date: date, ctx: ValidationContext) -
     if employee.last_date is not None:
         raise Conflict(msg("already_exited", date=employee.last_date.isoformat()))
     row = NormalizedRow(
-        employee_code=employee.employee_code,
+        employee_id=employee.pk,
         country_code=employee.country_id,
         joining_date=employee.joining_date,
         last_date=last_date,

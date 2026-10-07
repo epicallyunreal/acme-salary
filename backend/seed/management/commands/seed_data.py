@@ -22,7 +22,7 @@ from apps.compensation import validators
 from apps.compensation.services import bulk_apply
 from apps.employees.models import Employee
 from seed import profiles
-from seed.generator import generate
+from seed.generator import ordered_entries
 from seed.lookups import ensure_lookups, ensure_rates
 
 CHUNK = 1000
@@ -72,7 +72,7 @@ def seed(employees: int, seed_value: int, *, reset: bool, stdout=None) -> float:
         ensure_rates(at=profiles.REFERENCE_DATETIME)
         ensure_hr_manager(password)
         ctx = validators.build_context(today=profiles.REFERENCE_DATE)
-        entries = generate(employees, seed_value)
+        entries = iter(ordered_entries(employees, seed_value))
         while chunk := list(islice(entries, CHUNK)):
             bulk_apply(
                 chunk,

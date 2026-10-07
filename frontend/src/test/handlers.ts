@@ -71,7 +71,8 @@ export const employeeHandlers = [
       {
         ...employeeDetails[1],
         id: 5,
-        employee_code: 'ACME-000005',
+        employee_code: 'ACME-5',
+        legacy_code: null,
         full_name: body.full_name,
         email: body.email.toLowerCase(),
         warnings: [],

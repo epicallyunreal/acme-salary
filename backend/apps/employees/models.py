@@ -1,10 +1,21 @@
-"""Employee (SPEC section 5). Active is derived from the dates, there is no status column."""
+"""Employee (SPEC section 5). Active is derived from the dates, there is no status column.
+
+The employee code is the primary key written as ACME-<id>: the database assigns it on every
+insert and nothing stores it (D48). `legacy_code` is the code an imported sheet carried, set
+once when the import creates the employee, and NULL for everyone created in the app.
+"""
 
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
 
 from apps.core.models import Country, Department
+
+LEGACY_CODE_MAX = 32
+
+
+def employee_code_of(pk: int | None) -> str | None:
+    return f"ACME-{pk}" if pk is not None else None
 
 
 class Gender(models.TextChoices):
@@ -15,7 +26,7 @@ class Gender(models.TextChoices):
 
 
 class Employee(models.Model):
-    employee_code = models.CharField(max_length=16, unique=True)
+    legacy_code = models.CharField(max_length=LEGACY_CODE_MAX, null=True, blank=True, unique=True)
     full_name = models.CharField(max_length=120, db_index=True)
     email = models.EmailField(unique=True)
     gender = models.CharField(max_length=12, choices=Gender.choices)
@@ -38,8 +49,17 @@ class Employee(models.Model):
                 condition=Q(last_date__isnull=True) | Q(last_date__gte=F("joining_date")),
                 name="employee_last_date_after_joining",
             ),
+            models.CheckConstraint(
+                condition=Q(legacy_code__isnull=True) | ~Q(legacy_code=""),
+                name="employee_legacy_code_not_empty",
+            ),
         ]
         indexes = [models.Index(fields=["department", "country"], name="employee_dept_country")]
 
     def __str__(self) -> str:
         return f"{self.employee_code} {self.full_name}"
+
+    @property
+    def employee_code(self) -> str | None:
+        """ACME-<id>, no leading zeros: ACME-17 is /employees/17."""
+        return employee_code_of(self.pk)

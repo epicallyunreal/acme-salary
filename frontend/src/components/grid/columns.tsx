@@ -20,7 +20,14 @@ export function directoryColumns(reportingCurrency: string): GridColDef<Employee
       ? 'Gross (local currency)'
       : `Gross (${reportingCurrency.toUpperCase()})`;
   return [
-    { field: 'employee_code', headerName: 'Code', width: 120 },
+    { field: 'employee_code', headerName: 'Code', width: 110 },
+    {
+      field: 'legacy_code',
+      headerName: 'Legacy code',
+      width: 130,
+      sortable: false,
+      valueGetter: (_value, row) => row.legacy_code ?? '',
+    },
     { field: 'full_name', headerName: 'Name', flex: 1, minWidth: 160 },
     { field: 'email', headerName: 'Email', flex: 1, minWidth: 200, sortable: false },
     {
@@ -103,6 +110,7 @@ export function directoryColumns(reportingCurrency: string): GridColDef<Employee
 }
 
 export const DIRECTORY_HIDDEN_COLUMNS: GridColumnVisibilityModel = {
+  legacy_code: false,
   email: false,
   last_date: false,
   version: false,

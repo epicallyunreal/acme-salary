@@ -165,6 +165,7 @@ function detail(
   return {
     id: row.id,
     employee_code: row.employee_code,
+    legacy_code: row.legacy_code,
     full_name: row.full_name,
     email: row.email,
     department: row.department,
@@ -218,7 +219,7 @@ const audits: Record<number, AuditEntry[]> = {
       entity_type: 'employee',
       entity_id: 1,
       before: null,
-      after: { employee_code: 'ACME-000001' },
+      after: { employee_code: 'ACME-1' },
       import_batch: null,
     },
     {

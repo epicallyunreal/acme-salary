@@ -1,17 +1,23 @@
+"""make_import_file writes template-shaped sheets that name employees by legacy_code (D48)."""
+
 import csv
-from datetime import datetime
-from decimal import Decimal
+import re
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
 from io import StringIO
 
 import pytest
 from django.core.management import CommandError, call_command
 from openpyxl import load_workbook
 
-from apps.compensation.services import bulk_apply
+from apps.compensation import services as compensation
+from apps.compensation.services import RecordInput, bulk_apply
+from apps.employees.models import Employee
 from apps.imports.parser import IDENTITY_COLUMNS
 from seed import profiles
-from seed.generator import generate
+from seed.generator import ordered_entries
 from seed.lookups import ensure_lookups
+from tests.factories import EmployeeFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -33,7 +39,7 @@ COMPONENT_COLUMNS = {
 def thirty(db):
     ensure_lookups()
     bulk_apply(
-        generate(30, 42),
+        ordered_entries(30, 42),
         source="seed",
         at=profiles.REFERENCE_DATETIME,
         today=profiles.REFERENCE_DATE,
@@ -44,6 +50,16 @@ def run(path, **options) -> str:
     out = StringIO()
     call_command("make_import_file", out=str(path), stdout=out, **options)
     return out.getvalue()
+
+
+def current_base(employee: Employee) -> Decimal:
+    on = profiles.REFERENCE_DATE
+    record = compensation.current_record(employee, on) or compensation.latest_record(employee)
+    return record.lines.get(component__code="BASE").annual_amount
+
+
+def taken_codes() -> set[str]:
+    return set(Employee.objects.exclude(legacy_code=None).values_list("legacy_code", flat=True))
 
 
 def rows_of_xlsx(path) -> tuple[list[str], list[dict]]:
@@ -70,12 +86,15 @@ def test_all_writes_every_employee_with_raises_errors_and_new_rows(thirty, tmp_p
     # Raises: the first five existing rows are dated the first of next month, as date cells.
     assert rows[3]["effective_from"] == datetime(2026, 11, 1)
     assert rows[5]["effective_from"] is None
-    # Row 3 is ACME-000004, whose current base at seed 42 is 1,381,400, raised 5 percent.
-    assert rows[3]["BASE"] == 1450470
-    assert rows[5]["EmployeeID"] == "ACME-000006"
-    # New rows continue the code sequence.
-    assert rows[30]["EmployeeID"] == "ACME-000031"
-    assert rows[33]["EmployeeID"] == "ACME-000034"
+    # Existing rows run in id order and carry each employee's own legacy_code.
+    employees = list(Employee.objects.order_by("pk"))
+    assert [row["legacy_code"] for row in rows[3:30]] == [e.legacy_code for e in employees[3:30]]
+    raised = (current_base(employees[3]) * Decimal("1.05")).quantize(1, rounding=ROUND_HALF_UP)
+    assert rows[3]["BASE"] == raised
+    # New joiners get fresh HR- codes that no employee holds.
+    fresh = [row["legacy_code"] for row in rows[30:]]
+    assert all(re.fullmatch(r"HR-\d{5}", code) for code in fresh)
+    assert len(set(fresh)) == 4 and not set(fresh) & taken_codes()
 
 
 def test_every_planted_error_kind_is_written(thirty, tmp_path):
@@ -89,20 +108,36 @@ def test_every_planted_error_kind_is_written(thirty, tmp_path):
     assert rows[2]["department"] == "Growth"
     assert rows[3]["level"] == 9
     assert rows[4]["joining_date"] == "31/02/2024"
-    assert rows[5]["EmployeeID"] == rows[6]["EmployeeID"]
+    assert rows[5]["legacy_code"] == rows[6]["legacy_code"]
     assert rows[6]["BASE"] == "1.200.000,50"
     assert rows[7]["HRA"] is not None and rows[7]["country_code"] != "IN"
 
 
-def test_new_alone_invents_employees_after_the_last_code(thirty, tmp_path):
+def test_new_alone_invents_employees_with_unused_legacy_codes(thirty, tmp_path):
     path = tmp_path / "new.xlsx"
 
     out = run(path, new=3)
 
     _, rows = rows_of_xlsx(path)
     assert "wrote 3 rows" in out
-    assert [row["EmployeeID"] for row in rows] == ["ACME-000031", "ACME-000032", "ACME-000033"]
+    codes = [row["legacy_code"] for row in rows]
+    assert len(set(codes)) == 3 and not set(codes) & taken_codes()
     assert all(row["effective_from"] is None for row in rows)
+
+
+def test_an_employee_created_in_the_app_is_never_written(thirty, tmp_path):
+    """The import serves the legacy system's employees only (D48)."""
+    added = EmployeeFactory(joining_date=date(2024, 1, 1))
+    compensation.add_first_record(
+        added, RecordInput(None, Decimal("0"), "", {"BASE": Decimal("900000")})
+    )
+    path = tmp_path / "all.xlsx"
+
+    out = run(path, all=True)
+
+    _, rows = rows_of_xlsx(path)
+    assert "wrote 30 rows" in out
+    assert added.email not in {row["email"] for row in rows}
 
 
 def test_csv_output_matches_the_template(thirty, tmp_path):
@@ -115,13 +150,14 @@ def test_csv_output_matches_the_template(thirty, tmp_path):
     assert reader[0][: len(IDENTITY_COLUMNS)] == list(IDENTITY_COLUMNS)
     assert len(reader) == 31
     first = dict(zip(reader[0], reader[1], strict=True))
-    assert first["EmployeeID"] == "ACME-000001"
-    assert first["full_name"] == "Margaret Johnson"
-    # The current record, not the joining one: three April raises since 2017.
-    assert first["BASE"] == "220500.00"
-    assert first["joining_date"] == "2017-04-19"
+    # ACME-1 is the longest-serving employee (D48), and the row carries the current record.
+    earliest = Employee.objects.order_by("pk").first()
+    assert earliest.joining_date == min(Employee.objects.values_list("joining_date", flat=True))
+    assert first["legacy_code"] == earliest.legacy_code
+    assert first["full_name"] == earliest.full_name
+    assert first["joining_date"] == earliest.joining_date.isoformat()
     assert first["effective_from"] == ""
-    assert Decimal(first["BASE"]) == Decimal("220500")
+    assert Decimal(first["BASE"]) == current_base(earliest)
 
 
 def test_raises_alone_writes_only_the_raised_employees(thirty, tmp_path):

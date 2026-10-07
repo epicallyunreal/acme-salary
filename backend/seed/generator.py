@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import random
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
@@ -164,7 +164,6 @@ def generate(count: int, seed: int, *, start_number: int = 1) -> Iterator[BulkEn
             )
 
         identity = {
-            "employee_code": profiles.EMPLOYEE_CODE_FORMAT.format(number),
             "full_name": full_name,
             "email": email,
             "department": department.code,
@@ -176,3 +175,21 @@ def generate(count: int, seed: int, *, start_number: int = 1) -> Iterator[BulkEn
             "last_date": last_date,
         }
         yield BulkEntry(ref=number, identity=identity, records=records)
+
+
+def legacy_codes(count: int, salt: str, taken: Iterable[str] = ()) -> list[str]:
+    """`count` HR- codes drawn without repeats from the numbers not in `taken`, by a generator of
+    their own, so drawing them leaves the employee draws above untouched."""
+    used = set(taken)
+    free = [n for n in profiles.LEGACY_NUMBERS if profiles.LEGACY_CODE_FORMAT.format(n) not in used]
+    numbers = random.Random(salt).sample(free, count)
+    return [profiles.LEGACY_CODE_FORMAT.format(number) for number in numbers]
+
+
+def ordered_entries(count: int, seed: int) -> list[BulkEntry]:
+    """The seed's employees in the order the database numbers them: the earliest joiner first,
+    ties in generation order, so ACME-1 is the longest-serving (D48). Each carries a legacy_code."""
+    entries = sorted(generate(count, seed), key=lambda entry: entry.identity["joining_date"])
+    for entry, code in zip(entries, legacy_codes(count, f"seed-{seed}"), strict=True):
+        entry.identity["legacy_code"] = code
+    return entries

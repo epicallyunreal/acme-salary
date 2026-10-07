@@ -3,9 +3,9 @@
 from django.db.models import Q
 from django_filters import ChoiceFilter, DateFilter, FilterSet, NumberFilter, OrderingFilter
 
-from apps.core.filters import CharInFilter, ChoiceInFilter
+from apps.core.filters import BoundedSearchFilter, CharInFilter, ChoiceInFilter
 from apps.employees.models import Employee
-from apps.employees.queries import STATUSES, gross_bound
+from apps.employees.queries import STATUSES, gross_bound, parse_employee_code
 
 STATUS_CHOICES = [(status, status) for status in STATUSES]
 
@@ -33,7 +33,8 @@ class DirectoryFilterSet(FilterSet):
     ordering = StableOrderingFilter(
         fields=(
             ("full_name", "full_name"),
-            ("employee_code", "employee_code"),
+            # The code is ACME-<id>, so its order is the id's (D48).
+            ("id", "employee_code"),
             ("department__name", "department"),
             ("country__name", "country"),
             ("designation", "designation"),
@@ -59,3 +60,22 @@ class DirectoryFilterSet(FilterSet):
 
     def filter_gross_max(self, queryset, name, value):
         return queryset.filter(gross__lte=gross_bound(value, "max"))
+
+
+class EmployeeSearchFilter(BoundedSearchFilter):
+    """`?search=` for people typing (SPEC F4, D48). Each word matches part of a name or an email,
+    a legacy_code in any case, or an ACME code read as its number, so ACME-0017 and acme-17 both
+    find ACME-17. Words combine with AND, as DRF's SearchFilter does."""
+
+    def filter_queryset(self, request, queryset, view):
+        for term in self.get_search_terms(request):
+            condition = (
+                Q(full_name__icontains=term)
+                | Q(email__icontains=term)
+                | Q(legacy_code__iexact=term)
+            )
+            number = parse_employee_code(term)
+            if number is not None:
+                condition |= Q(pk=number)
+            queryset = queryset.filter(condition)
+        return queryset

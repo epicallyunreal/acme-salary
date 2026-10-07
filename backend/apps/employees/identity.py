@@ -17,7 +17,7 @@ IDENTITY_FIELDS = (
 
 
 def apply_identity(employee: Employee, values: Mapping[str, Any], ctx) -> None:
-    """Set the identity fields in `values`. last_date, employee_code and country stay put."""
+    """Set the identity fields in `values`. last_date, the two codes and the country stay put."""
     for name, value in values.items():
         if name == "department":
             employee.department = ctx.department_for(value)

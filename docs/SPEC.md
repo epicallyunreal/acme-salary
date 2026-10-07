@@ -1,6 +1,6 @@
-# ACME Salary Management: Engineering Spec, v2.5
+# ACME Salary Management: Engineering Spec, v2.6
 
-Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D46). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. v2.4 records the owner's step 3 answers: `currency=local` on a single employee in section 8, and the session lifetime and reuse rules in F8 (D21). v2.5 records the owner's step 4 answers: a cancelled revision releases its date in section 5 (D43), and the taken-code and joining-date rules in section 7 (D44, D45), and the 400 for a component listed twice in section 8 (D46). Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
+Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D48). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. v2.4 records the owner's step 3 answers: `currency=local` on a single employee in section 8, and the session lifetime and reuse rules in F8 (D21). v2.5 records the owner's step 4 answers: a cancelled revision releases its date in section 5 (D43), and the taken-code and joining-date rules in section 7 (D44, D45), and the 400 for a component listed twice in section 8 (D46). v2.6 records the owner's identity decision (D48): the employee code is `ACME-<id>` in section 5, `legacy_code` takes `EmployeeID`'s place in F1, F2, section 7 and section 8, search and ordering follow in F4, and the seed numbers employees in joining order in section 11. Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
 
 ## 1. System overview
 
@@ -125,8 +125,8 @@ Relationships: Employee to Country and Department. Employee 1:N CompensationReco
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | PK | |
-| `employee_code` | VARCHAR(16) unique | `ACME-NNNNNN`, immutable after create, required on import, server-assigned on UI create |
+| `id` | PK | the employee code is `ACME-<id>` with no leading zeros (ACME-17 is `/employees/17`). The database assigns it on every insert, API create, import create and seed alike, and nothing stores it (D48) |
+| `legacy_code` | VARCHAR(32) unique, nullable | the code the legacy system gave the employee, exactly as the sheet carried it. Set once when an import creates the employee and never changed. NULL, never an empty string, for an employee created in the app |
 | `full_name` | VARCHAR(120) | indexed |
 | `email` | VARCHAR(254) unique | stored lowercase |
 | `gender` | enum(`female`, `male`, `other`, `undisclosed`) | |
@@ -172,7 +172,7 @@ There is no `status` column. Active is derived from `joining_date` and `last_dat
 | Table | Columns | Notes |
 | --- | --- | --- |
 | `ImportBatch` | `id`, `file_name`, `file_size`, `uploaded_by` FK, `uploaded_at`, `status` enum(`review`, `approved`, `discarded`, `failed`), `warnings` JSON, `total_rows`, `valid_rows`, `warning_rows`, `error_rows`, `skipped_rows`, `noop_rows`, `created_rows`, `updated_rows`, `revised_rows`, `applied_rows`, `approved_at`, `error_summary` TEXT | counts recomputed after every skip or unskip. `updated_rows` counts identity-only rows, `revised_rows` counts rows that produced a new record (with or without identity changes). `applied_rows` = created + updated + revised |
-| `ImportRow` | `id`, `batch` FK, `row_number`, `employee_code`, `full_name`, `raw` JSON, `normalized` JSON, `status` enum(`valid`, `warning`, `error`, `skipped`), `validation_status` enum(`valid`, `warning`, `error`), `messages` JSON list of `{field, severity, message}`, `action` enum(`create`, `update`, `revise`, `noop`) nullable, `matched_employee` FK nullable | unique (`batch`, `row_number`), index (`batch`, `status`). `employee_code` and `full_name` denormalised for search. `validation_status` is what the rules produced, `status` adds `skipped`; unskip restores `status` from `validation_status`. `action` null when the row has no usable code |
+| `ImportRow` | `id`, `batch` FK, `row_number`, `legacy_code`, `full_name`, `raw` JSON, `normalized` JSON, `status` enum(`valid`, `warning`, `error`, `skipped`), `validation_status` enum(`valid`, `warning`, `error`), `messages` JSON list of `{field, severity, message}`, `action` enum(`create`, `update`, `revise`, `noop`) nullable, `matched_employee` FK nullable | unique (`batch`, `row_number`), index (`batch`, `status`). `legacy_code` and `full_name` denormalised for search. `validation_status` is what the rules produced, `status` adds `skipped`; unskip restores `status` from `validation_status`. `action` null when the row has no usable code |
 
 ### AuditLog
 
@@ -191,11 +191,12 @@ There is no `status` column. Active is derived from `joining_date` and `last_dat
 ### F1. Spreadsheet import
 
 - Accepts `.xlsx` and `.csv`, up to 10,000 data rows and 10 MB. Extension and content type are checked. XLSX is opened with `read_only=True`, `data_only=True`, with defusedxml installed. CSV must be UTF-8, BOM accepted.
-- Template columns, in order: `EmployeeID, full_name, email, department, designation, level, country_code, gender, joining_date, last_date, effective_from, bonus_annual`, then one column per component code (for India: `BASE, HRA, ALLOWANCES, TAX, EMPLOYER_CONTRIBUTION`). Required: `EmployeeID, full_name, email, department, designation, level, country_code, gender, joining_date, BASE`. Blank component cells mean not applicable. Blank `bonus_annual` means zero.
-- Header matching is case-, space- and underscore-insensitive with an alias list (`employee_code`, `Emp ID`, `Employee Code` map to `EmployeeID`). Unknown columns are recorded in `ImportBatch.warnings` and ignored. Missing required columns reject the upload with `400 {missing_columns, unknown_columns}` and no batch is created.
+- Template columns, in order: `legacy_code, full_name, email, department, designation, level, country_code, gender, joining_date, last_date, effective_from, bonus_annual`, then one column per component code (for India: `BASE, HRA, ALLOWANCES, TAX, EMPLOYER_CONTRIBUTION`). Required: `legacy_code, full_name, email, department, designation, level, country_code, gender, joining_date, BASE`. Blank component cells mean not applicable. Blank `bonus_annual` means zero.
+- Header matching is case-, space- and underscore-insensitive. `EmployeeID`, `Employee Code`, `Emp ID` and `employee_code` are read as `legacy_code` when the sheet has no `legacy_code` column; when it has one, it wins and those columns get the unknown-column warning. Unknown columns are recorded in `ImportBatch.warnings` and ignored.
+- `legacy_code` names the employee in the legacy system (D48). Surrounding spaces are trimmed and a numeric XLSX cell is read as its integer text (`58213.0` is `58213`); otherwise the match is exact and case-sensitive. The import serves the legacy system's employees only: an employee created in the app has no `legacy_code` and is never reached by a sheet. Missing required columns reject the upload with `400 {missing_columns, unknown_columns}` and no batch is created.
 - Numbers: currency symbols and spaces stripped. A comma followed by exactly three digits with no dot anywhere is a thousands separator and is removed (`1,200` is 1200, `12,00,000` is 1200000). Any other comma is a decimal-separator error with a hint. Dot is the only decimal separator. More than two decimals is an error.
 - Each row is validated against section 7 in this order: structure and types, identity references, duplicate code and email within the file, amounts changed, no-op, date rules. The worst severity becomes the row status.
-- Unmatched `EmployeeID` creates the employee and the first record. `effective_from` defaults to `joining_date` with an info message.
+- A `legacy_code` that matches no employee creates the employee and the first record: the database numbers the employee at approve and the sheet's code is stored as its `legacy_code`. An unknown code whose email already belongs to someone is the `email already belongs to` error, never a second person; that is what catches a mistyped code. `effective_from` defaults to `joining_date` with an info message. A sheet uploaded again after its batch was approved matches its own codes, so it updates or no-ops instead of duplicating.
 - Matched rows follow this table. Identity fields are `full_name, email, department, designation, level, gender, joining_date, last_date`. Amounts are `bonus_annual` and every component column. A `last_date` that appears or changes runs the exit service with its rules (F3), so the open record is closed and the `409` cases become row errors. A blank `last_date` on an exited employee is an error, `clearing last_date is not supported by import` (undo exit is P1).
 
 | Identity changed | Amounts changed | `effective_from` | Action |
@@ -233,10 +234,10 @@ flowchart LR
   A -->|exception| F["Failed<br/>rows kept"]
 ```
 
-- Grid of staged rows filterable by status and searchable by `employee_code` or `full_name`, messages shown per cell.
+- Grid of staged rows filterable by status and searchable by `legacy_code` or `full_name`, messages shown per cell.
 - Row actions: skip, unskip. Batch actions: approve, discard. A wrong value is fixed in the spreadsheet and re-uploaded. Inline cell editing is P1.
 - Approve applies valid and warning rows that are not skipped and not `noop`. If any error row remains unskipped, approve is refused with `409` and the count. Approve, skip, unskip and discard on a batch not in `review` are `409`.
-- Approve is one database transaction. The date and duplicate rules are re-run against the database inside it. All accepted rows apply or none do. On exception the batch becomes `failed` with `error_summary` and the rows are kept.
+- Approve is one database transaction. The date and duplicate rules are re-run against the database inside it. A row staged as new whose `legacy_code` another batch has taken in the meantime refuses the approve with the row re-marked (D24); it is never matched to that employee. All accepted rows apply or none do. On exception the batch becomes `failed` with `error_summary` and the rows are kept.
 - Audit: one entry per entity written with `import_batch` set, so a create row writes a `create` entry on the employee and a `revise` entry on the record, an identity-only row writes one `update` entry, a revise row writes one `revise` entry on the new record (its `before` is the previous record's snapshot), and a row that changes identity fields or sets `last_date` as well as amounts writes its `update` or `exit` entry on the employee first and then the `revise` entry on the record, the same order as the API path. One `import_apply` entry is written on the batch itself with the counts in `after`.
 
 Acceptance:
@@ -248,8 +249,8 @@ Acceptance:
 
 ### F3. Employees and compensation
 
-- Create an employee with identity fields, `bonus_annual` and the first record's lines, in one transaction. `employee_code` is assigned as the next `ACME-NNNNNN` when omitted. `effective_from` defaults to `joining_date`.
-- Edit identity fields. `employee_code` and `country_code` cannot change through the API (`400`).
+- Create an employee with identity fields, `bonus_annual` and the first record's lines, in one transaction. The database numbers the employee (`ACME-<id>`); a body carrying `employee_code` or `legacy_code` is a `400`, whatever the value (D48). `effective_from` defaults to `joining_date`.
+- Edit identity fields. A body carrying `employee_code` or `legacy_code` is a `400` whatever the value, and `country_code` cannot change (`400`).
 - Add a revision: `effective_from` after the latest record's, lines, `bonus_annual`, note. The service closes the previous open-ended record at the new `effective_from`, assigns the next `version`, recomputes totals.
 - Cancel a scheduled revision: allowed only while `effective_from > today`, else `409`. The service sets `cancelled_at` and `cancelled_by`, and the previous non-cancelled record's `effective_to` becomes the next non-cancelled scheduled record's `effective_from`, else `last_date + 1 day` when the employee has a `last_date`, else `null`. Audit action `cancel` with the full record in `before` and the cancelled row in `after`.
 - Exit: `last_date >= joining_date` and `last_date + 1 > effective_from` of the open record, else `400`. Already exited, or non-cancelled scheduled revisions after `last_date`, is `409` (cancel them first). Closes the open-ended record at `last_date + 1 day`. Undo exit is P1.
@@ -269,8 +270,8 @@ Acceptance:
 
 ### F4. Directory
 
-- Server-side pagination (25, 50, 100). Ordering on `full_name, employee_code, department, country, designation, level, gross, joining_date`, `-` prefix for descending. `gross` is the reporting-currency annotation.
-- Filters: `country`, `department`, `designation`, `level`, `status` (`active`, `exited` or `upcoming` for a future joiner, judged on the reporting date), `gross_min`, `gross_max` in the reporting currency, `joined_after`, `joined_before`, `on`, `currency`. Multi-value filters are comma-separated. Search on name, code, email.
+- Server-side pagination (25, 50, 100). Ordering on `full_name, employee_code, department, country, designation, level, gross, joining_date`, `-` prefix for descending. `gross` is the reporting-currency annotation, and `employee_code` orders by id.
+- Filters: `country`, `department`, `designation`, `level`, `status` (`active`, `exited` or `upcoming` for a future joiner, judged on the reporting date), `gross_min`, `gross_max` in the reporting currency, `joined_after`, `joined_before`, `on`, `currency`. Multi-value filters are comma-separated. Search is for people typing: each word matches part of a name or an email, a `legacy_code` in any case, or an ACME code read as a number (`ACME-0017` and `acme-17` both find ACME-17). Import matching stays exact.
 - Columns show local gross with its currency and the reporting-currency gross side by side, both from the record current on the reporting date, else the latest record with its label.
 - Reporting-currency sort and filter are an annotation, not an indexed column: a `CASE WHEN currency_code = ... THEN rate` expression built in Python from the rate lookup for `on`, multiplied by `gross_annual` of the per-employee record that is current on `on`, else the latest non-cancelled record, selected with a correlated subquery. Range filters compare with a tolerance of 0.005. This is the one query the 300 ms target depends on and DESIGN.md specifies it.
 
@@ -290,7 +291,7 @@ The six questions in section 9, each a card or chart, honouring `country`, `depa
 ### F6. Export
 
 - The directory (current filters and `on` applied) and any insight table export as CSV, XLSX or JSON through `?file=`.
-- Directory columns: EmployeeID, full name, email, department, designation, level, country, currency, gross (local), bonus (local), gross (reporting currency), status, joining date, last date, effective from, version.
+- Directory columns: employee code (`ACME-<id>`), legacy code, full name, email, department, designation, level, country, currency, gross (local), bonus (local), gross (reporting currency), status, joining date, last date, effective from, version.
 - Insight tables: `summary` one row, `by-country` and `by-department` one row per group, `distribution` one row per band, `by-level` one row per level, `gender-gap` one row per group and gender.
 - The export is the whole filtered set, not the visible page. CSV streams. XLSX builds server-side. File name `acme-<what>-YYYYMMDD-HHMM.<ext>`.
 - Cells starting with `=`, `+`, `-`, `@`, tab or carriage return are prefixed with a single quote.
@@ -336,12 +337,14 @@ One validator module, `compensation/validators.py`, called by the services for i
 | Required column missing from the header | rejects upload | `Missing required column: country_code` |
 | Unknown column in header | batch warning | `Ignored unknown column: Remarks` |
 | File not UTF-8 | rejects upload | `file is not UTF-8` |
-| `EmployeeID` blank or malformed | error | `EmployeeID is required and must match ACME-NNNNNN` |
-| `EmployeeID` repeated within the file | error on both rows | `Duplicate EmployeeID in rows 41 and 388` |
+| `legacy_code` blank | error | `legacy_code is required` |
+| `legacy_code` longer than 32 characters | error | `legacy_code is longer than 32 characters` |
+| `legacy_code` repeated within the file | error on both rows | `Duplicate legacy_code in rows 41 and 388` |
+| `legacy_code` of a row staged as new taken by another batch approved meanwhile | error at approve, row re-marked (D24) | `legacy_code HR-58213 now belongs to ACME-17; upload the sheet again` |
 | `email` malformed | error | `email is not a valid address` |
 | `email` repeated within the file | error on both rows | `Duplicate email in rows 12 and 90` |
-| `email` in use by a different employee | error | `email already belongs to ACME-000217` |
-| `employee_code` named on an API create and already in use | error | `employee_code ACME-000017 already exists; omit employee_code to have one assigned` |
+| `email` in use by a different employee, an unknown `legacy_code` included | error | `email already belongs to ACME-217` |
+| `employee_code` or `legacy_code` in an API create or edit, whatever the value | error | `employee_code is assigned by the system`, `legacy_code is set only by an import` |
 | `country_code` not in Country | error | `Unknown country_code: XX` |
 | `country_code` differs from the matched employee | error | `country change is not supported by import` |
 | `department` not found | error | `Unknown department: Growth` (no auto-create) |
@@ -380,7 +383,7 @@ REST under `/api/v1/`, paths with a trailing slash, JSON, JWT bearer on every ro
 | GET | `/meta/countries/`, `/meta/departments/`, `/meta/components/?country=` | lookups for filters and forms |
 | GET | `/meta/exchange-rates/?on=` | one row per pair with `rate` and `effective_from`, plus `month_label` for the dashboard |
 | POST | `/meta/exchange-rates/` | P1. v1 uses the `set_exchange_rate` management command |
-| GET, POST | `/employees/` | directory with the filters in F4. Create with `{employee_code?, full_name, email, department, designation, level, country_code, gender, joining_date, bonus_annual, effective_from?, note?, lines: [{component, annual_amount}]}` |
+| GET, POST | `/employees/` | directory with the filters in F4. Create with `{full_name, email, department, designation, level, country_code, gender, joining_date, bonus_annual, effective_from?, note?, lines: [{component, annual_amount}]}` |
 | GET, PATCH | `/employees/{id}/` | detail with the record current on `on`, accepts `currency`. Edit identity fields |
 | POST | `/employees/{id}/exit/` | `{last_date}` |
 | GET | `/employees/{id}/compensation/` | full history newest first, lines included, accepts `currency` and `on` |
@@ -436,7 +439,7 @@ Error and empty states on every page, written as a sentence that says what to do
 
 ## 11. Seed data
 
-`python manage.py seed_data --employees 10000 --seed 42 [--reset | --if-empty]` builds the dataset in under 60 s inside one transaction, so a machine killed mid-seed leaves an empty database and the next boot seeds again. It goes through `compensation.services` bulk entry points, so seeded totals and audit rows obey the real rules. Writes use `bulk_create` in chunks of 1,000. `--if-empty` exits 0 without writing when the Employee table has rows. Without a flag, a non-empty database is an error. `--reset` and `reset_demo` truncate the business tables and clear their `sqlite_sequence` entries, so ids restart at 1 and a reseed is byte-identical to a fresh seed. `SEED_ADMIN_PASSWORD` is required when `DEBUG` is off and defaults to `change-me` in development. `reset_demo` keeps users. Employee codes are `ACME-000001` to `ACME-010000`, and UI creation continues from the maximum existing code, imported codes included.
+`python manage.py seed_data --employees 10000 --seed 42 [--reset | --if-empty]` builds the dataset in under 60 s inside one transaction, so a machine killed mid-seed leaves an empty database and the next boot seeds again. It goes through `compensation.services` bulk entry points, so seeded totals and audit rows obey the real rules. Writes use `bulk_create` in chunks of 1,000. `--if-empty` exits 0 without writing when the Employee table has rows. Without a flag, a non-empty database is an error. `--reset` and `reset_demo` truncate the business tables and clear their `sqlite_sequence` entries, so ids restart at 1 and a reseed is byte-identical to a fresh seed. `SEED_ADMIN_PASSWORD` is required when `DEBUG` is off and defaults to `change-me` in development. `reset_demo` keeps users. The database numbers the seeded employees in joining order, earliest first with ties in generation order, so ACME-1 is the longest-serving and ACME-10000 the latest joiner. Each carries a `legacy_code` of `HR-` and five digits, drawn without repeats, unlike an ACME code on purpose (D48).
 
 ### Countries, components and anchors
 
@@ -462,7 +465,7 @@ Design parameters for a believable demo, not sourced statistics, all in `seed/pr
 7. One HR Manager `hr@acme.example` with `SEED_ADMIN_PASSWORD`.
 8. Determinism is scoped to the business tables (Country, Department, SalaryComponent, ExchangeRate, Employee, CompensationRecord, CompensationLine, AuditLog). `created_at`, `updated_at` and audit timestamps are set to the reference datetime 2026-10-06T00:00:00Z by the service. Faker is pinned to the patch. The determinism test runs `--employees 500 --seed 42` into a fresh in-memory database, dumps those tables to canonical CSV, and compares the SHA-256 to a golden hash committed in `tests/seed/golden.txt`, which also catches cross-machine drift. A second test runs `--reset` on the same database and checks the hash again. Users are excluded.
 
-`python manage.py make_import_file --out <path> [--new N] [--raises N] [--errors N] [--all]` writes a template-shaped file: N new employees, N existing employees with a raise dated the first of next month, N deliberate errors, or every existing employee with `--all`.
+`python manage.py make_import_file --out <path> [--new N] [--raises N] [--errors N] [--all]` writes a template-shaped file: N new employees, N existing employees with a raise dated the first of next month, N deliberate errors, or every existing employee with `--all`. Rows name employees by `legacy_code`: an existing employee's own, an unused `HR-` code for a new joiner. Employees created in the app are never written.
 
 ## 12. Testing
 

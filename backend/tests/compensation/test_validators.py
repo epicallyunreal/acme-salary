@@ -17,7 +17,7 @@ pytestmark = pytest.mark.django_db
 
 TEMPLATE_COLUMNS = frozenset(
     {
-        "EmployeeID",
+        "legacy_code",
         "full_name",
         "email",
         "department",
@@ -49,7 +49,7 @@ RAISED = {**INDIA_LINES, "BASE": Decimal("1500000")}
 def new_row(**overrides) -> NormalizedRow:
     values = dict(
         row_number=2,
-        employee_code="ACME-000001",
+        legacy_code="HR-10001",
         full_name="Asha Rao",
         email="asha.rao@acme.example",
         department="engineering",
@@ -92,9 +92,10 @@ def record_input(effective_from, lines=INDIA_LINES) -> RecordInput:
 
 @pytest.fixture
 def existing(lookups):
-    """ACME-000010, joined 2024-03-01, current record from 2025-04-01 with the India lines."""
+    """Legacy code HR-10010, joined 2024-03-01, current record from 2025-04-01 with the India
+    lines."""
     employee = EmployeeFactory(
-        employee_code="ACME-000010",
+        legacy_code="HR-10010",
         full_name="Existing Person",
         email="existing@acme.example",
         department=department("engineering"),
@@ -123,7 +124,7 @@ def exited(existing):
 
 def matched_row(employee, **overrides) -> NormalizedRow:
     values = dict(
-        employee_code=employee.employee_code,
+        legacy_code=employee.legacy_code,
         full_name=employee.full_name,
         email=employee.email,
         department=employee.department.code,
@@ -147,23 +148,28 @@ def test_a_valid_new_row_has_only_the_defaulted_effective_from_info(lookups):
     assert v.worst_severity(found) == "valid"
 
 
-@pytest.mark.parametrize("code", ["", None, "ACME-1", "acme-000001", "EMP-000001"])
-def test_employee_code_must_match_the_pattern(lookups, code):
-    found = messages(new_row(employee_code=code))
-
+@pytest.mark.parametrize("code", ["", None])
+def test_a_sheet_row_needs_a_legacy_code(lookups, code):
     assert_message(
-        found,
-        "code_invalid",
-        "EmployeeID",
+        messages(new_row(legacy_code=code)),
+        "legacy_required",
+        "legacy_code",
         "error",
-        "EmployeeID is required and must match ACME-NNNNNN",
+        "legacy_code is required",
     )
 
 
-def test_a_blank_code_is_allowed_when_the_server_assigns_it(lookups):
-    found = messages(new_row(employee_code=None, allow_blank_code=True))
+def test_a_legacy_code_is_free_text_up_to_32_characters(lookups):
+    for fine in ("HR 58213", "acme-17", "x" * 32):
+        assert find(messages(new_row(legacy_code=fine)), "legacy_too_long") is None
 
-    assert find(found, "code_invalid") is None
+    assert_message(
+        messages(new_row(legacy_code="x" * 33)),
+        "legacy_too_long",
+        "legacy_code",
+        "error",
+        "legacy_code is longer than 32 characters",
+    )
 
 
 @pytest.mark.parametrize("email", ["", "not-an-email", "a@b"])
@@ -309,12 +315,14 @@ def test_a_component_that_does_not_apply_to_the_country_is_an_error_even_at_zero
 
 
 def test_email_in_use_by_another_employee(existing):
+    """An unknown legacy_code whose email belongs to someone is a mistyped code, never a second
+    person (D48)."""
     assert_message(
         messages(new_row(email="existing@acme.example")),
         "email_in_use",
         "email",
         "error",
-        "email already belongs to ACME-000010",
+        f"email already belongs to ACME-{existing.pk}",
     )
     assert find(messages(matched_row(existing)), "email_in_use") is None
 
@@ -347,7 +355,7 @@ def test_a_different_last_date_on_an_exited_employee_is_a_conflict(exited):
 # Duplicates within the file
 
 
-def test_duplicate_employee_code_marks_both_rows(lookups):
+def test_duplicate_legacy_code_marks_both_rows(lookups):
     first = new_row(row_number=41)
     second = new_row(row_number=388, email="other@acme.example")
     ctx = build_context(rows=[first, second])
@@ -355,16 +363,16 @@ def test_duplicate_employee_code_marks_both_rows(lookups):
     for row in (first, second):
         assert_message(
             validate_row(row, ctx),
-            "code_duplicate",
-            "EmployeeID",
+            "legacy_duplicate",
+            "legacy_code",
             "error",
-            "Duplicate EmployeeID in rows 41 and 388",
+            "Duplicate legacy_code in rows 41 and 388",
         )
 
 
 def test_duplicate_email_marks_both_rows(lookups):
     first = new_row(row_number=12)
-    second = new_row(row_number=90, employee_code="ACME-000002")
+    second = new_row(row_number=90, legacy_code="HR-10002")
     ctx = build_context(rows=[first, second])
 
     for row in (first, second):
@@ -554,7 +562,7 @@ def test_gross_above_ten_times_the_country_median_warns(existing):
 
 def test_warnings_are_skipped_when_a_matched_row_leaves_amounts_alone(lookups):
     low = EmployeeFactory(
-        employee_code="ACME-000020", email="low@acme.example", joining_date=date(2024, 3, 1)
+        legacy_code="HR-10020", email="low@acme.example", joining_date=date(2024, 3, 1)
     )
     CompensationRecordFactory(
         employee=low, effective_from=date(2024, 3, 1), lines={"BASE": Decimal("300000")}
@@ -704,42 +712,17 @@ def test_validate_exit_refuses_while_a_scheduled_revision_follows(with_scheduled
         v.validate_exit(with_scheduled, date(2026, 12, 31), ctx)
 
 
-NEW_PERSON = {
-    "full_name": "New Person",
-    "email": "new.person@acme.example",
-    "department": "engineering",
-    "designation": "Engineer",
-    "level": 2,
-    "country_code": "US",
-    "gender": "male",
-    "joining_date": date(2026, 11, 1),
-}
-
-
-def test_a_code_named_on_create_must_be_free(existing):
-    """Checked before the other rules: a US create naming an Indian employee's code gets the
-    code message only, not the import's country-change message (D44)."""
-    ctx = build_context(codes=["ACME-000010", "ACME-000011"], emails=[NEW_PERSON["email"]])
+def test_the_api_never_sets_either_code():
+    """The database numbers every employee and only an import records a legacy_code, so an API
+    body carrying either key is a 400 whatever it holds (D48)."""
+    v.refuse_codes({"full_name": "New Person"})
 
     with pytest.raises(Invalid) as excinfo:
-        v.validate_identity({**NEW_PERSON, "employee_code": "ACME-000010"}, ctx)
+        v.refuse_codes({"employee_code": "ACME-17", "legacy_code": None})
 
     assert excinfo.value.errors == {
-        "employee_code": [
-            "employee_code ACME-000010 already exists; omit employee_code to have one assigned"
-        ]
-    }
-    assert v.validate_identity({**NEW_PERSON, "employee_code": "ACME-000011"}, ctx) == []
-
-
-def test_the_api_keys_a_malformed_code_by_its_request_field(lookups):
-    ctx = build_context(codes=["ACME-1"])
-
-    with pytest.raises(Invalid) as excinfo:
-        v.validate_identity({**NEW_PERSON, "employee_code": "ACME-1"}, ctx)
-
-    assert excinfo.value.errors == {
-        "employee_code": ["EmployeeID is required and must match ACME-NNNNNN"]
+        "employee_code": ["employee_code is assigned by the system"],
+        "legacy_code": ["legacy_code is set only by an import"],
     }
 
 

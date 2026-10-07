@@ -25,19 +25,18 @@ def record_input(effective_from=None, bonus="0", **lines) -> RecordInput:
     )
 
 
-def person(code, name, **fields):
+def person(name, **fields):
     first = name.split()[0].lower()
-    return EmployeeFactory(
-        employee_code=code, full_name=name, email=f"{first}@acme.example", **fields
-    )
+    return EmployeeFactory(full_name=name, email=f"{first}@acme.example", **fields)
 
 
 @pytest.fixture
 def cast(rates, hr_user):
     """Six people across three currencies, written by the HR Manager. Reporting-currency gross
     in USD on 7 Oct 2026: dev 7,200 < farah 10,800 < esha 14,400 < asha 17,400 < ben 100,000 <
-    chloe 107,600."""
-    asha = person("ACME-000001", "Asha Rao", joining_date=date(2020, 1, 1))
+    chloe 107,600. Dev came from the legacy system with HR-58213; the rest were added in the app.
+    The database numbers them in this order, so ACME-<id> follows it (D48)."""
+    asha = person("Asha Rao", joining_date=date(2020, 1, 1))
     compensation.add_first_record(
         asha,
         record_input(
@@ -50,7 +49,6 @@ def cast(rates, hr_user):
         actor=hr_user,
     )
     ben = person(
-        "ACME-000002",
         "Ben Carter",
         country=country("US"),
         department=department("sales"),
@@ -59,22 +57,19 @@ def cast(rates, hr_user):
         joining_date=date(2018, 6, 15),
     )
     compensation.add_first_record(ben, record_input(BASE="100000"), actor=hr_user)
-    chloe = person(
-        "ACME-000003", "Chloe Davies", country=country("GB"), level=5, joining_date=date(2022, 3, 1)
-    )
+    chloe = person("Chloe Davies", country=country("GB"), level=5, joining_date=date(2022, 3, 1))
     compensation.add_first_record(chloe, record_input(BASE="80000"), actor=hr_user)
-    dev = person("ACME-000004", "Dev Mehta", level=2, joining_date=date(2019, 9, 1))
+    dev = person("Dev Mehta", legacy_code="HR-58213", level=2, joining_date=date(2019, 9, 1))
     compensation.add_first_record(dev, record_input(BASE="600000"), actor=hr_user)
     services.exit_employee(dev, date(2026, 6, 30), actor=hr_user)
     esha = person(
-        "ACME-000005",
         "Esha Nair",
         department=department("product"),
         designation="Product Manager",
         joining_date=date(2027, 1, 1),
     )
     compensation.add_first_record(esha, record_input(BASE="1200000"), actor=hr_user)
-    farah = person("ACME-000006", "Farah Khan", joining_date=date(2021, 1, 1))
+    farah = person("Farah Khan", joining_date=date(2021, 1, 1))
     compensation.add_first_record(farah, record_input(BASE="900000"), actor=hr_user)
     compensation.revise(farah, record_input(date(2026, 11, 1), BASE="1100000"), actor=hr_user)
     return {"asha": asha, "ben": ben, "chloe": chloe, "dev": dev, "esha": esha, "farah": farah}
@@ -101,7 +96,9 @@ def test_list_shape_and_default_order(api, cast):
         "Farah Khan",
     ]
     asha = body["results"][0]
-    assert asha["employee_code"] == "ACME-000001"
+    assert asha["employee_code"] == f"ACME-{cast['asha'].pk}"
+    assert asha["legacy_code"] is None
+    assert body["results"][3]["legacy_code"] == "HR-58213"
     assert asha["department"] == {"code": "engineering", "name": "Engineering"}
     assert asha["country"] == {"code": "IN", "name": "India", "currency_code": "INR"}
     assert asha["status"] == "active"
@@ -225,12 +222,20 @@ def test_ordering_aliases(api, cast, ordering, expected):
         ({"joined_after": "2020-01-01"}, ["Asha Rao", "Chloe Davies", "Esha Nair", "Farah Khan"]),
         ({"joined_before": "2019-12-31"}, ["Ben Carter", "Dev Mehta"]),
         ({"search": "chlo"}, ["Chloe Davies"]),
-        ({"search": "ACME-000004"}, ["Dev Mehta"]),
         ({"search": "ben@"}, ["Ben Carter"]),
     ],
 )
 def test_each_filter(api, cast, params, expected):
     assert names(api.get(LIST, params)) == expected
+
+
+def test_search_reads_an_acme_code_as_a_number_and_a_legacy_code_in_any_case(api, cast):
+    dev = cast["dev"]
+
+    for term in (f"ACME-{dev.pk}", f"acme-{dev.pk:04d}", "hr-58213", "HR-58213"):
+        assert names(api.get(LIST, {"search": term})) == ["Dev Mehta"], term
+    assert names(api.get(LIST, {"search": "HR-5821"})) == []
+    assert names(api.get(LIST, {"search": f"ACME-{dev.pk} dev@"})) == ["Dev Mehta"]
 
 
 def test_filters_combine_with_and_and_survive_paging_and_sorting(api, cast):
@@ -334,9 +339,9 @@ def test_bad_filter_values_are_400_per_field(api, cast, params, message):
 
 def test_gross_range_includes_a_figure_that_rounds_onto_the_bound(api, rates):
     """SPEC F4's 0.005 tolerance: the SQL product keeps more decimals than the shown figure."""
-    lata = person("ACME-000011", "Lata Iyer", joining_date=date(2020, 1, 1))
+    lata = person("Lata Iyer", joining_date=date(2020, 1, 1))
     compensation.add_first_record(lata, record_input(BASE="1234567.89"))  # USD 14,814.81468
-    meera = person("ACME-000012", "Meera Pillai", joining_date=date(2020, 1, 1))
+    meera = person("Meera Pillai", joining_date=date(2020, 1, 1))
     compensation.add_first_record(meera, record_input(BASE="1234568.00"))  # USD 14,814.816
 
     rows = {
@@ -373,7 +378,8 @@ def test_detail_shape(api, cast):
 
     body = response.json()
     assert response.status_code == 200
-    assert body["employee_code"] == "ACME-000001"
+    assert body["employee_code"] == f"ACME-{asha.pk}"
+    assert body["legacy_code"] is None
     assert body["gender"] == "female"
     assert body["department"] == {"code": "engineering", "name": "Engineering"}
     assert body["country"] == {"code": "IN", "name": "India", "currency_code": "INR"}
@@ -491,7 +497,8 @@ def test_create_assigns_the_code_and_answers_with_the_detail(api, rates):
 
     body = response.json()
     assert response.status_code == 201, response.content
-    assert body["employee_code"] == "ACME-000001"
+    assert body["employee_code"] == f"ACME-{body['id']}"
+    assert body["legacy_code"] is None
     assert body["email"] == "meera.iyer@acme.example"
     assert (body["status"], body["shown_label"]) == ("upcoming", "from 2026-11-01")
     record = body["current_record"]
@@ -507,16 +514,28 @@ def test_create_assigns_the_code_and_answers_with_the_detail(api, rates):
     assert body["warnings"] == []
 
 
-def test_create_with_a_code_in_use_is_a_400(api, cast):
-    """A client may name a code, but not one in use (D44)."""
-    response = api.post(LIST, new_employee(employee_code="ACME-000001"), format="json")
+@pytest.mark.parametrize(
+    ("extra", "errors"),
+    [
+        (
+            {"employee_code": "ACME-1"},
+            {"employee_code": ["employee_code is assigned by the system"]},
+        ),
+        ({"legacy_code": "HR-1"}, {"legacy_code": ["legacy_code is set only by an import"]}),
+        (
+            {"employee_code": None, "legacy_code": ""},
+            {
+                "employee_code": ["employee_code is assigned by the system"],
+                "legacy_code": ["legacy_code is set only by an import"],
+            },
+        ),
+    ],
+)
+def test_create_never_takes_either_code(api, cast, extra, errors):
+    """The database numbers every employee and only an import records a legacy_code (D48)."""
+    response = api.post(LIST, new_employee(**extra), format="json")
 
-    assert response.status_code == 400
-    assert response.json() == {
-        "employee_code": [
-            "employee_code ACME-000001 already exists; omit employee_code to have one assigned"
-        ]
-    }
+    assert (response.status_code, response.json()) == (400, errors)
     assert api.get(LIST).json()["count"] == 6
 
 
@@ -539,7 +558,7 @@ def test_create_reports_shape_and_rule_errors_per_field(api, cast):
     )
     assert (email.status_code, email.json()) == (
         400,
-        {"email": ["email already belongs to ACME-000001"]},
+        {"email": [f"email already belongs to ACME-{cast['asha'].pk}"]},
     )
 
 
@@ -558,13 +577,21 @@ def test_patch_edits_identity_and_answers_with_the_detail(api, cast):
 
 
 @pytest.mark.parametrize(
-    ("field", "value"), [("employee_code", "ACME-000099"), ("country_code", "US")]
+    ("field", "value", "message"),
+    [
+        ("employee_code", "own", "employee_code is assigned by the system"),
+        ("legacy_code", "HR-1", "legacy_code is set only by an import"),
+        ("country_code", "US", "country_code cannot be changed"),
+    ],
 )
-def test_patch_cannot_change_the_code_or_the_country(api, cast, field, value):
-    response = api.patch(f"/api/v1/employees/{cast['asha'].pk}/", {field: value}, format="json")
+def test_patch_refuses_the_codes_and_a_new_country(api, cast, field, value, message):
+    """Either code is refused even when it repeats the current one (D48)."""
+    asha = cast["asha"]
+    sent = asha.employee_code if value == "own" else value
 
-    assert response.status_code == 400
-    assert response.json() == {field: [f"{field} cannot be changed"]}
+    response = api.patch(f"/api/v1/employees/{asha.pk}/", {field: sent}, format="json")
+
+    assert (response.status_code, response.json()) == (400, {field: [message]})
 
 
 def test_patch_cannot_move_joining_date_past_the_first_record(api, cast):

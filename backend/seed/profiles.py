@@ -13,7 +13,10 @@ REFERENCE_DATETIME = datetime(2026, 10, 6, tzinfo=UTC)
 
 HR_MANAGER_EMAIL = "hr@acme.example"
 EMAIL_DOMAIN = "acme.example"
-EMPLOYEE_CODE_FORMAT = "ACME-{:06d}"
+# The code the legacy HR system gave each seeded employee, unlike an ACME code on purpose:
+# HR- and five digits, drawn without repeats (D48).
+LEGACY_CODE_FORMAT = "HR-{}"
+LEGACY_NUMBERS = range(10000, 100000)
 
 NOISE_SIGMA = 0.18
 BASE_ROUNDING = 100

@@ -104,6 +104,7 @@ def snapshot_employee(employee, record=None, lines=None) -> dict[str, Any]:
     return {
         "id": employee.pk,
         "employee_code": employee.employee_code,
+        "legacy_code": employee.legacy_code,
         "full_name": employee.full_name,
         "email": employee.email,
         "gender": employee.gender,

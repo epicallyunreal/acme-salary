@@ -1,10 +1,17 @@
 """The generator is a pure function of (count, seed) and respects the profile rules."""
 
+import re
 from datetime import date, timedelta
 
-from apps.compensation.validators import CODE_PATTERN
 from seed import profiles
-from seed.generator import april_firsts, ascii_slug, generate, lines_for
+from seed.generator import (
+    april_firsts,
+    ascii_slug,
+    generate,
+    legacy_codes,
+    lines_for,
+    ordered_entries,
+)
 
 COUNTRIES = {spec.code: spec for spec in profiles.COUNTRIES}
 
@@ -19,12 +26,10 @@ def test_same_seed_same_entries_and_a_different_seed_differs():
     assert [e.identity["full_name"] for e in first] != [e.identity["full_name"] for e in other]
 
 
-def test_codes_emails_and_dates_follow_the_rules():
+def test_emails_and_dates_follow_the_rules():
     entries = list(generate(60, 42))
 
-    codes = [e.identity["employee_code"] for e in entries]
-    assert codes == [f"ACME-{n:06d}" for n in range(1, 61)]
-    assert all(CODE_PATTERN.match(code) for code in codes)
+    assert all("employee_code" not in e.identity for e in entries)
     emails = [e.identity["email"] for e in entries]
     assert len(set(emails)) == 60
     assert all(email.endswith("@acme.example") and email.isascii() for email in emails)
@@ -69,10 +74,48 @@ def test_lines_for_india_follow_the_shares():
     assert lines["EMPLOYER_CONTRIBUTION"] == 174000
 
 
-def test_start_number_offsets_the_codes():
+def test_start_number_offsets_the_email_numbers():
     entries = list(generate(2, 42, start_number=10001))
 
-    assert [e.identity["employee_code"] for e in entries] == ["ACME-010001", "ACME-010002"]
+    assert [e.identity["email"].split("@")[0].rsplit(".", 1)[1] for e in entries] == [
+        "10001",
+        "10002",
+    ]
+
+
+def test_ordered_entries_put_the_earliest_joiner_first_and_keep_ties_in_generation_order():
+    """The database numbers employees in this order, so ACME-1 is the longest-serving (D48)."""
+    entries = ordered_entries(200, 42)
+
+    keys = [(e.identity["joining_date"], e.ref) for e in entries]
+    assert keys == sorted(keys)
+    assert sorted(e.ref for e in entries) == list(range(1, 201))
+
+
+def test_ordering_and_legacy_codes_leave_the_employee_draws_unchanged():
+    by_ref = {e.ref: e for e in generate(60, 42)}
+
+    for entry in ordered_entries(60, 42):
+        identity = dict(entry.identity)
+        identity.pop("legacy_code")
+        assert identity == by_ref[entry.ref].identity
+        assert entry.records == by_ref[entry.ref].records
+
+
+def test_legacy_codes_are_hr_codes_without_repeats_and_reproducible():
+    codes = [e.identity["legacy_code"] for e in ordered_entries(500, 42)]
+
+    assert all(re.fullmatch(r"HR-\d{5}", code) for code in codes)
+    assert len(set(codes)) == 500
+    assert codes == [e.identity["legacy_code"] for e in ordered_entries(500, 42)]
+
+
+def test_legacy_codes_skip_the_taken_ones():
+    taken = set(legacy_codes(89990, "fill"))
+
+    fresh = legacy_codes(10, "new", taken)
+
+    assert len(set(fresh)) == 10 and not set(fresh) & taken
 
 
 def test_april_firsts():

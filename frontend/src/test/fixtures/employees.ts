@@ -4,7 +4,8 @@ import type { EmployeeRow, Page } from '../../api/types';
 export const employees: EmployeeRow[] = [
   {
     id: 1,
-    employee_code: 'ACME-000001',
+    employee_code: 'ACME-1',
+    legacy_code: 'HR-58213',
     full_name: 'Asha Rao',
     email: 'asha@acme.example',
     department: { code: 'engineering', name: 'Engineering' },
@@ -29,7 +30,8 @@ export const employees: EmployeeRow[] = [
   },
   {
     id: 2,
-    employee_code: 'ACME-000002',
+    employee_code: 'ACME-2',
+    legacy_code: null,
     full_name: 'Ben Carter',
     email: 'ben@acme.example',
     department: { code: 'sales', name: 'Sales' },
@@ -54,7 +56,8 @@ export const employees: EmployeeRow[] = [
   },
   {
     id: 3,
-    employee_code: 'ACME-000003',
+    employee_code: 'ACME-3',
+    legacy_code: 'HR-23001',
     full_name: 'Chloe Davies',
     email: 'chloe@acme.example',
     department: { code: 'engineering', name: 'Engineering' },
@@ -79,7 +82,8 @@ export const employees: EmployeeRow[] = [
   },
   {
     id: 4,
-    employee_code: 'ACME-000004',
+    employee_code: 'ACME-4',
+    legacy_code: null,
     full_name: 'Dieter Vogel',
     email: 'dieter@acme.example',
     department: { code: 'product', name: 'Product' },

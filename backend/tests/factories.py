@@ -40,13 +40,12 @@ class UserFactory(factory.django.DjangoModelFactory):
 
 
 class EmployeeFactory(factory.django.DjangoModelFactory):
-    """An Indian engineer who joined on 1 January 2020. Codes start at ACME-900001 so they never
-    collide with seeded ones."""
+    """An Indian engineer who joined on 1 January 2020, created in the app: the database numbers
+    them (ACME-<id>) and they have no legacy_code (D48)."""
 
     class Meta:
         model = Employee
 
-    employee_code = factory.Sequence(lambda n: f"ACME-9{n + 1:05d}")
     full_name = factory.Sequence(lambda n: f"Employee {n + 1}")
     email = factory.Sequence(lambda n: f"employee{n + 1}@acme.example")
     gender = "female"

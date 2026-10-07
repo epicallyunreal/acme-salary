@@ -17,8 +17,11 @@ from apps.core.money import q8, render
 from apps.employees.models import Employee
 from apps.employees.queries import is_current, pick_shown, shown_label, status_on
 
-IDENTITY_FIELDS = (
+# What a create passes to the service. The two codes are read so the service can refuse them
+# with a 400 instead of the serializer dropping them silently (D48).
+CREATE_IDENTITY_FIELDS = (
     "employee_code",
+    "legacy_code",
     "full_name",
     "email",
     "department",
@@ -141,6 +144,7 @@ class EmployeeListSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "employee_code",
+            "legacy_code",
             "full_name",
             "email",
             "department",
@@ -193,6 +197,7 @@ class EmployeeDetailSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "employee_code",
+            "legacy_code",
             "full_name",
             "email",
             "gender",
@@ -255,10 +260,11 @@ class AuditEntrySerializer(serializers.ModelSerializer):
 
 
 class EmployeeCreateSerializer(RecordInputSerializer):
-    """`POST /employees/`: identity, bonus and the first record's lines in one body. The code is
-    assigned by the service when left out."""
+    """`POST /employees/`: identity, bonus and the first record's lines in one body. The database
+    numbers the employee; either code in the body is refused by the service (D48)."""
 
-    employee_code = serializers.CharField(required=False)
+    employee_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    legacy_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     full_name = serializers.CharField(max_length=120)
     email = serializers.CharField(max_length=254)
     department = serializers.CharField()
@@ -271,16 +277,17 @@ class EmployeeCreateSerializer(RecordInputSerializer):
     def identity(self) -> dict:
         return {
             name: self.validated_data[name]
-            for name in IDENTITY_FIELDS
+            for name in CREATE_IDENTITY_FIELDS
             if name in self.validated_data
         }
 
 
 class EmployeeIdentitySerializer(serializers.Serializer):
-    """`PATCH /employees/{id}/`: any identity field. `employee_code` and `country_code` are read
-    so the service refuses a change with a 400 instead of the serializer dropping it."""
+    """`PATCH /employees/{id}/`: any identity field. The two codes and `country_code` are read so
+    the service refuses them with a 400 instead of the serializer dropping them (D48)."""
 
-    employee_code = serializers.CharField(required=False)
+    employee_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    legacy_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     country_code = serializers.CharField(required=False)
     full_name = serializers.CharField(max_length=120, required=False)
     email = serializers.CharField(max_length=254, required=False)

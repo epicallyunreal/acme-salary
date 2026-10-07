@@ -49,19 +49,13 @@ def with_first(lookups):
     return employee
 
 
-def test_next_employee_code_continues_from_the_greatest_code(lookups):
-    assert services.next_employee_code() == "ACME-000001"
-    EmployeeFactory(employee_code="ACME-010000")
-    assert services.next_employee_code() == "ACME-010001"
-    EmployeeFactory(employee_code="ACME-020000")
-    assert services.next_employee_code() == "ACME-020001"
-
-
 def test_create_employee_assigns_the_code_lowercases_the_email_and_audits(lookups):
     created = services.create_employee(identity(), record_input())
 
     employee = created.employee
-    assert employee.employee_code == "ACME-000001"
+    # The database numbers the employee; an app-created one has no legacy_code (D48).
+    assert employee.employee_code == f"ACME-{employee.pk}"
+    assert employee.legacy_code is None
     assert employee.email == "asha.rao@acme.example"
     assert employee.department.code == "engineering"
     assert created.record.version == 1
@@ -75,18 +69,15 @@ def test_create_employee_assigns_the_code_lowercases_the_email_and_audits(lookup
     assert sorted(actions) == [("create", "employee"), ("revise", "compensation_record")]
     create_entry = AuditLog.objects.get(action="create")
     assert create_entry.before is None
-    assert create_entry.after["employee_code"] == "ACME-000001"
+    assert create_entry.after["employee_code"] == f"ACME-{employee.pk}"
+    assert create_entry.after["legacy_code"] is None
     assert create_entry.after["current_record"]["version"] == 1
 
 
-def test_create_employee_keeps_a_given_code_and_returns_warnings(lookups):
-    created = services.create_employee(
-        identity(employee_code="ACME-000500"), record_input(lines={"BASE": Decimal("300000")})
-    )
+def test_create_employee_returns_the_warnings(lookups):
+    created = services.create_employee(identity(), record_input(lines={"BASE": Decimal("300000")}))
 
-    assert created.employee.employee_code == "ACME-000500"
     assert [w.code for w in created.warnings] == ["gross_below_minimum"]
-    assert services.next_employee_code() == "ACME-000501"
 
 
 def test_create_employee_rolls_back_when_the_record_is_invalid(lookups):
@@ -111,22 +102,29 @@ def test_create_employee_rejects_bad_identity_before_writing(lookups):
     assert Employee.objects.count() == 0
 
 
-@pytest.mark.parametrize("field", ["employee_code", "country_code"])
-def test_update_identity_refuses_to_change_code_or_country(with_first, field):
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("employee_code", "employee_code is assigned by the system"),
+        ("legacy_code", "legacy_code is set only by an import"),
+    ],
+)
+def test_update_identity_refuses_either_code_even_unchanged(with_first, field, message):
+    """Neither code is ever set through the API, whatever value is sent (D48)."""
     with pytest.raises(Invalid) as excinfo:
-        services.update_identity(
-            with_first, {field: "ACME-999999" if field == "employee_code" else "US"}
-        )
+        services.update_identity(with_first, {field: getattr(with_first, field), "level": 4})
 
-    assert excinfo.value.errors == {field: [f"{field} cannot be changed"]}
+    assert excinfo.value.errors == {field: [message]}
 
 
-def test_update_identity_accepts_the_unchanged_code(with_first):
-    updated = services.update_identity(
-        with_first, {"employee_code": with_first.employee_code, "level": 4}
+def test_update_identity_refuses_a_new_country_and_accepts_the_same_one(with_first):
+    with pytest.raises(Invalid) as excinfo:
+        services.update_identity(with_first, {"country_code": "US"})
+
+    assert excinfo.value.errors == {"country_code": ["country_code cannot be changed"]}
+    assert (
+        services.update_identity(with_first, {"country_code": "IN", "level": 4}).employee.level == 4
     )
-
-    assert updated.employee.level == 4
 
 
 def test_update_identity_applies_the_change_and_audits(with_first):
@@ -230,18 +228,21 @@ def test_exit_refuses_while_a_scheduled_revision_follows_then_works_after_cancel
     assert first.effective_to == date(2027, 1, 1)
 
 
-def test_create_employee_refuses_a_code_in_use(with_first):
-    code = with_first.employee_code
-
+def test_create_employee_never_takes_either_code(with_first):
+    """The database numbers every employee and only an import records a legacy_code (D48)."""
     with pytest.raises(Invalid) as excinfo:
         services.create_employee(
-            identity(employee_code=code, email="someone.else@acme.example"), record_input()
+            identity(
+                employee_code=with_first.employee_code,
+                legacy_code="HR-10001",
+                email="someone.else@acme.example",
+            ),
+            record_input(),
         )
 
     assert excinfo.value.errors == {
-        "employee_code": [
-            f"employee_code {code} already exists; omit employee_code to have one assigned"
-        ]
+        "employee_code": ["employee_code is assigned by the system"],
+        "legacy_code": ["legacy_code is set only by an import"],
     }
     assert Employee.objects.count() == 1
 

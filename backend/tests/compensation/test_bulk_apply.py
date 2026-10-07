@@ -113,7 +113,9 @@ def test_a_bulk_create_matches_the_single_path(lookups):
     )
 
     bulk = result.created[0]
-    assert (single.employee.employee_code, bulk.employee_code) == ("ACME-000001", "ACME-000002")
+    # The database numbers each new employee: ACME-<id>, in the order written (D48).
+    assert bulk.pk == single.employee.pk + 1
+    assert bulk.employee_code == f"ACME-{bulk.pk}"
     assert rows_of(bulk) == rows_of(single.employee)
     expected = {
         ("revise", "compensation_record", None, 1),
@@ -144,7 +146,7 @@ def test_bulk_updates_exits_and_revisions_on_existing_employees(three, django_as
 
     # Lookups, the three employees and their records, the email check, three bulk writes,
     # the lines of the superseded records, the audit insert.
-    with django_assert_num_queries(17):
+    with django_assert_num_queries(16):
         result = services.bulk_apply(
             [
                 BulkEntry(
@@ -391,7 +393,7 @@ def test_more_than_a_thousand_rows_are_written_in_chunks(lookups, django_assert_
         for n in range(1001)
     ]
 
-    with django_assert_num_queries(22):
+    with django_assert_num_queries(21):
         result = services.bulk_apply(entries, source="seed")
 
     assert len(result.created) == 1001
@@ -399,9 +401,8 @@ def test_more_than_a_thousand_rows_are_written_in_chunks(lookups, django_assert_
     assert Employee.objects.count() == 1001
     assert CompensationRecord.objects.count() == 1001
     assert AuditLog.objects.count() == 2002
-    codes = list(Employee.objects.order_by("employee_code").values_list("employee_code", flat=True))
-    assert codes[0] == "ACME-000001"
-    assert codes[-1] == "ACME-001001"
+    ids = [employee.pk for employee in result.created]
+    assert ids == list(range(ids[0], ids[0] + 1001))
 
 
 THREE = [

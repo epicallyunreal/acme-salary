@@ -50,6 +50,7 @@ function IdentityFacts({ employee }: { employee: Employee }) {
     ['Joined', formatDate(employee.joining_date)],
   ];
   if (employee.last_date) facts.push(['Last day', formatDate(employee.last_date)]);
+  if (employee.legacy_code) facts.push(['Legacy code', employee.legacy_code]);
 
   return (
     <Box

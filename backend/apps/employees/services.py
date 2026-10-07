@@ -18,7 +18,6 @@ from apps.core.dates import today_utc
 from apps.core.exceptions import Invalid
 from apps.employees.identity import apply_identity
 from apps.employees.models import Employee
-from apps.employees.queries import next_employee_code
 
 ONE_DAY = timedelta(days=1)
 
@@ -43,17 +42,18 @@ def create_employee(
     actor=None,
     at: datetime | None = None,
 ) -> Created:
-    """Identity plus the first record in one transaction, audited as `create` and `revise`."""
+    """Identity plus the first record in one transaction, audited as `create` and `revise`.
+
+    The database numbers the employee, ACME-<id>, and an API create never sets either code (D48).
+    """
     at = at or timezone.now()
+    validators.refuse_codes(identity)
     with transaction.atomic():
         # Validated under the write lock (IMMEDIATE mode), so a double submit is a 400 rather
-        # than a unique-constraint error on the code or the email (D44).
-        ctx = validators.build_context(
-            emails=[identity.get("email")], codes=[identity.get("employee_code")]
-        )
+        # than a unique-constraint error on the email (D44).
+        ctx = validators.build_context(emails=[identity.get("email")])
         warnings = validators.validate_identity(identity, ctx)
         employee = Employee(
-            employee_code=identity.get("employee_code") or next_employee_code(),
             full_name=identity["full_name"],
             email=identity["email"].lower(),
             gender=identity["gender"],
@@ -88,18 +88,12 @@ def update_identity(
     actor=None,
     at: datetime | None = None,
 ) -> Updated:
-    """Edit identity fields. employee_code and country_code cannot change (SPEC F3)."""
+    """Edit identity fields. Neither code is ever set through the API (D48), and country_code
+    cannot change (SPEC F3)."""
     at = at or timezone.now()
-    frozen = {
-        name: [f"{name} cannot be changed"]
-        for name, current in (
-            ("employee_code", employee.employee_code),
-            ("country_code", employee.country_id),
-        )
-        if name in changes and changes[name] != current
-    }
-    if frozen:
-        raise Invalid(frozen)
+    validators.refuse_codes(changes)
+    if "country_code" in changes and changes["country_code"] != employee.country_id:
+        raise Invalid({"country_code": ["country_code cannot be changed"]})
     with transaction.atomic():
         # Read and validated under the write lock (D44).
         employee.refresh_from_db()

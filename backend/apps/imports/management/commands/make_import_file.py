@@ -3,6 +3,9 @@
 Writes a template-shaped .xlsx or .csv: N invented new employees, N existing employees with a
 5 percent raise dated the first of the month after the reference date, N planted errors, or every
 existing employee unchanged. Used by /perf-timing and to build the sample file in step 5.
+
+Rows name employees by legacy_code (D48): an existing employee's own, a fresh unused HR- code for
+a new joiner. An employee created in the app has none and is never written.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Q
+from django.db.models import Max, Q
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 
@@ -22,7 +25,7 @@ from apps.core.models import SalaryComponent
 from apps.employees.models import Employee
 from apps.imports.parser import IDENTITY_COLUMNS, template_columns
 from seed import profiles
-from seed.generator import generate
+from seed.generator import generate, legacy_codes
 
 ERROR_KINDS = (
     "negative_base",
@@ -30,7 +33,7 @@ ERROR_KINDS = (
     "unknown_department",
     "bad_level",
     "bad_date",
-    "duplicate_code",
+    "duplicate_legacy_code",
     "comma_decimal",
     "wrong_component",
 )
@@ -42,7 +45,11 @@ def next_month_first(day: date) -> date:
 
 def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list[dict]:
     """Every existing employee with the amounts of the record current on the reference date."""
-    employees = Employee.objects.select_related("country", "department").order_by("employee_code")
+    employees = (
+        Employee.objects.select_related("country", "department")
+        .filter(legacy_code__isnull=False)
+        .order_by("pk")
+    )
     if limit is not None:
         employees = employees[:limit]
     employees = list(employees)
@@ -77,7 +84,7 @@ def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list
             effective_from = raise_date
         rows.append(
             {
-                "EmployeeID": employee.employee_code,
+                "legacy_code": employee.legacy_code,
                 "full_name": employee.full_name,
                 "email": employee.email,
                 "department": employee.department.code,
@@ -95,14 +102,15 @@ def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list
     return rows
 
 
-def new_rows(count: int, seed: int, start_number: int) -> list[dict]:
+def new_rows(count: int, seed: int, start_number: int, taken: set[str]) -> list[dict]:
     rows = []
-    for entry in generate(count, seed, start_number=start_number):
+    codes = legacy_codes(count, f"import-{seed}", taken)
+    for entry, code in zip(generate(count, seed, start_number=start_number), codes, strict=True):
         identity = entry.identity
         first = entry.records[0]
         rows.append(
             {
-                "EmployeeID": identity["employee_code"],
+                "legacy_code": code,
                 "full_name": identity["full_name"],
                 "email": identity["email"],
                 "department": identity["department"],
@@ -135,8 +143,8 @@ def plant_errors(rows: list[dict], count: int) -> None:
             row["level"] = 9
         elif kind == "bad_date":
             row["joining_date"] = "31/02/2024"
-        elif kind == "duplicate_code" and index + 1 < len(rows):
-            row["EmployeeID"] = rows[index + 1]["EmployeeID"]
+        elif kind == "duplicate_legacy_code" and index + 1 < len(rows):
+            row["legacy_code"] = rows[index + 1]["legacy_code"]
         elif kind == "comma_decimal":
             row["BASE"] = "1.200.000,50"
         elif kind == "wrong_component":
@@ -200,13 +208,11 @@ class Command(BaseCommand):
         elif options["raises"]:
             rows += existing_rows(options["raises"], options["raises"], raise_date)
         if options["new"]:
-            last = (
-                Employee.objects.order_by("-employee_code")
-                .values_list("employee_code", flat=True)
-                .first()
+            taken = set(
+                Employee.objects.exclude(legacy_code=None).values_list("legacy_code", flat=True)
             )
-            start = int(last.split("-")[1]) + 1 if last else 1
-            rows += new_rows(options["new"], options["seed"], start)
+            start = (Employee.objects.aggregate(last=Max("pk"))["last"] or 0) + 1
+            rows += new_rows(options["new"], options["seed"], start, taken)
         plant_errors(rows, options["errors"])
         codes = list(
             SalaryComponent.objects.filter(is_active=True)

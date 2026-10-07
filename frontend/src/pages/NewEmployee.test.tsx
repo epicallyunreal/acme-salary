@@ -29,7 +29,7 @@ describe('NewEmployee', () => {
     const meera = {
       ...employeeDetails[1],
       id: 5,
-      employee_code: 'ACME-000005',
+      employee_code: 'ACME-5',
       full_name: 'Meera Iyer',
     };
     server.use(
@@ -70,7 +70,7 @@ describe('NewEmployee', () => {
       await screen.findByRole('heading', { level: 1, name: 'Meera Iyer' }),
     ).toBeInTheDocument();
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Meera Iyer added as ACME-000005. Check it: gross 300,000 INR is below the India minimum 400,000.',
+      'Meera Iyer added as ACME-5. Check it: gross 300,000 INR is below the India minimum 400,000.',
     );
   });
 });

@@ -5,6 +5,7 @@ The directory queryset is the one query the 300 ms target depends on (SPEC F4, D
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
@@ -79,13 +80,14 @@ def shown_label(employee: Employee, record: CompensationRecord | None, on: date)
     return None
 
 
-def next_employee_code() -> str:
-    """The greatest existing code plus one. Codes are fixed-width, so text order is numeric."""
-    last = (
-        Employee.objects.order_by("-employee_code").values_list("employee_code", flat=True).first()
-    )
-    number = int(last.split("-")[1]) + 1 if last else 1
-    return f"ACME-{number:06d}"
+ACME_CODE = re.compile(r"^acme-(\d{1,18})$", re.IGNORECASE)
+
+
+def parse_employee_code(text: str) -> int | None:
+    """The id an ACME code names, read as a number for people typing a search: ACME-0017 and
+    acme-17 both give 17 (D48). Anything else gives None."""
+    match = ACME_CODE.match(text.strip())
+    return int(match.group(1)) if match else None
 
 
 def status_on(employee: Employee, on: date) -> str:

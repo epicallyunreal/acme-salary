@@ -63,14 +63,14 @@ class ImportRow(models.Model):
 
     batch = models.ForeignKey(ImportBatch, on_delete=models.CASCADE, related_name="rows")
     row_number = models.PositiveIntegerField()
-    employee_code = models.CharField(max_length=16, blank=True, default="")
+    legacy_code = models.CharField(max_length=32, blank=True, default="")
     full_name = models.CharField(max_length=120, blank=True, default="")
     raw = models.JSONField(default=dict, blank=True)
     normalized = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=8, choices=Status.choices)
     validation_status = models.CharField(max_length=8, choices=ValidationStatus.choices)
     messages = models.JSONField(default=list, blank=True)
-    # SPEC section 5: null when the row has no usable EmployeeID, so null is the contract here.
+    # SPEC section 5: null when the row has no usable legacy_code, so null is the contract here.
     action = models.CharField(max_length=8, choices=Action.choices, null=True, blank=True)  # noqa: DJ001
     matched_employee = models.ForeignKey(
         Employee, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"

@@ -46,6 +46,7 @@ RECORD_KEYS = {
 EMPLOYEE_KEYS = {
     "id",
     "employee_code",
+    "legacy_code",
     "full_name",
     "email",
     "gender",

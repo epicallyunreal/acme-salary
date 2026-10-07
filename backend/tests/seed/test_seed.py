@@ -86,6 +86,14 @@ def test_shares_and_invariants():
             assert records[-1].effective_to == employee.last_date + timedelta(days=1)
         assert [record.version for record in records] == list(range(1, len(records) + 1))
 
+    # The database numbered them in joining order, so ACME-1 is the longest-serving, and each
+    # carries its own HR- legacy_code (D48).
+    joined = list(Employee.objects.order_by("pk").values_list("joining_date", flat=True))
+    assert joined == sorted(joined)
+    codes = list(Employee.objects.values_list("legacy_code", flat=True))
+    assert len(set(codes)) == 500
+    assert all(code and code.startswith("HR-") and len(code) == 8 for code in codes)
+
     # 500 create entries, 1,799 revise entries and 16 set_rate entries.
     assert AuditLog.objects.count() == 2315
     assert set(AuditLog.objects.values_list("timestamp", flat=True)) == {

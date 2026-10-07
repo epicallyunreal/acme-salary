@@ -49,7 +49,10 @@ export interface ShownRecord {
 
 export interface EmployeeRow {
   id: number;
+  /** ACME-<id>, numbered by the database (D48). */
   employee_code: string;
+  /** The code the legacy system gave an imported employee; null when added in the app. */
+  legacy_code: string | null;
   full_name: string;
   email: string;
   department: Pick<Department, 'code' | 'name'>;
@@ -137,7 +140,10 @@ export type Gender = 'female' | 'male' | 'other' | 'undisclosed';
 
 export interface EmployeeDetail {
   id: number;
+  /** ACME-<id>, numbered by the database (D48). */
   employee_code: string;
+  /** The code the legacy system gave an imported employee; null when added in the app. */
+  legacy_code: string | null;
   full_name: string;
   email: string;
   gender: Gender;

@@ -119,7 +119,7 @@ describe('EmployeeForm', () => {
       http.post('/api/v1/employees/', () =>
         HttpResponse.json(
           {
-            email: ['email already belongs to ACME-000001'],
+            email: ['email already belongs to ACME-1'],
             BASE: ['BASE is required'],
             lines: {
               '1': { annual_amount: ['Ensure that there are no more than 2 decimal places.'] },
@@ -136,7 +136,7 @@ describe('EmployeeForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save employee' }));
 
-    expect(await screen.findAllByText('email already belongs to ACME-000001')).not.toHaveLength(0);
+    expect(await screen.findAllByText('email already belongs to ACME-1')).not.toHaveLength(0);
     expect(screen.getByLabelText(/Email/)).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByLabelText('Base salary (INR)')).toHaveAccessibleDescription(
       'BASE is required',

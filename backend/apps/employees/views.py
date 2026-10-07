@@ -17,10 +17,10 @@ from rest_framework.response import Response
 
 from apps.core import fx
 from apps.core.dates import parse_on
-from apps.core.filters import BoundedSearchFilter, parse_csv
+from apps.core.filters import parse_csv
 from apps.core.models import Country
 from apps.employees import queries, services
-from apps.employees.filters import DirectoryFilterSet
+from apps.employees.filters import DirectoryFilterSet, EmployeeSearchFilter
 from apps.employees.models import Employee
 from apps.employees.serializers import (
     AuditEntrySerializer,
@@ -86,9 +86,8 @@ class OneEmployeeMixin(ReportingMixin):
 
 
 class EmployeeListCreateView(ReportingMixin, ListCreateAPIView):
-    filter_backends = [DjangoFilterBackend, BoundedSearchFilter]
+    filter_backends = [DjangoFilterBackend, EmployeeSearchFilter]
     filterset_class = DirectoryFilterSet
-    search_fields = ["full_name", "employee_code", "email"]
 
     def get_serializer_class(self):
         return EmployeeCreateSerializer if self.request.method == "POST" else EmployeeListSerializer

@@ -15,7 +15,7 @@ function sixtyRows(params: URLSearchParams) {
   const results = Array.from({ length: 60 }, (_, index) => ({
     ...employees[index % employees.length],
     id: index + 1,
-    employee_code: `ACME-${String(index + 1).padStart(6, '0')}`,
+    employee_code: `ACME-${index + 1}`,
   })).slice((page - 1) * pageSize, page * pageSize);
   return {
     count: 60,
@@ -56,7 +56,7 @@ describe('Employees', () => {
     expect(rows).toHaveLength(4);
     expect(screen.getByText('4 employees')).toBeInTheDocument();
     const asha = rows[0];
-    expect(within(asha).getByText('ACME-000001')).toBeInTheDocument();
+    expect(within(asha).getByText('ACME-1')).toBeInTheDocument();
     expect(within(asha).getByText('INR 1,450,000')).toBeInTheDocument();
     expect(within(asha).getByText('USD 17,400')).toBeInTheDocument();
     expect(within(asha).getByText('active')).toBeInTheDocument();
@@ -73,7 +73,7 @@ describe('Employees', () => {
     const { router } = renderApp('/employees?page=2&country=IN');
     const user = userEvent.setup();
 
-    await screen.findByText('ACME-000026');
+    await screen.findByText('ACME-26');
     expect(seen.map((params) => params.get('page'))).toEqual(['2']);
     expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({
       page: '2',
@@ -82,7 +82,7 @@ describe('Employees', () => {
 
     await user.click(screen.getByRole('button', { name: /next page/i }));
 
-    await screen.findByText('ACME-000051');
+    await screen.findByText('ACME-51');
     expect(seen.at(-1)?.get('page')).toBe('3');
     expect(seen.at(-1)?.get('country')).toBe('IN');
     expect(seen.map((params) => params.get('page'))).toEqual(['2', '3']);
@@ -96,7 +96,7 @@ describe('Employees', () => {
     const seen = recordRequests({ rows: 60 });
     renderApp('/employees?page=2&ordering=-gross&level=3');
     const user = userEvent.setup();
-    await screen.findByText('ACME-000026');
+    await screen.findByText('ACME-26');
 
     expect(seen).toHaveLength(1);
     expect(seen[0].get('page')).toBe('2');

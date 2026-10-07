@@ -1,11 +1,16 @@
-"""The import template's shape (SPEC F1). The row parser itself lands in step 5."""
+"""The import template's shape (SPEC F1). The row parser itself lands in step 5.
+
+The first column is legacy_code, the code the legacy system gave the employee (D48). The old
+EmployeeID headers are read as legacy_code only when a sheet has no legacy_code column; when it
+has one, they are ignored with the usual "Ignored unknown column" warning.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 
 IDENTITY_COLUMNS = (
-    "EmployeeID",
+    "legacy_code",
     "full_name",
     "email",
     "department",
@@ -19,7 +24,7 @@ IDENTITY_COLUMNS = (
     "bonus_annual",
 )
 REQUIRED_COLUMNS = (
-    "EmployeeID",
+    "legacy_code",
     "full_name",
     "email",
     "department",
@@ -30,10 +35,11 @@ REQUIRED_COLUMNS = (
     "joining_date",
     "BASE",
 )
+# Read as legacy_code when the sheet has no legacy_code column of its own.
 ALIASES = {
-    "employeecode": "EmployeeID",
-    "employeeid": "EmployeeID",
-    "empid": "EmployeeID",
+    "employeecode": "legacy_code",
+    "employeeid": "legacy_code",
+    "empid": "legacy_code",
 }
 
 

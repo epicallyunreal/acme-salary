@@ -24,7 +24,6 @@ from apps.core.models import SalaryComponent
 from apps.core.money import q2
 from apps.employees.identity import apply_identity
 from apps.employees.models import Employee
-from apps.employees.queries import next_employee_code
 
 ZERO = Decimal("0")
 BATCH = 1000
@@ -492,29 +491,25 @@ def bulk_apply(
                 for entry in entries
                 if (entry.identity or entry.identity_changes or {}).get("email")
             ],
-            codes=[
-                entry.identity["employee_code"]
+            legacy_codes=[
+                entry.identity["legacy_code"]
                 for entry in entries
-                if entry.identity and entry.identity.get("employee_code")
+                if entry.identity and entry.identity.get("legacy_code")
             ],
         )
     _validate_entries(entries, ctx)
     result = BulkResult()
 
     with transaction.atomic():
-        # 1. New employees.
-        next_number = int(next_employee_code().split("-")[1])
+        # 1. New employees, numbered by the database in the order given (D48). A legacy_code
+        # comes only from the sheet or the seed that created the employee.
         new_employees: list[tuple[BulkEntry, Employee]] = []
         for entry in entries:
             if entry.employee is not None:
                 continue
             identity = entry.identity or {}
-            code = identity.get("employee_code")
-            if not code:
-                code = f"ACME-{next_number:06d}"
-                next_number += 1
             employee = Employee(
-                employee_code=code,
+                legacy_code=identity.get("legacy_code") or None,
                 full_name=identity["full_name"],
                 email=identity["email"].lower(),
                 gender=identity["gender"],

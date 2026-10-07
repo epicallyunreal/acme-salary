@@ -50,7 +50,6 @@ def first_record(employee, effective_from, actor, amounts=LINES):
 def asha(rates, hr_user):
     """Joined 2024-03-01; her current record runs from 2025-04-01."""
     employee = EmployeeFactory(
-        employee_code="ACME-000001",
         full_name="Asha Rao",
         email="asha@acme.example",
         joining_date=date(2024, 3, 1),
