@@ -55,13 +55,21 @@ def test_every_filter_reaches_the_query(api, people):
 
 
 @pytest.mark.parametrize(
-    ("name", "queries"), [("summary", 6), ("by-country", 6), ("by-department", 6)]
+    ("name", "queries"),
+    [
+        ("summary", 6),
+        ("by-country", 6),
+        ("by-department", 6),
+        ("distribution", 5),
+        ("by-level", 5),
+        ("gender-gap", 5),
+    ],
 )
 def test_an_insight_runs_a_fixed_number_of_queries(
     api, people, django_assert_num_queries, name, queries
 ):
-    """The user, the countries, the departments, the rates, one aggregate and one list of
-    gross values, whatever the population."""
+    """The user, the countries, the departments, the rates, then one aggregate and one list of
+    gross values, or the list alone, whatever the population."""
     with django_assert_num_queries(queries):
         response = api.get(URL.format(name))
 

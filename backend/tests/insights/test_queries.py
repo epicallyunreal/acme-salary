@@ -441,3 +441,378 @@ def test_an_unknown_country_or_department_is_refused_with_section_7s_words(peopl
         "country": ["Unknown country_code: XX"],
         "department": ["Unknown department: growth"],
     }
+
+
+# distribution
+
+
+def bands(edges: list[str], top: str, counts: list[int]) -> list[dict]:
+    """Twelve bands from their lower edges, the last band's upper edge and the counts."""
+    tops = [*edges[1:], top]
+    return [
+        {"index": index, "from": edges[index], "to": tops[index], "count": counts[index]}
+        for index in range(12)
+    ]
+
+
+def spread(currency, rates, headcount, p1, p99, markers, edges, counts):
+    return {
+        "currency": currency,
+        "rate_month": rates,
+        "headcount": headcount,
+        "p1": p1,
+        "p99": p99,
+        "bands": bands(edges, p99, counts),
+        "markers": dict(zip(("p10", "p50", "p90"), markers, strict=True)),
+    }
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        (
+            {},
+            spread(
+                "USD",
+                USD_RATES,
+                27,
+                "10650.00",
+                "187400.00",
+                ("16500.00", "75000.00", "164000.00"),
+                ["10650.00", "25379.17", "40108.33", "54837.50", "69566.67", "84295.83"]
+                + ["99025.00", "113754.17", "128483.33", "143212.50", "157941.67", "172670.83"],
+                [7, 5, 0, 1, 1, 1, 4, 1, 2, 1, 2, 2],
+            ),
+        ),
+        (
+            {"country": ["US"]},
+            spread(
+                "USD",
+                USD_RATES,
+                10,
+                "100900.00",
+                "189100.00",
+                ("109000.00", "145000.00", "181000.00"),
+                ["100900.00", "108250.00", "115600.00", "122950.00", "130300.00", "137650.00"]
+                + ["145000.00", "152350.00", "159700.00", "167050.00", "174400.00", "181750.00"],
+                [1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1],
+            ),
+        ),
+        (
+            # 170,000 sits exactly on band 6's lower edge and is counted in band 6.
+            {"department": ["sales"]},
+            spread(
+                "USD",
+                USD_RATES,
+                5,
+                "150400.00",
+                "189600.00",
+                ("154000.00", "170000.00", "186000.00"),
+                ["150400.00", "153666.67", "156933.33", "160200.00", "163466.67", "166733.33"]
+                + ["170000.00", "173266.67", "176533.33", "179800.00", "183066.67", "186333.33"],
+                [1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1],
+            ),
+        ),
+        (
+            {"include_exited": True},
+            spread(
+                "USD",
+                USD_RATES,
+                29,
+                "7300.00",
+                "187200.00",
+                ("14500.00", "75000.00", "162000.00"),
+                ["7300.00", "22291.67", "37283.33", "52275.00", "67266.67", "82258.33"]
+                + ["97250.00", "112241.67", "127233.33", "142225.00", "157216.67", "172208.33"],
+                [6, 6, 1, 1, 1, 1, 3, 3, 2, 1, 2, 2],
+            ),
+        ),
+        (
+            {"on": NEW_YEAR},
+            spread(
+                "USD",
+                USD_RATES,
+                28,
+                "10675.00",
+                "187300.00",
+                ("16750.00", "81250.00", "163000.00"),
+                ["10675.00", "25393.75", "40112.50", "54831.25", "69550.00", "84268.75"]
+                + ["98987.50", "113706.25", "128425.00", "143143.75", "157862.50", "172581.25"],
+                [7, 5, 0, 1, 1, 1, 3, 2, 3, 1, 2, 2],
+            ),
+        ),
+        (
+            {"currency": "eur"},
+            spread(
+                "EUR",
+                EUR_RATES,
+                27,
+                "8520.00",
+                "149920.00",
+                ("13200.00", "60000.00", "131200.00"),
+                ["8520.00", "20303.33", "32086.67", "43870.00", "55653.33", "67436.67"]
+                + ["79220.00", "91003.33", "102786.67", "114570.00", "126353.33", "138136.67"],
+                [7, 5, 0, 1, 1, 1, 4, 1, 2, 1, 2, 2],
+            ),
+        ),
+        (
+            {"country": ["IN"], "currency": "local"},
+            spread(
+                "INR",
+                {"label": "local currency (INR)", "effective_from": None},
+                12,
+                "822000.00",
+                "2978000.00",
+                ("1020000.00", "1900000.00", "2780000.00"),
+                ["822000.00", "1001666.67", "1181333.33", "1361000.00", "1540666.67"]
+                + ["1720333.33", "1900000.00", "2079666.67", "2259333.33", "2439000.00"]
+                + ["2618666.67", "2798333.33"],
+                [2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2],
+            ),
+        ),
+    ],
+    ids=["no filter", "country", "department", "include_exited", "on", "eur", "local"],
+)
+def test_distribution(people, given, expected):
+    assert insight("distribution", **given) == expected
+
+
+def test_a_distribution_whose_p1_is_its_p99_is_one_band(people):
+    """SPEC section 9: five people on one salary leave no width to split into twelve."""
+    for n in range(5):
+        CompensationRecordFactory(
+            employee=EmployeeFactory(country=country("NL"), full_name=f"N{n + 1}"),
+            lines={"BASE": Decimal(70_000)},
+            effective_from=date(2024, 1, 1),
+        )
+
+    result = insight("distribution", country=["NL"])
+
+    assert (result["headcount"], result["p1"], result["p99"]) == (5, "87500.00", "87500.00")
+    assert result["bands"] == [{"index": 0, "from": "87500.00", "to": "87500.00", "count": 5}]
+    assert result["markers"] == {"p10": "87500.00", "p50": "87500.00", "p90": "87500.00"}
+
+
+def test_a_distribution_of_under_five_people_is_its_headcount_alone(people):
+    result = insight("distribution", country=["GB"])
+
+    assert [result[key] for key in ("headcount", "p1", "p99", "bands", "markers")] == [
+        1,
+        None,
+        None,
+        None,
+        None,
+    ]
+
+
+def test_one_value_is_every_percentile():
+    assert queries.percentiles([Decimal("5.00")]) == [Decimal("5.00")] * 99
+
+
+# by-level
+
+
+def level(number, headcount, *figures):
+    names = ("min", "p25", "median", "p75", "max")
+    return {
+        "level": number,
+        "headcount": headcount,
+        **dict(zip(names, figures or (None,) * 5, strict=True)),
+    }
+
+
+SAME_L2 = level(2, 6, "12500.00", "36250.00", "68750.00", "108750.00", "130000.00")
+SAME_L4 = level(4, 5, "17500.00", "32500.00", "100000.00", "160000.00", "170000.00")
+
+
+@pytest.mark.parametrize(
+    ("given", "rows"),
+    [
+        (
+            # Level 3 has exactly five people, the boundary of the small-group rule.
+            {},
+            [
+                level(1, 4),
+                SAME_L2,
+                level(3, 5, "15000.00", "30000.00", "87500.00", "140000.00", "150000.00"),
+                SAME_L4,
+                level(5, 4),
+                level(6, 3),
+            ],
+        ),
+        (
+            {"country": ["US"]},
+            [level(1, 2), level(2, 2), level(3, 2), level(4, 2), level(5, 1), level(6, 1)],
+        ),
+        (
+            {"department": ["engineering"]},
+            [level(1, 3), level(2, 4), level(3, 3), level(4, 2), level(5, 2), level(6, 1)],
+        ),
+        (
+            {"include_exited": True},
+            [
+                level(1, 5, "6250.00", "10000.00", "25000.00", "100000.00", "110000.00"),
+                SAME_L2,
+                level(3, 6, "15000.00", "44375.00", "103750.00", "135000.00", "150000.00"),
+                SAME_L4,
+                level(5, 4),
+                level(6, 3),
+            ],
+        ),
+        (
+            {"on": NEW_YEAR},
+            [
+                level(1, 4),
+                SAME_L2,
+                level(3, 6, "15000.00", "44375.00", "106250.00", "136250.00", "150000.00"),
+                SAME_L4,
+                level(5, 4),
+                level(6, 3),
+            ],
+        ),
+        (
+            {"currency": "eur"},
+            [
+                level(1, 4),
+                level(2, 6, "10000.00", "29000.00", "55000.00", "87000.00", "104000.00"),
+                level(3, 5, "12000.00", "24000.00", "70000.00", "112000.00", "120000.00"),
+                level(4, 5, "14000.00", "26000.00", "80000.00", "128000.00", "136000.00"),
+                level(5, 4),
+                level(6, 3),
+            ],
+        ),
+        (
+            {"country": ["IN"], "currency": "local"},
+            [level(number, 2) for number in range(1, 7)],
+        ),
+    ],
+    ids=["no filter", "country", "department", "include_exited", "on", "eur", "local"],
+)
+def test_by_level(people, given, rows):
+    assert insight("by-level", **given)["rows"] == rows
+
+
+# gender-gap
+
+SMALL = "group too small"
+
+
+def gap(code, name, women, women_median, men, men_median, pct=None, other=0, undisclosed=0):
+    return {
+        "country": {"code": code, "name": name} if code else None,
+        "female": {"headcount": women, "median_gross": women_median},
+        "male": {"headcount": men, "median_gross": men_median},
+        "other_count": other,
+        "undisclosed_count": undisclosed,
+        "gap_pct": pct,
+        "reason": None if pct is not None else SMALL,
+    }
+
+
+NOBODY_ELSE = [
+    gap("NL", "Netherlands", 0, None, 0, None),
+    gap("SG", "Singapore", 0, None, 0, None),
+]
+
+
+@pytest.mark.parametrize(
+    ("given", "rows"),
+    [
+        (
+            {},
+            [
+                gap("DE", "Germany", 2, None, 2, None),
+                gap("IN", "India", 6, "25000.00", 6, "22500.00", "-11.1"),
+                *NOBODY_ELSE,
+                gap("GB", "United Kingdom", 1, None, 0, None),
+                gap("US", "United States", 4, None, 6, "125000.00"),
+                gap(None, None, 13, "62500.00", 14, "100000.00", "37.5"),
+            ],
+        ),
+        (
+            {"country": ["IN"]},
+            [
+                gap("IN", "India", 6, "25000.00", 6, "22500.00", "-11.1"),
+                gap(None, None, 6, "25000.00", 6, "22500.00", "-11.1"),
+            ],
+        ),
+        (
+            {"department": ["engineering"]},
+            [
+                gap("DE", "Germany", 2, None, 2, None),
+                gap("IN", "India", 3, None, 3, None),
+                *NOBODY_ELSE,
+                gap("GB", "United Kingdom", 0, None, 0, None),
+                gap("US", "United States", 0, None, 5, "120000.00"),
+                gap(None, None, 5, "22500.00", 10, "105000.00", "78.6"),
+            ],
+        ),
+        (
+            {"include_exited": True},
+            [
+                gap("DE", "Germany", 2, None, 2, None),
+                gap("IN", "India", 7, "22500.00", 6, "22500.00", "0.0"),
+                *NOBODY_ELSE,
+                gap("GB", "United Kingdom", 1, None, 0, None),
+                gap("US", "United States", 4, None, 7, "120000.00"),
+                gap(None, None, 14, "50000.00", 15, "100000.00", "50.0"),
+            ],
+        ),
+        (
+            {"on": NEW_YEAR},
+            [
+                gap("DE", "Germany", 2, None, 3, None),
+                gap("IN", "India", 6, "25000.00", 6, "22500.00", "-11.1"),
+                *NOBODY_ELSE,
+                gap("GB", "United Kingdom", 1, None, 0, None),
+                gap("US", "United States", 4, None, 6, "130000.00"),
+                gap(None, None, 13, "62500.00", 15, "110000.00", "43.2"),
+            ],
+        ),
+        (
+            {"currency": "eur"},
+            [
+                gap("DE", "Germany", 2, None, 2, None),
+                gap("IN", "India", 6, "20000.00", 6, "18000.00", "-11.1"),
+                *NOBODY_ELSE,
+                gap("GB", "United Kingdom", 1, None, 0, None),
+                gap("US", "United States", 4, None, 6, "100000.00"),
+                gap(None, None, 13, "50000.00", 14, "80000.00", "37.5"),
+            ],
+        ),
+        (
+            {"country": ["IN"], "currency": "local"},
+            [
+                gap("IN", "India", 6, "2000000.00", 6, "1800000.00", "-11.1"),
+                gap(None, None, 6, "2000000.00", 6, "1800000.00", "-11.1"),
+            ],
+        ),
+    ],
+    ids=["no filter", "country", "department", "include_exited", "on", "eur", "local"],
+)
+def test_gender_gap(people, given, rows):
+    assert insight("gender-gap", **given)["rows"] == rows
+
+
+def test_other_and_undisclosed_are_counted_never_given_a_median(people):
+    """SPEC section 9: they count in headcount and show as a count beside the two medians."""
+    for name, code, gender, lines in (
+        ("O1", "US", "other", us_lines(Decimal(105_000))),
+        ("Q1", "IN", "undisclosed", {"BASE": Decimal(1_500_000)}),
+    ):
+        CompensationRecordFactory(
+            employee=EmployeeFactory(country=country(code), gender=gender, full_name=name),
+            lines=lines,
+            effective_from=date(2024, 1, 1),
+        )
+
+    rows = {
+        row["country"]["code"] if row["country"] else "all": row
+        for row in insight("gender-gap")["rows"]
+    }
+
+    assert (rows["US"]["other_count"], rows["IN"]["undisclosed_count"]) == (1, 1)
+    assert (rows["all"]["other_count"], rows["all"]["undisclosed_count"]) == (1, 1)
+    assert rows["all"]["female"] == {"headcount": 13, "median_gross": "62500.00"}
+    assert rows["all"]["male"] == {"headcount": 14, "median_gross": "100000.00"}
+    assert insight("summary")["headcount"] == 29

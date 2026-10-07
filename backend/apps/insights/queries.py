@@ -10,6 +10,7 @@ TODO(step 7, exports): register each insight's table in apps/exports for /export
 
 from __future__ import annotations
 
+import math
 import statistics
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -28,6 +29,9 @@ from apps.core.models import Country, Department
 from apps.core.money import q1, q2
 
 SMALL_GROUP = 5  # SPEC section 9: under five people, headcount and total cost only
+BANDS = 12
+LEVELS = range(1, 7)
+GENDERS = ("female", "male", "other", "undisclosed")
 
 COUNTRY = "employee__country_id"
 DEPARTMENT = "employee__department__code"
@@ -168,6 +172,14 @@ def median(values: list[Decimal]) -> Decimal | None:
     return q2(statistics.median(values)) if values else None
 
 
+def percentiles(values: list[Decimal]) -> list[Decimal]:
+    """p1 to p99 by the inclusive method, p1 at index 0 and p99 at index 98. One value is every
+    percentile (SPEC section 9); callers have already turned away an empty list."""
+    if len(values) == 1:
+        return [values[0]] * 99
+    return [q2(point) for point in statistics.quantiles(values, n=100, method="inclusive")]
+
+
 def published(group: Group, values: list[Decimal], *, mean: bool = False) -> dict:
     """Headcount and total cost, then the mean and median for a group of five or more."""
     shown = group.headcount >= SMALL_GROUP
@@ -249,8 +261,118 @@ def by_department(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> d
     return {**header(f, rates), "rows": rows}
 
 
+def distribution(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
+    """Question 4: gross in twelve equal bands from p1 to p99, values outside clipped into the end
+    bands, with p10, p50 and p90 marked. Nothing but the headcount for under five people."""
+    values = grosses(f, rates)[()]
+    payload = {
+        **header(f, rates),
+        "headcount": len(values),
+        "p1": None,
+        "p99": None,
+        "bands": None,
+        "markers": None,
+    }
+    if len(values) < SMALL_GROUP:
+        return payload
+    points = percentiles(values)
+    low, high = points[0], points[98]
+    payload.update(
+        p1=low, p99=high, markers={"p10": points[9], "p50": points[49], "p90": points[89]}
+    )
+    if low == high:
+        payload["bands"] = [{"index": 0, "from": low, "to": high, "count": len(values)}]
+        return payload
+    counts = [0] * BANDS
+    for value in values:
+        # floor((v - p1) / width) with width = (p99 - p1) / 12, multiplied out so a value on a
+        # band's edge lands in that band rather than the one below.
+        band = math.floor((value - low) * BANDS / (high - low))
+        counts[min(max(band, 0), BANDS - 1)] += 1
+    width = (high - low) / BANDS
+    payload["bands"] = [
+        {
+            "index": index,
+            "from": q2(low + index * width),
+            "to": q2(low + (index + 1) * width) if index < BANDS - 1 else high,
+            "count": counts[index],
+        }
+        for index in range(BANDS)
+    ]
+    return payload
+
+
+def by_level(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
+    """Question 5: min, p25, median, p75 and max gross per level, for five people or more."""
+    values = grosses(f, rates, "employee__level")
+    rows = []
+    for level in LEVELS:
+        group = sorted(values.get((level,), []))
+        row = {
+            "level": level,
+            "headcount": len(group),
+            "min": None,
+            "p25": None,
+            "median": None,
+            "p75": None,
+            "max": None,
+        }
+        if len(group) >= SMALL_GROUP:
+            points = percentiles(group)
+            row.update(
+                min=group[0], p25=points[24], median=median(group), p75=points[74], max=group[-1]
+            )
+        rows.append(row)
+    return {**header(f, rates), "rows": rows}
+
+
+def gap_row(country: dict | None, by_gender: dict[str, list[Decimal]]) -> dict:
+    """The medians of women and men and the unadjusted gap, each median only for five people or
+    more. Other and undisclosed are counted, never given a median."""
+    female, male = by_gender["female"], by_gender["male"]
+    row = {
+        "country": country,
+        "female": {
+            "headcount": len(female),
+            "median_gross": median(female) if len(female) >= SMALL_GROUP else None,
+        },
+        "male": {
+            "headcount": len(male),
+            "median_gross": median(male) if len(male) >= SMALL_GROUP else None,
+        },
+        "other_count": len(by_gender["other"]),
+        "undisclosed_count": len(by_gender["undisclosed"]),
+        "gap_pct": None,
+        "reason": None,
+    }
+    if len(female) < SMALL_GROUP or len(male) < SMALL_GROUP:
+        row["reason"] = "group too small"
+    else:
+        women, men = row["female"]["median_gross"], row["male"]["median_gross"]
+        row["gap_pct"] = q1((men - women) / men * 100)
+    return row
+
+
+def gender_gap(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
+    """Question 6: per country in the filter, in name order, then overall."""
+    values = grosses(f, rates, COUNTRY, "employee__gender")
+    rows = []
+    for code, country in lookups.countries.items():
+        if not f.country or code in f.country:
+            by_gender = {gender: values.get((code, gender), []) for gender in GENDERS}
+            rows.append(gap_row({"code": code, "name": country.name}, by_gender))
+    overall: dict[str, list[Decimal]] = {gender: [] for gender in GENDERS}
+    for (_, gender), group in values.items():
+        overall[gender].extend(group)
+    rows.append(gap_row(None, overall))
+    return {**header(f, rates), "rows": rows}
+
+
 INSIGHTS: dict[str, Callable[[InsightFilters, fx.RateTable, Lookups], dict]] = {
     "summary": summary,
     "by-country": by_country,
     "by-department": by_department,
+    "distribution": distribution,
+    "by-level": by_level,
+    "gender-gap": gender_gap,
 }

@@ -35,6 +35,10 @@ DIRECTORY_CASES = {
     "search by code": "search=ACME-17",
 }
 
+# Each insight is timed unfiltered and with one country (the /perf-timing skill names them).
+INSIGHT_NAMES = ("summary", "by-country", "by-department", "distribution", "by-level", "gender-gap")
+INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
+
 
 def git_short_sha() -> str:
     try:
@@ -144,6 +148,22 @@ class Command(BaseCommand):
                 worst = (p50, p95)
         return f"{worst[0]:.0f} / {worst[1]:.0f}"
 
+    def time_insights(self, repeats: int) -> str:
+        """p50 / p95 of the slowest insight and filter; every one is printed."""
+        client = api_client()
+        worst = (0.0, 0.0)
+        for name in INSIGHT_NAMES:
+            for label, query in INSIGHT_FILTERS.items():
+                samples = time_requests(client, f"/api/v1/insights/{name}/?{query}", repeats)
+                p50, p95 = percentile(samples, 0.5), percentile(samples, 0.95)
+                self.stdout.write(
+                    f"insight {name}, {label}: p50 {p50:.0f} ms, p95 {p95:.0f} ms "
+                    f"({repeats} requests)"
+                )
+                if p95 > worst[1]:
+                    worst = (p50, p95)
+        return f"{worst[0]:.0f} / {worst[1]:.0f}"
+
     def time_import(self, seed: int) -> str:
         """Stage `make_import_file --all --raises 1000` through the API, then approve it, inside
         a transaction that is rolled back, so the database is left as it was. Prints both times
@@ -201,7 +221,8 @@ class Command(BaseCommand):
             results["directory"] = self.time_directory(options["repeats"])
 
         if "insights" in wanted:
-            results["insights"] = "not built yet"
+            self.require_seed(options["employees"])
+            results["insights"] = self.time_insights(options["repeats"])
 
         if "import" in wanted:
             self.require_seed(options["employees"])
