@@ -79,7 +79,7 @@ export const SORT_FIELDS: Record<string, string> = {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
 
-function csv(value: string | null): string[] {
+export function csv(value: string | null): string[] {
   return value
     ? value
         .split(',')
@@ -97,7 +97,9 @@ function matching(value: string | null, pattern: RegExp): string {
 }
 
 /** `local` is a reporting currency only while exactly one country is selected (DESIGN 6). */
-export function withCurrencyRule(state: GridState): GridState {
+export function withCurrencyRule<T extends { currency: ReportingCurrency; country: string[] }>(
+  state: T,
+): T {
   if (state.currency === 'local' && state.country.length !== 1)
     return { ...state, currency: 'usd' };
   return state;

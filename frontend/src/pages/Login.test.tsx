@@ -33,8 +33,9 @@ describe('Login', () => {
 
     await signIn();
 
-    await screen.findByRole('heading', { name: 'Employees' });
-    expect(router.state.location.pathname).toBe('/employees');
+    // The start page is the dashboard (DESIGN section 6).
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
+    expect(router.state.location.pathname).toBe('/');
   });
 
   it('says when the email or password is wrong', async () => {
@@ -77,6 +78,6 @@ describe('Login', () => {
 
     renderApp('/login');
 
-    await screen.findByRole('heading', { name: 'Employees' });
+    await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
   });
 });

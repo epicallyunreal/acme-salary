@@ -1,7 +1,8 @@
-import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
+import { createBrowserRouter, type RouteObject } from 'react-router';
 
 import { AppShell } from './components/layout/AppShell';
 import { RequireAuth } from './components/layout/RequireAuth';
+import { Dashboard } from './pages/Dashboard';
 import { EmployeeDetail } from './pages/EmployeeDetail';
 import { Employees } from './pages/Employees';
 import { ImportReview } from './pages/ImportReview';
@@ -10,7 +11,7 @@ import { Login } from './pages/Login';
 import { NewEmployee } from './pages/NewEmployee';
 import { NotFound } from './pages/NotFound';
 
-// DESIGN section 6 route table. `/` sends to the directory until the dashboard lands in step 6.
+// DESIGN section 6 route table.
 export const routes: RouteObject[] = [
   { path: '/login', element: <Login /> },
   {
@@ -19,7 +20,7 @@ export const routes: RouteObject[] = [
       {
         element: <AppShell />,
         children: [
-          { index: true, element: <Navigate to="/employees" replace /> },
+          { index: true, element: <Dashboard /> },
           { path: '/employees', element: <Employees /> },
           { path: '/employees/new', element: <NewEmployee /> },
           { path: '/employees/:id', element: <EmployeeDetail /> },

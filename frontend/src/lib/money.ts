@@ -51,6 +51,16 @@ export function formatRate(rate: string): string {
   return rate.includes('.') ? rate.replace(/0+$/, '').replace(/\.$/, '') : rate;
 }
 
+const compactAmount = new Intl.NumberFormat('en-US', {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+
+/** `2.4M` without its code, for a KPI figure set beside the code (DESIGN section 7). */
+export function formatCompactAmount(value: string): string {
+  return compactAmount.format(value as Intl.StringNumericLiteral);
+}
+
 /** `USD 1.2M` for chart axes and KPI cards. */
 export function formatCompact(value: string, currency: string): string {
   return formatter(currency, 1, 'compact').format(value as Intl.StringNumericLiteral);

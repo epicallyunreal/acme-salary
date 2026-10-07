@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw/http';
 import { auditPage, employeeDetails, histories } from './fixtures/detail';
 import { employeePage } from './fixtures/employees';
 import { batches, batchPage, reviewBatch, reviewRows, rowsPage } from './fixtures/imports';
+import { exchangeRates, insightFor } from './fixtures/insights';
 import { componentsFor, countries, departments } from './fixtures/meta';
 
 // One handler per API route the app calls. Each step adds its routes with realistic fixtures.
@@ -58,6 +59,7 @@ function authenticated(request: Request, body: Parameters<typeof HttpResponse.js
 export const metaHandlers = [
   http.get('/api/v1/meta/countries/', ({ request }) => authenticated(request, countries)),
   http.get('/api/v1/meta/departments/', ({ request }) => authenticated(request, departments)),
+  http.get('/api/v1/meta/exchange-rates/', ({ request }) => authenticated(request, exchangeRates)),
   http.get('/api/v1/meta/components/', ({ request }) =>
     authenticated(request, componentsFor(new URL(request.url).searchParams.get('country') ?? '')),
   ),
@@ -198,10 +200,20 @@ export const importHandlers = [
   }),
 ];
 
+export const insightHandlers = [
+  http.get('/api/v1/insights/:name/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const exited = new URL(request.url).searchParams.get('include_exited') === 'true';
+    const payload = insightFor(String(params.name), exited);
+    return payload ? HttpResponse.json(payload) : notFound('insight');
+  }),
+];
+
 export const handlers = [
   http.get('/healthz', () => HttpResponse.json({ status: 'ok' })),
   ...authHandlers,
   ...metaHandlers,
   ...employeeHandlers,
   ...importHandlers,
+  ...insightHandlers,
 ];

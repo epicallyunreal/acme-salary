@@ -1,6 +1,12 @@
 // TanStack Query keys (DESIGN section 6). Every parameter object is part of its key.
 
-import type { HistoryParams, ImportRowParams, ListParams } from './types';
+import type {
+  HistoryParams,
+  ImportRowParams,
+  InsightName,
+  InsightParams,
+  ListParams,
+} from './types';
 
 export const keys = {
   me: ['auth', 'me'] as const,
@@ -22,6 +28,7 @@ export const keys = {
   },
   insights: {
     all: ['insights'] as const,
+    one: (name: InsightName, params: InsightParams) => ['insights', name, params] as const,
   },
   imports: {
     all: ['imports'] as const,

@@ -18,6 +18,7 @@ import { useCancelRevision } from '../../api/compensation';
 import type { CompensationRecord } from '../../api/types';
 import { dayBefore, formatDate } from '../../lib/dates';
 import { formatMoney } from '../../lib/money';
+import { visuallyHidden } from '../../lib/a11y';
 import { applyServerErrors, type FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
 import { type Notice, savedNotice } from '../forms/feedback';
@@ -113,19 +114,6 @@ export function HistoryList({ records, onCancel }: HistoryListProps) {
     </Table>
   );
 }
-
-// Read by screen readers, not shown: the actions column needs a header, not a visible one.
-const visuallyHidden = {
-  position: 'absolute',
-  width: '1px',
-  height: '1px',
-  margin: '-1px',
-  padding: 0,
-  border: 0,
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
-  whiteSpace: 'nowrap',
-} as const;
 
 interface CancelRevisionDialogProps {
   employeeId: number;

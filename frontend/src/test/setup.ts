@@ -11,6 +11,14 @@ import { handlers } from './handlers';
 // longer than Testing Library's 1 s default to render, so a wait gets 3 s before it fails.
 configure({ asyncUtilTimeout: 3000 });
 
+// jsdom has no ResizeObserver, and Recharts' ResponsiveContainer needs one to mount. The charts
+// stay unmeasured in tests, which read each chart's figures from its table instead.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 // Every API call in a test is answered by MSW; an unhandled request fails the test that made it.
 export const server = setupServer(...handlers);
 const unhandled: string[] = [];

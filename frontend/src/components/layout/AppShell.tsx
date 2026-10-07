@@ -1,3 +1,4 @@
+import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import PeopleOutlinedIcon from '@mui/icons-material/PeopleOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import {
@@ -15,8 +16,8 @@ import { useLogout, useMe } from '../../api/auth';
 
 const NAV_WIDTH = 208;
 
-// The dashboard joins this list in step 6.
 const NAV_ITEMS = [
+  { label: 'Dashboard', to: '/', pattern: '/', Icon: InsertChartOutlinedIcon },
   { label: 'Employees', to: '/employees', pattern: '/employees/*', Icon: PeopleOutlinedIcon },
   { label: 'Imports', to: '/imports', pattern: '/imports/*', Icon: UploadFileOutlinedIcon },
 ];

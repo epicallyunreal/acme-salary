@@ -3,6 +3,7 @@ import {
   Button,
   Checkbox,
   FormControl,
+  FormControlLabel,
   InputLabel,
   ListItemText,
   MenuItem,
@@ -17,6 +18,7 @@ import { useCountries, useDepartments } from '../../api/meta';
 import type { EmployeeStatus, ReportingCurrency } from '../../api/types';
 import { EMPLOYEE_STATUSES, LEVELS } from '../../lib/constants';
 import type { DirectoryFilters } from '../grid/serverModel';
+import type { DashboardFilters } from './useDashboardFilters';
 
 export const SEARCH_DELAY_MS = 300;
 
@@ -99,7 +101,7 @@ interface MultiSelectProps<T extends string | number> {
   width?: number;
 }
 
-function MultiSelect<T extends string | number>({
+export function MultiSelect<T extends string | number>({
   label,
   value,
   options,
@@ -246,20 +248,101 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         onCommit={(joined_before) => onChange({ joined_before })}
         type="date"
       />
-      <FormControl sx={{ width: 120 }}>
-        <InputLabel id="filter-currency-label">Currency</InputLabel>
-        <Select
-          labelId="filter-currency-label"
-          id="filter-currency"
-          value={filters.currency}
-          label="Currency"
-          onChange={(event) => onChange({ currency: event.target.value as ReportingCurrency })}
-        >
-          <MenuItem value="usd">USD</MenuItem>
-          <MenuItem value="eur">EUR</MenuItem>
-          {localAllowed ? <MenuItem value="local">Local</MenuItem> : null}
-        </Select>
-      </FormControl>
+      <CurrencySelect
+        value={filters.currency}
+        localAllowed={localAllowed}
+        onChange={(currency) => onChange({ currency })}
+      />
+      {filtered ? (
+        <Button variant="text" onClick={onReset}>
+          Clear filters
+        </Button>
+      ) : null}
+    </Box>
+  );
+}
+
+interface CurrencySelectProps {
+  value: ReportingCurrency;
+  localAllowed: boolean;
+  onChange: (currency: ReportingCurrency) => void;
+}
+
+/** USD and EUR always; `Local` only while exactly one country is selected (SPEC F4, F5). */
+export function CurrencySelect({ value, localAllowed, onChange }: CurrencySelectProps) {
+  return (
+    <FormControl sx={{ width: 120 }}>
+      <InputLabel id="filter-currency-label">Currency</InputLabel>
+      <Select
+        labelId="filter-currency-label"
+        id="filter-currency"
+        value={value}
+        label="Currency"
+        onChange={(event) => onChange(event.target.value as ReportingCurrency)}
+      >
+        <MenuItem value="usd">USD</MenuItem>
+        <MenuItem value="eur">EUR</MenuItem>
+        {localAllowed ? <MenuItem value="local">Local</MenuItem> : null}
+      </Select>
+    </FormControl>
+  );
+}
+
+interface DashboardFilterBarProps {
+  filters: DashboardFilters;
+  onChange: (patch: Partial<DashboardFilters>) => void;
+  onReset: () => void;
+  filtered: boolean;
+}
+
+/** The dashboard's filters (SPEC F5): country, department, reporting currency, and whether the
+ * people who have left count. */
+export function DashboardFilterBar({
+  filters,
+  onChange,
+  onReset,
+  filtered,
+}: DashboardFilterBarProps) {
+  const countries = useCountries();
+  const departments = useDepartments();
+  return (
+    <Box
+      component="section"
+      aria-label="Filters"
+      sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center', mb: 3 }}
+    >
+      <MultiSelect
+        label="Country"
+        value={filters.country}
+        options={(countries.data ?? []).map((country) => ({
+          value: country.code,
+          label: country.name,
+        }))}
+        onChange={(country) => onChange({ country })}
+      />
+      <MultiSelect
+        label="Department"
+        value={filters.department}
+        options={(departments.data ?? []).map((department) => ({
+          value: department.code,
+          label: department.name,
+        }))}
+        onChange={(department) => onChange({ department })}
+      />
+      <CurrencySelect
+        value={filters.currency}
+        localAllowed={filters.country.length === 1}
+        onChange={(currency) => onChange({ currency })}
+      />
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={filters.include_exited}
+            onChange={(event) => onChange({ include_exited: event.target.checked })}
+          />
+        }
+        label="Include exited"
+      />
       {filtered ? (
         <Button variant="text" onClick={onReset}>
           Clear filters

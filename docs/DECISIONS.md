@@ -46,6 +46,8 @@ Consequences: one deployable, no CORS between services in production, no second 
 
 Amended 7 Oct: the grid talks to DRF through an adapter (zero-based pages, single-column sort, filter panel disabled), not one-to-one. SPEC section 10.
 
+Amended 8 Oct: Recharts 3.10 is installed in step 6 for the dashboard's five charts, the runtime dependency this entry names (CLAUDE.md rule 9).
+
 Context: the brief asks for ReactJS with a component library of choice. The app is grid-heavy: the directory and the import review are both large server-driven tables.
 
 Decision: MUI for components, MUI X DataGrid (community edition) for every grid, Recharts for charts, TanStack Query for server state, react-hook-form plus zod for forms. Tests with Vitest, React Testing Library and MSW.

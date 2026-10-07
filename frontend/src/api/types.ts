@@ -295,3 +295,105 @@ export interface ImportRowParams {
   status?: string;
   search?: string;
 }
+
+// Insights (DESIGN 1.6). Money is a two-decimal string, or null where SPEC section 9 withholds it.
+
+export type InsightName =
+  'summary' | 'by-country' | 'by-department' | 'distribution' | 'by-level' | 'gender-gap';
+
+export interface InsightParams {
+  country: string[];
+  department: string[];
+  currency: ReportingCurrency;
+  include_exited: boolean;
+}
+
+export interface RateMonth {
+  label: string;
+  effective_from: string | null;
+}
+
+interface InsightHeader {
+  currency: string;
+  rate_month: RateMonth;
+}
+
+export interface SummaryInsight extends InsightHeader {
+  headcount: number;
+  total_cost: string | null;
+  mean_gross: string | null;
+  median_gross: string | null;
+  countries: number;
+  departments: number;
+}
+
+export interface CountryRow {
+  country: { code: string; name: string };
+  headcount: number;
+  total_cost: string | null;
+  median_gross: string | null;
+  share_pct: string | null;
+}
+
+export interface DepartmentRow {
+  department: { code: string; name: string };
+  headcount: number;
+  total_cost: string | null;
+  mean_gross: string | null;
+  median_gross: string | null;
+}
+
+export interface Band {
+  index: number;
+  from: string;
+  to: string;
+  count: number;
+}
+
+export interface DistributionInsight extends InsightHeader {
+  headcount: number;
+  p1: string | null;
+  p99: string | null;
+  bands: Band[] | null;
+  markers: { p10: string; p50: string; p90: string } | null;
+}
+
+export interface LevelRow {
+  level: number;
+  headcount: number;
+  min: string | null;
+  p25: string | null;
+  median: string | null;
+  p75: string | null;
+  max: string | null;
+}
+
+export interface GenderGroup {
+  headcount: number;
+  median_gross: string | null;
+}
+
+export interface GapRow {
+  country: { code: string; name: string } | null;
+  female: GenderGroup;
+  male: GenderGroup;
+  other_count: number;
+  undisclosed_count: number;
+  gap_pct: string | null;
+  reason: string | null;
+}
+
+export interface InsightPayloads {
+  summary: SummaryInsight;
+  'by-country': InsightHeader & { rows: CountryRow[] };
+  'by-department': InsightHeader & { rows: DepartmentRow[] };
+  distribution: DistributionInsight;
+  'by-level': InsightHeader & { rows: LevelRow[] };
+  'gender-gap': InsightHeader & { rows: GapRow[] };
+}
+
+export interface ExchangeRates {
+  on: string;
+  rates: { from_currency: string; to_currency: string; rate: string; effective_from: string }[];
+  month_labels: Record<string, string>;
+}
