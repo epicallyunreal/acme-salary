@@ -13,7 +13,7 @@ import re
 import statistics
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
@@ -133,6 +133,7 @@ class ValidationContext:
     components_by_country: dict[str, dict[str, SalaryComponent]]
     employees_by_code: dict[str, Employee] = field(default_factory=dict)
     email_owner: dict[str, str] = field(default_factory=dict)
+    first_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     latest_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     open_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     current_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
@@ -223,6 +224,7 @@ def build_context(
             employee_id__in=ids[start : start + CHUNK], cancelled_at__isnull=True
         ).order_by("employee_id", "effective_from")
         for record in records:
+            ctx.first_by_employee.setdefault(record.employee_id, record)
             ctx.latest_by_employee[record.employee_id] = record
             if record.effective_to is None:
                 ctx.open_by_employee[record.employee_id] = record
@@ -368,6 +370,14 @@ def check_email_in_use(row: NormalizedRow, ctx: ValidationContext) -> list[Messa
     return []
 
 
+def check_code_available(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """An API create may name its code, but not one in use (D44). An import row with a known
+    code is a match, so this runs on a create only."""
+    if row.employee_code and ctx.employees_by_code.get(row.employee_code) is not None:
+        return [error("employee_code", "code_taken", code=row.employee_code)]
+    return []
+
+
 def check_country_unchanged(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     employee = ctx.employee_for(row)
     if employee is not None and row.country_code and row.country_code != employee.country_id:
@@ -477,6 +487,24 @@ def check_last_date_after_joining(row: NormalizedRow, ctx: ValidationContext) ->
     joining = _joining(row, ctx)
     if row.last_date is not None and joining is not None and row.last_date < joining:
         return [error("last_date", "last_date_before_joining")]
+    return []
+
+
+def check_joining_before_first_record(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A joining_date moved past the first record would leave pay before the employee joined
+    (D45). Version 1 cannot be cancelled (D26), so exit and re-create is the way round in v1."""
+    employee = ctx.employee_for(row)
+    if employee is None or "joining_date" not in row.columns or row.joining_date is None:
+        return []
+    first = ctx.first_by_employee.get(employee.pk)
+    if first is not None and row.joining_date > first.effective_from:
+        return [
+            error(
+                "joining_date",
+                "joining_after_first_record",
+                date=first.effective_from.isoformat(),
+            )
+        ]
     return []
 
 
@@ -664,6 +692,7 @@ RULES: list[RuleSpec] = [
     rule(check_decimal_places, "structure", "import", "record"),
     rule(check_components_applicable, "structure", "import", "record"),
     rule(check_email_in_use, "references", "import", "identity"),
+    rule(check_code_available, "references", "create"),
     rule(check_country_unchanged, "references", "import", "identity"),
     rule(check_already_exited, "references", "import", "exit"),
     rule(check_duplicate_code, "duplicates", "import"),
@@ -672,6 +701,7 @@ RULES: list[RuleSpec] = [
     rule(check_amounts_changed, "changes", "import"),
     rule(check_noop, "noop", "import"),
     rule(check_last_date_after_joining, "dates", "import", "identity", "exit"),
+    rule(check_joining_before_first_record, "dates", "import", "identity"),
     rule(check_last_date_vs_scheduled, "dates", "import", "exit"),
     rule(check_last_date_vs_open_record, "dates", "import", "exit"),
     rule(check_last_date_cleared, "dates", "import"),
@@ -769,12 +799,26 @@ def _department_value(identity: Mapping[str, Any], employee: Employee | None) ->
     return employee.department.code if employee else None
 
 
+# The API names the code `employee_code`; the import template calls the column `EmployeeID`.
+API_FIELDS = {"EmployeeID": "employee_code"}
+
+
+def _api_fields(messages: list[Message]) -> list[Message]:
+    return [replace(m, field=API_FIELDS.get(m.field, m.field)) for m in messages]
+
+
 def validate_identity(
     identity: Mapping[str, Any], ctx: ValidationContext, *, employee: Employee | None = None
 ) -> list[Message]:
-    """Create (employee None) or edit. Raises Invalid, returns warnings."""
+    """Create (employee None) or edit. Raises Invalid, returns warnings.
+
+    On a create, a code the client names must be free, and that is checked first: the other
+    rules would otherwise read the employee who holds the code.
+    """
     row = row_from_identity(identity, employee)
-    return raise_for_errors(run_rules(row, ctx, "identity"))
+    if employee is None:
+        raise_for_errors(run_rules(row, ctx, "create"))
+    return raise_for_errors(_api_fields(run_rules(row, ctx, "identity")))
 
 
 def row_from_record(

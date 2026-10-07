@@ -352,6 +352,30 @@ Decision: PLAN steps 4 to 9 cite criteria by name and section 8 rows by route pa
 
 Consequences: SPEC edits no longer break the plan's references. The plan's scope and order are unchanged, so its approval stands. Steps 1 to 3 keep their line numbers as the record of what they closed.
 
+## D43. A cancelled revision releases its date
+
+Context: the unique `(employee, effective_from)` constraint counted cancelled rows while the validators compared live ones only, so cancelling a scheduled 1 April raise and entering it again for 1 April was a 500. Asked whether to accept that or answer 400, the owner chose to accept it. Cancel and re-enter is the only correction path for a scheduled revision in v1, and 1 April is the date most likely to collide.
+
+Decision: the constraint covers live rows only (`compensation_record_live_effective_from`, `WHERE cancelled_at IS NULL`, migration 0002). `(employee, version)` stays unique across every row, so a number is never reused. History breaks a same-date tie by version. SPEC section 5 and DESIGN 1.4 and 3 say so.
+
+Consequences: a date can carry any number of cancelled rows and one live row. Two live rows on one date are still refused by the database, and a test holds that. The step 5 import gets the same behaviour with no extra code.
+
+## D44. Every database constraint answers 400 or 409 before save
+
+Context: `POST /employees/` with an `employee_code` already in use passed validation and failed on save, the second constraint the validators did not cover. The owner chose a 400 on the field the client sent, the same kind of error as `email already belongs to`, and asked for every constraint to be checked against the validators. A 409 stays for state that blocks an action.
+
+Decision: `check_code_available` answers `employee_code ACME-000017 already exists; omit employee_code to have one assigned` on a create, before the other rules. API messages about the code use the request field `employee_code`, not the template column `EmployeeID`. The single-row services read and validate inside their transaction, so SQLite's IMMEDIATE lock covers the check and a double submit is a 400 or 409, not an IntegrityError. Every other constraint already had a rule or is assigned by a service, and exchange rates already validated inside their transaction.
+
+Consequences: no API write reaches a constraint unchecked. Two gaps belong to step 5. A blank `full_name`, `designation` or `joining_date` cell on an import row has no rule yet, and SQLite does not enforce column lengths, so only the API serializers cap them.
+
+## D45. joining_date cannot move past the first record
+
+Context: a PATCH could move `joining_date` after the first record's `effective_from`, leaving pay dated before the employee joined. Section 7 checked only the reverse. The owner chose a 400 over allowing it.
+
+Decision: `check_joining_before_first_record` answers `joining_date is after the first record (effective 2020-01-01)` for an existing employee, through the API now and the step 5 import. SPEC section 7 has the row.
+
+Consequences: a joining date entered too early cannot be moved past the first record in v1, including a future joiner whose start date slips, because version 1 cannot be cancelled (D26) and in-place correction is P1. Exit and re-create covers it until then, as D26 already says. The recipe's import test for the rule lands with the parser in step 5.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

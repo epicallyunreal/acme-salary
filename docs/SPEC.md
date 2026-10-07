@@ -1,6 +1,6 @@
-# ACME Salary Management: Engineering Spec, v2.4
+# ACME Salary Management: Engineering Spec, v2.5
 
-Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D41). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. v2.4 records the owner's step 3 answers: `currency=local` on a single employee in section 8, and the session lifetime and reuse rules in F8 (D21). Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
+Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D45). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. v2.4 records the owner's step 3 answers: `currency=local` on a single employee in section 8, and the session lifetime and reuse rules in F8 (D21). v2.5 records the owner's step 4 answers: a cancelled revision releases its date in section 5 (D43), and the taken-code and joining-date rules in section 7 (D44, D45). Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
 
 ## 1. System overview
 
@@ -150,7 +150,7 @@ There is no `status` column. Active is derived from `joining_date` and `last_dat
 | `version` | SMALLINT | unique with `employee`, assigned by the service as previous maximum plus one |
 | `currency_code` | CHAR(3) | copied from country at write time |
 | `bonus_annual` | Decimal(14,2), default 0, check `>= 0` | included in gross |
-| `effective_from` | DATE | unique with `employee` |
+| `effective_from` | DATE | unique with `employee` among non-cancelled records, so a cancelled revision's date can be entered again (D43) |
 | `effective_to` | DATE nullable | exclusive. `null` = open-ended. Partial unique: one open-ended, non-cancelled record per employee (`WHERE effective_to IS NULL AND cancelled_at IS NULL`). Check `effective_to > effective_from` |
 | `cancelled_at`, `cancelled_by` | DATETIME nullable, FK User nullable | set by the cancel service on a scheduled record. Cancelled rows are excluded from every current-or-latest query and shown greyed in history |
 | `gross_annual`, `net_annual`, `total_cost_annual` | Decimal(14,2) | computed from lines and bonus by the service, local currency. `gross_annual` indexed |
@@ -341,6 +341,7 @@ One validator module, `compensation/validators.py`, called by the services for i
 | `email` malformed | error | `email is not a valid address` |
 | `email` repeated within the file | error on both rows | `Duplicate email in rows 12 and 90` |
 | `email` in use by a different employee | error | `email already belongs to ACME-000217` |
+| `employee_code` named on an API create and already in use | error | `employee_code ACME-000017 already exists; omit employee_code to have one assigned` |
 | `country_code` not in Country | error | `Unknown country_code: XX` |
 | `country_code` differs from the matched employee | error | `country change is not supported by import` |
 | `department` not found | error | `Unknown department: Growth` (no auto-create) |
@@ -348,6 +349,7 @@ One validator module, `compensation/validators.py`, called by the services for i
 | `gender` outside the enum | error | `gender must be one of female, male, other, undisclosed` |
 | A date unparseable (ISO and Excel date cells accepted) | error | `joining_date is not a valid date: 31/02/2024` |
 | `last_date` before `joining_date` | error | `last_date precedes joining_date` |
+| `joining_date` moved after the first record's `effective_from` | error | `joining_date is after the first record (effective 2020-01-01)` |
 | `last_date` not after the open record's `effective_from` | error | `last_date precedes the current record (effective 2026-04-01)` |
 | `last_date` blank for an employee already exited | error | `clearing last_date is not supported by import` |
 | `last_date` set but non-cancelled scheduled revisions follow it | error | `scheduled revision on 2027-04-01 must be cancelled before exit` |

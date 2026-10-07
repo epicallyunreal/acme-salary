@@ -45,11 +45,13 @@ def create_employee(
 ) -> Created:
     """Identity plus the first record in one transaction, audited as `create` and `revise`."""
     at = at or timezone.now()
-    ctx = validators.build_context(
-        emails=[identity.get("email")], codes=[identity.get("employee_code")]
-    )
-    warnings = validators.validate_identity(identity, ctx)
     with transaction.atomic():
+        # Validated under the write lock (IMMEDIATE mode), so a double submit is a 400 rather
+        # than a unique-constraint error on the code or the email (D44).
+        ctx = validators.build_context(
+            emails=[identity.get("email")], codes=[identity.get("employee_code")]
+        )
+        warnings = validators.validate_identity(identity, ctx)
         employee = Employee(
             employee_code=identity.get("employee_code") or next_employee_code(),
             full_name=identity["full_name"],
@@ -98,9 +100,11 @@ def update_identity(
     }
     if frozen:
         raise Invalid(frozen)
-    ctx = validators.build_context(employees=[employee], emails=[changes.get("email")])
-    warnings = validators.validate_identity(changes, ctx, employee=employee)
     with transaction.atomic():
+        # Read and validated under the write lock (D44).
+        employee.refresh_from_db()
+        ctx = validators.build_context(employees=[employee], emails=[changes.get("email")])
+        warnings = validators.validate_identity(changes, ctx, employee=employee)
         shown = compensation.shown_record(employee, ctx.today)
         before = audit.snapshot_employee(employee, record=shown)
         apply_identity(employee, changes, ctx)
@@ -129,9 +133,11 @@ def exit_employee(
     """Set last_date and close the open record at last_date + 1 (SPEC F3). One `exit` entry."""
     at = at or timezone.now()
     today = today or today_utc()
-    ctx = validators.build_context(employees=[employee], today=today)
-    validators.validate_exit(employee, last_date, ctx)
     with transaction.atomic():
+        # Read and validated under the write lock, so a second exit is a 409 (D44).
+        employee.refresh_from_db()
+        ctx = validators.build_context(employees=[employee], today=today)
+        validators.validate_exit(employee, last_date, ctx)
         shown = compensation.shown_record(employee, today)
         before = audit.snapshot_employee(employee, record=shown)
         employee.last_date = last_date

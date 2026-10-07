@@ -702,3 +702,71 @@ def test_validate_exit_refuses_while_a_scheduled_revision_follows(with_scheduled
         Conflict, match="scheduled revision on 2027-04-01 must be cancelled before exit"
     ):
         v.validate_exit(with_scheduled, date(2026, 12, 31), ctx)
+
+
+NEW_PERSON = {
+    "full_name": "New Person",
+    "email": "new.person@acme.example",
+    "department": "engineering",
+    "designation": "Engineer",
+    "level": 2,
+    "country_code": "US",
+    "gender": "male",
+    "joining_date": date(2026, 11, 1),
+}
+
+
+def test_a_code_named_on_create_must_be_free(existing):
+    """Checked before the other rules: a US create naming an Indian employee's code gets the
+    code message only, not the import's country-change message (D44)."""
+    ctx = build_context(codes=["ACME-000010", "ACME-000011"], emails=[NEW_PERSON["email"]])
+
+    with pytest.raises(Invalid) as excinfo:
+        v.validate_identity({**NEW_PERSON, "employee_code": "ACME-000010"}, ctx)
+
+    assert excinfo.value.errors == {
+        "employee_code": [
+            "employee_code ACME-000010 already exists; omit employee_code to have one assigned"
+        ]
+    }
+    assert v.validate_identity({**NEW_PERSON, "employee_code": "ACME-000011"}, ctx) == []
+
+
+def test_the_api_keys_a_malformed_code_by_its_request_field(lookups):
+    ctx = build_context(codes=["ACME-1"])
+
+    with pytest.raises(Invalid) as excinfo:
+        v.validate_identity({**NEW_PERSON, "employee_code": "ACME-1"}, ctx)
+
+    assert excinfo.value.errors == {
+        "employee_code": ["EmployeeID is required and must match ACME-NNNNNN"]
+    }
+
+
+def test_joining_date_cannot_move_past_the_first_record(existing):
+    ctx = build_context(employees=[existing])
+
+    assert v.validate_identity({"joining_date": date(2025, 4, 1)}, ctx, employee=existing) == []
+    with pytest.raises(Invalid) as excinfo:
+        v.validate_identity({"joining_date": date(2025, 4, 2)}, ctx, employee=existing)
+
+    assert excinfo.value.errors == {
+        "joining_date": ["joining_date is after the first record (effective 2025-04-01)"]
+    }
+
+
+def test_an_import_row_cannot_move_joining_date_past_the_first_record(existing):
+    moved = find(
+        messages(matched_row(existing, joining_date=date(2025, 5, 1))), "joining_after_first_record"
+    )
+    on_the_day = find(
+        messages(matched_row(existing, joining_date=date(2025, 4, 1))),
+        "joining_after_first_record",
+    )
+
+    assert (moved.field, moved.severity, moved.message) == (
+        "joining_date",
+        "error",
+        "joining_date is after the first record (effective 2025-04-01)",
+    )
+    assert on_the_day is None

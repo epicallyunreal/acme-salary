@@ -164,18 +164,20 @@ def add_first_record(
 ) -> Written:
     """Version 1, effective from joining_date unless given. Audited as `revise` with no before."""
     at = at or timezone.now()
-    ctx = ctx or validators.build_context(employees=[employee])
-    warnings = validators.validate_record(
-        ctx,
-        employee=None,
-        country_code=employee.country_id,
-        joining_date=employee.joining_date,
-        effective_from=record.effective_from,
-        bonus_annual=record.bonus_annual,
-        lines=record.lines,
-    )
-    components = ctx.components_for(employee.country_id)
     with transaction.atomic():
+        # Validated inside the transaction: SQLite's IMMEDIATE mode takes the write lock at
+        # BEGIN, so a double submit waits here and then fails a rule, not a constraint (D44).
+        ctx = ctx or validators.build_context(employees=[employee])
+        warnings = validators.validate_record(
+            ctx,
+            employee=None,
+            country_code=employee.country_id,
+            joining_date=employee.joining_date,
+            effective_from=record.effective_from,
+            bonus_annual=record.bonus_annual,
+            lines=record.lines,
+        )
+        components = ctx.components_for(employee.country_id)
         row, lines = _build_record(
             employee,
             record,
@@ -219,18 +221,20 @@ def revise(
     answer 409 otherwise) and the new record ends at last_date + 1 (D36).
     """
     at = at or timezone.now()
-    ctx = ctx or validators.build_context(employees=[employee])
-    warnings = validators.validate_record(
-        ctx,
-        employee=employee,
-        country_code=employee.country_id,
-        joining_date=employee.joining_date,
-        effective_from=record.effective_from,
-        bonus_annual=record.bonus_annual,
-        lines=record.lines,
-    )
-    components = ctx.components_for(employee.country_id)
     with transaction.atomic():
+        # Read and validated under the write lock, so a double submit is a 400 (D44).
+        employee.refresh_from_db()
+        ctx = ctx or validators.build_context(employees=[employee])
+        warnings = validators.validate_record(
+            ctx,
+            employee=employee,
+            country_code=employee.country_id,
+            joining_date=employee.joining_date,
+            effective_from=record.effective_from,
+            bonus_annual=record.bonus_annual,
+            lines=record.lines,
+        )
+        components = ctx.components_for(employee.country_id)
         previous = latest_record(employee)
         before = audit.snapshot_record(previous) if previous is not None else None
         if previous is not None:
@@ -273,10 +277,13 @@ def cancel(
     """Mark a scheduled revision cancelled and re-chain its neighbours. Nothing is deleted (D20)."""
     today = today or today_utc()
     at = at or timezone.now()
-    if record.cancelled_at is not None or record.effective_from <= today:
-        raise Conflict("only a scheduled revision can be cancelled")
-    employee = record.employee
     with transaction.atomic():
+        # Read fresh under the write lock, so a second cancel of the same row is a 409 (D44).
+        record.refresh_from_db()
+        if record.cancelled_at is not None or record.effective_from <= today:
+            raise Conflict("only a scheduled revision can be cancelled")
+        employee = record.employee
+        employee.refresh_from_db()
         previous = (
             live_records(employee)
             .filter(effective_from__lt=record.effective_from)

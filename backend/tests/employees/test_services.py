@@ -228,3 +228,38 @@ def test_exit_refuses_while_a_scheduled_revision_follows_then_works_after_cancel
 
     first = CompensationRecord.objects.get(employee=with_first, version=1)
     assert first.effective_to == date(2027, 1, 1)
+
+
+def test_create_employee_refuses_a_code_in_use(with_first):
+    code = with_first.employee_code
+
+    with pytest.raises(Invalid) as excinfo:
+        services.create_employee(
+            identity(employee_code=code, email="someone.else@acme.example"), record_input()
+        )
+
+    assert excinfo.value.errors == {
+        "employee_code": [
+            f"employee_code {code} already exists; omit employee_code to have one assigned"
+        ]
+    }
+    assert Employee.objects.count() == 1
+
+
+def test_a_second_exit_through_a_stale_instance_is_a_409(with_first):
+    """A double submit holds two copies of the employee; the second is read fresh and refused."""
+    stale = Employee.objects.get(pk=with_first.pk)
+    services.exit_employee(with_first, date(2026, 9, 30))
+
+    with pytest.raises(Conflict, match="employee already exited on 2026-09-30"):
+        services.exit_employee(stale, date(2026, 9, 30))
+    assert AuditLog.objects.filter(action="exit").count() == 1
+
+
+def test_update_identity_refuses_a_joining_date_past_the_first_record(with_first):
+    with pytest.raises(Invalid) as excinfo:
+        services.update_identity(with_first, {"joining_date": date(2024, 3, 2)})
+
+    assert excinfo.value.errors == {
+        "joining_date": ["joining_date is after the first record (effective 2024-03-01)"]
+    }

@@ -307,3 +307,52 @@ def test_a_revision_dated_before_a_scheduled_exit_ends_the_day_after_it(with_fir
     assert services.current_record(with_first, today) == first
     assert services.current_record(with_first, date(2026, 12, 1)) == written.record
     assert services.open_record(with_first) is None
+
+
+def test_a_cancelled_revisions_date_can_be_entered_again(with_first):
+    """Cancel and re-enter is how a scheduled revision is corrected in v1 (D43)."""
+    scheduled = services.revise(
+        with_first, record_input(effective_from=date(2027, 4, 1), lines=RAISED)
+    ).record
+    services.cancel(scheduled)
+
+    again = services.revise(
+        with_first, record_input(effective_from=date(2027, 4, 1), lines=RAISED)
+    ).record
+
+    assert again.version == 3
+    same_day = CompensationRecord.objects.filter(
+        employee=with_first, effective_from=date(2027, 4, 1)
+    )
+    assert sorted((r.version, r.cancelled_at is not None) for r in same_day) == [
+        (2, True),
+        (3, False),
+    ]
+
+
+def test_two_live_records_on_one_date_are_refused(with_first):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        CompensationRecord.objects.create(
+            employee=with_first,
+            version=9,
+            currency_code="INR",
+            effective_from=date(2024, 3, 1),
+            effective_to=date(2024, 4, 1),
+            gross_annual=1,
+            net_annual=1,
+            total_cost_annual=1,
+            source="ui",
+        )
+
+
+def test_a_second_cancel_through_a_stale_instance_is_a_409(with_first):
+    """A double submit holds two copies of the row; the second is read fresh and refused."""
+    scheduled = services.revise(
+        with_first, record_input(effective_from=date(2027, 1, 1), lines=RAISED)
+    ).record
+    stale = CompensationRecord.objects.get(pk=scheduled.pk)
+    services.cancel(scheduled)
+
+    with pytest.raises(Conflict, match="only a scheduled revision can be cancelled"):
+        services.cancel(stale)
+    assert AuditLog.objects.filter(action="cancel").count() == 1

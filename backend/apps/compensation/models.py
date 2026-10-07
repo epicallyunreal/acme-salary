@@ -54,9 +54,12 @@ class CompensationRecord(models.Model):
             models.UniqueConstraint(
                 fields=["employee", "version"], name="compensation_record_version_per_employee"
             ),
+            # Live rows only: a cancelled revision releases its date, so cancel and re-enter on
+            # the same day works (D43). Versions stay unique across every row.
             models.UniqueConstraint(
                 fields=["employee", "effective_from"],
-                name="compensation_record_effective_from_per_employee",
+                condition=Q(cancelled_at__isnull=True),
+                name="compensation_record_live_effective_from",
             ),
             models.UniqueConstraint(
                 fields=["employee"],
