@@ -1,5 +1,6 @@
 """A passing and a failing case per rule in SPEC section 7: field, severity and full text."""
 
+from collections import Counter
 from datetime import date
 from decimal import Decimal
 
@@ -238,13 +239,93 @@ def test_parse_messages_from_the_parser_are_re_emitted(lookups):
     )
 
 
-@pytest.mark.parametrize("base", [None, Decimal("0")])
-def test_base_is_required(lookups, base):
-    amounts = dict(INDIA_LINES, BASE=base)
+def test_base_is_required(lookups):
+    amounts = dict(INDIA_LINES, BASE=None)
 
     assert_message(
         messages(new_row(amounts=amounts)), "base_required", "BASE", "error", "BASE is required"
     )
+
+
+@pytest.mark.parametrize(("base", "shown"), [(Decimal("0"), "0.00"), (Decimal("5"), "5.00")])
+def test_base_must_be_at_least_ten(lookups, base, shown):
+    assert_message(
+        messages(new_row(amounts=dict(INDIA_LINES, BASE=base))),
+        "base_too_small",
+        "BASE",
+        "error",
+        f"BASE must be at least 10.00, got {shown}",
+    )
+    assert (
+        find(messages(new_row(amounts=dict(INDIA_LINES, BASE=Decimal("10")))), "base_too_small")
+        is None
+    )
+
+
+def test_an_amount_above_the_cap_is_an_error(lookups):
+    """Errors are for impossible values (D49)."""
+    over = new_row(
+        amounts=dict(INDIA_LINES, HRA=Decimal("12000000000")), bonus_annual=Decimal("10000000000")
+    )
+    at_cap = new_row(amounts=dict(INDIA_LINES, HRA=v.MAX_AMOUNT), bonus_annual=v.MAX_AMOUNT)
+
+    found = messages(over)
+
+    assert [(m.field, m.severity, m.message) for m in found if m.code == "amount_too_large"] == [
+        ("HRA", "error", "HRA must be at most 9,999,999,999.99, got 12,000,000,000.00"),
+        (
+            "bonus_annual",
+            "error",
+            "bonus_annual must be at most 9,999,999,999.99, got 10,000,000,000.00",
+        ),
+    ]
+    assert find(messages(at_cap), "amount_too_large") is None
+
+
+def test_the_cap_keeps_every_total_inside_its_column(lookups):
+    """Derived from the components and the column, so adding a component or narrowing a column
+    cannot silently make a total overflow (D49)."""
+    from apps.compensation.models import CompensationRecord
+    from apps.core.models import Country, SalaryComponent
+
+    column = CompensationRecord._meta.get_field("gross_annual")
+    largest = Decimal(10) ** (column.max_digits - column.decimal_places) - Decimal("0.01")
+    for country in Country.objects.all():
+        kinds = Counter(
+            component.kind
+            for component in SalaryComponent.objects.filter(is_active=True)
+            if component.country_id in (None, country.code)
+        )
+        gross = (kinds["earning"] + 1) * v.MAX_AMOUNT  # the bonus is an earning too
+        total_cost = gross + kinds["employer_contribution"] * v.MAX_AMOUNT
+        lowest_net = -kinds["deduction"] * v.MAX_AMOUNT
+        assert max(gross, total_cost, -lowest_net) <= largest, country.code
+
+
+def test_a_bonus_above_base_warns(lookups):
+    found = messages(new_row(bonus_annual=Decimal("1500000")))
+
+    assert_message(
+        found,
+        "bonus_above_base",
+        "bonus_annual",
+        "warning",
+        "bonus_annual 1,500,000.00 is above BASE 1,450,000.00",
+    )
+    assert find(messages(new_row(bonus_annual=Decimal("1450000"))), "bonus_above_base") is None
+
+
+def test_a_deduction_above_base_warns(lookups):
+    found = messages(new_row(amounts=dict(INDIA_LINES, TAX=Decimal("1500000"))))
+
+    assert_message(
+        found,
+        "deduction_above_base",
+        "TAX",
+        "warning",
+        "TAX 1,500,000.00 is above BASE 1,450,000.00",
+    )
+    assert find(messages(new_row()), "deduction_above_base") is None
 
 
 def test_bonus_must_be_non_negative(lookups):

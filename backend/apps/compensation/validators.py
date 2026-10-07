@@ -27,7 +27,7 @@ from apps.core import queries as core_queries
 from apps.core.dates import today_utc
 from apps.core.exceptions import Conflict, Invalid
 from apps.core.models import Country, Department, SalaryComponent
-from apps.core.money import format_amount, q2, to_str
+from apps.core.money import format_amount, format_cents, q2, to_str
 from apps.employees.models import LEGACY_CODE_MAX, Employee, Gender, employee_code_of
 
 IDENTITY_FIELDS = (
@@ -43,6 +43,11 @@ IDENTITY_FIELDS = (
 GENDERS = {choice.value for choice in Gender}
 ZERO = Decimal("0")
 TEN = Decimal("10")
+# Every line and the bonus fit in ten integer digits, so no total of them can reach the limit of
+# the DecimalField(14, 2) totals, whatever the number of components (D49). Errors are for
+# impossible values; the warnings below are for unusual ones.
+MAX_AMOUNT = Decimal("9999999999.99")
+MIN_BASE = Decimal("10")
 CHUNK = 500
 
 Severity = Literal["error", "warning", "info"]
@@ -321,10 +326,42 @@ def check_parse_messages(row: NormalizedRow, ctx: ValidationContext) -> list[Mes
 
 
 def check_base_required(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A blank BASE is missing; a given one below 10, zero included, is too small (D49). A
+    negative one is the non-negative rule's."""
     base = row.amounts.get("BASE")
-    if base is None or base == ZERO:
+    if base is None:
         return [error("BASE", "base_required")]
+    if ZERO <= base < MIN_BASE:
+        return [
+            error(
+                "BASE",
+                "base_too_small",
+                minimum=format_cents(MIN_BASE),
+                value=format_cents(base),
+            )
+        ]
     return []
+
+
+def check_amounts_in_range(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A line or a bonus above MAX_AMOUNT is impossible pay, and would overflow a total (D49)."""
+    over = [
+        (code, value)
+        for code, value in row.amounts.items()
+        if value is not None and value > MAX_AMOUNT
+    ]
+    if row.bonus_annual is not None and row.bonus_annual > MAX_AMOUNT:
+        over.append(("bonus_annual", row.bonus_annual))
+    return [
+        error(
+            code,
+            "amount_too_large",
+            field=code,
+            limit=format_cents(MAX_AMOUNT),
+            value=format_cents(value),
+        )
+        for code, value in over
+    ]
 
 
 def check_bonus_non_negative(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
@@ -623,6 +660,39 @@ def _gross_and_deductions(
     return q2(gross), q2(deductions)
 
 
+def check_bonus_above_base(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    base = row.amounts.get("BASE")
+    bonus = row.bonus_annual
+    if base is None or bonus is None or bonus <= base:
+        return []
+    return [
+        warning(
+            "bonus_annual", "bonus_above_base", bonus=format_cents(bonus), base=format_cents(base)
+        )
+    ]
+
+
+def check_deductions_above_base(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    base = row.amounts.get("BASE")
+    if base is None:
+        return []
+    components = ctx.components_for(row.country_code)
+    return [
+        warning(
+            code,
+            "deduction_above_base",
+            code=code,
+            amount=format_cents(value),
+            base=format_cents(base),
+        )
+        for code, value in row.amounts.items()
+        if value is not None
+        and value > base
+        and code in components
+        and components[code].kind == SalaryComponent.Kind.DEDUCTION
+    ]
+
+
 def check_deductions_exceed_gross(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     totals = _gross_and_deductions(row, ctx)
     if totals is None:
@@ -691,6 +761,7 @@ RULES: list[RuleSpec] = [
     rule(check_base_required, "structure", "import", "record"),
     rule(check_bonus_non_negative, "structure", "import", "record"),
     rule(check_amounts_non_negative, "structure", "import", "record"),
+    rule(check_amounts_in_range, "structure", "import", "record"),
     rule(check_decimal_places, "structure", "import", "record"),
     rule(check_components_applicable, "structure", "import", "record"),
     rule(check_email_in_use, "references", "import", "identity"),
@@ -712,6 +783,8 @@ RULES: list[RuleSpec] = [
     rule(check_revision_after_exit, "dates", "import", "record"),
     rule(check_effective_from_defaulted, "dates", "import", "record"),
     rule(check_deductions_exceed_gross, "warnings", "import", "record"),
+    rule(check_bonus_above_base, "warnings", "import", "record"),
+    rule(check_deductions_above_base, "warnings", "import", "record"),
     rule(check_gross_vs_country_bounds, "warnings", "import", "record"),
 ]
 

@@ -83,7 +83,7 @@ def test_create_employee_returns_the_warnings(lookups):
 def test_create_employee_rolls_back_when_the_record_is_invalid(lookups):
     with pytest.raises(Invalid) as excinfo:
         services.create_employee(
-            identity(), record_input(lines={"BASE": Decimal("1"), "CPF": Decimal("1")})
+            identity(), record_input(lines={"BASE": Decimal("100000"), "CPF": Decimal("1")})
         )
 
     assert excinfo.value.errors == {"CPF": ["CPF is not a component for IN"]}

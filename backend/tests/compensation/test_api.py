@@ -244,9 +244,23 @@ def test_rule_errors_are_keyed_by_the_component(api, asha):
 
     assert response.status_code == 400
     assert response.json() == {
-        "BASE": ["BASE is required"],
+        "BASE": ["BASE must be at least 10.00, got 0.00"],
         "HRA": ["HRA must be a non-negative number, got -5.00"],
     }
+
+
+def test_an_amount_above_the_cap_is_a_400_and_writes_nothing(api, asha):
+    """The reviewer's case: a 12-digit BASE plus a bonus once saved a total no read could load."""
+    response = revise(
+        api, asha, "2026-11-01", bonus_annual="1000000.00", lines=lines(BASE="999999999999.00")
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "BASE": ["BASE must be at most 9,999,999,999.99, got 999,999,999,999.00"]
+    }
+    assert [row["version"] for row in history(api, asha)] == [1]
+    assert api.get(f"/api/v1/employees/{asha.pk}/").status_code == 200
 
 
 def test_a_component_listed_twice_is_a_400(api, asha):

@@ -404,6 +404,14 @@ Decision: the employee code is `ACME-<id>` with no leading zeros, assigned by th
 
 Consequences: no client or sheet chooses an employee's number, so assignment cannot collide or overflow. An employee created in the app is never reached by a sheet, because the import serves the legacy system's employees only. The golden hash changed, and the live database needs `reset_demo` after the deploy, on the owner's word.
 
+## D49. Every amount is bounded, so no total can overflow
+
+Context: the security review found that each line fits `Decimal(14, 2)` but their sum need not. A BASE of 999,999,999,999 with a bonus saved a gross that every later read failed to load, taking down that employee's pages, the directory and the country's medians. Asked for the rule's wording, the owner chose bounds on each amount over a cap on the totals.
+
+Decision: every line and `bonus_annual` must be between 0 and 9,999,999,999.99 (`HRA must be at most 9,999,999,999.99, got 12,000,000,000.00`), and a given BASE must be at least 10 (`BASE must be at least 10.00, got 5.00`), while a blank BASE stays `BASE is required`. A bonus above BASE and a deduction above BASE are warnings. Errors are for impossible values, warnings for unusual ones. SPEC section 7 has the rows.
+
+Consequences: with ten integer digits per amount, a total stays inside its column for any sensible number of components, and a test derives that bound from the component counts and the column's digits, so adding a component cannot silently break it. The API serializer still caps each field at 14 digits, so a larger value gets DRF's own message first.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

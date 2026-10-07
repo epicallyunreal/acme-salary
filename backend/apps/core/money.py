@@ -27,6 +27,12 @@ def to_str(value: Decimal) -> str:
     return format(value, "f")
 
 
+def format_cents(value: Decimal) -> str:
+    """For messages about a limit: thousands separators and always two decimals
+    (`9,999,999,999.99`, `5.00`)."""
+    return f"{value:,.2f}"
+
+
 def format_amount(value: Decimal) -> str:
     """For messages: thousands separators, decimals only when there are any (`300,000`, `12.50`)."""
     if value == value.to_integral_value():
