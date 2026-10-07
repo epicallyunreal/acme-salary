@@ -636,7 +636,7 @@ RULES: list[RuleSpec] = [
     rule(check_last_date_vs_scheduled, "dates", "import", "exit"),
     rule(check_last_date_vs_open_record, "dates", "import", "exit"),
     rule(check_last_date_cleared, "dates", "import"),
-    rule(check_effective_from_required, "dates", "import"),
+    rule(check_effective_from_required, "dates", "import", "record"),
     rule(check_effective_from_after_joining, "dates", "import", "record"),
     rule(check_effective_from_after_latest, "dates", "import", "record"),
     rule(check_effective_from_defaulted, "dates", "import", "record"),

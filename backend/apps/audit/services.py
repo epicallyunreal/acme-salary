@@ -66,6 +66,71 @@ def bulk_record(entries: Iterable[AuditLog]) -> int:
     return len(rows)
 
 
+def snapshot_record(record, lines: Iterable | Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The record as the detail serializer shows it, minus the request-dependent keys.
+
+    `lines` may be CompensationLine objects (saved or not, component loaded) or a mapping of
+    component code to amount; when omitted they are read from the database.
+    """
+    if lines is None:
+        lines = list(record.lines.select_related("component").order_by("component__sort_order"))
+    if isinstance(lines, Mapping):
+        line_items = [
+            {"component": code, "annual_amount": amount} for code, amount in lines.items()
+        ]
+    else:
+        line_items = [
+            {"component": line.component.code, "annual_amount": line.annual_amount}
+            for line in sorted(
+                lines, key=lambda line: (line.component.sort_order, line.component.code)
+            )
+        ]
+    return {
+        "id": record.pk,
+        "employee": record.employee_id,
+        "version": record.version,
+        "effective_from": record.effective_from,
+        "effective_to": record.effective_to,
+        "cancelled_at": record.cancelled_at,
+        "cancelled_by": record.cancelled_by.email if record.cancelled_by_id else None,
+        "currency_code": record.currency_code,
+        "bonus_annual": record.bonus_annual,
+        "gross_annual": record.gross_annual,
+        "net_annual": record.net_annual,
+        "total_cost_annual": record.total_cost_annual,
+        "source": record.source,
+        "note": record.note,
+        "created_at": record.created_at,
+        "created_by": record.created_by.email if record.created_by_id else None,
+        "lines": line_items,
+    }
+
+
+def snapshot_employee(employee, record=None, lines=None) -> dict[str, Any]:
+    """Identity as the detail serializer shows it, plus the shown record when one is given."""
+    shown = record
+    return {
+        "id": employee.pk,
+        "employee_code": employee.employee_code,
+        "full_name": employee.full_name,
+        "email": employee.email,
+        "gender": employee.gender,
+        "department": {"code": employee.department.code, "name": employee.department.name},
+        "designation": employee.designation,
+        "level": employee.level,
+        "country": {
+            "code": employee.country.code,
+            "name": employee.country.name,
+            "currency_code": employee.country.currency_code,
+        },
+        "joining_date": employee.joining_date,
+        "last_date": employee.last_date,
+        "created_at": employee.created_at,
+        "updated_at": employee.updated_at,
+        "current_record": snapshot_record(shown, lines) if shown is not None else None,
+    }
+
+
 def snapshot_rate(rate) -> dict[str, Any]:
     return {
         "id": rate.pk,
