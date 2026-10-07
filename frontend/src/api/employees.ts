@@ -8,7 +8,16 @@ import {
 
 import { apiFetch } from './client';
 import { keys } from './keys';
-import type { EmployeeDetail, EmployeeRow, ExitInput, ListParams, Page } from './types';
+import type {
+  EmployeeCreateInput,
+  EmployeeDetail,
+  EmployeeRow,
+  ExitInput,
+  IdentityPatch,
+  ListParams,
+  Page,
+  WithWarnings,
+} from './types';
 
 export function listEmployees(
   params: ListParams,
@@ -52,6 +61,29 @@ export function useExitEmployee(id: number) {
   return useMutation({
     mutationFn: (input: ExitInput) =>
       apiFetch<EmployeeDetail>(`/employees/${id}/exit/`, { method: 'POST', body: input }),
+    onSuccess: () => invalidateEmployee(client, id),
+  });
+}
+
+/** Create answers with the new employee's detail and the validators' warnings (D27). */
+export function useCreateEmployee() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: EmployeeCreateInput) =>
+      apiFetch<WithWarnings<EmployeeDetail>>('/employees/', { method: 'POST', body: input }),
+    onSuccess: () =>
+      Promise.all([
+        client.invalidateQueries({ queryKey: [...keys.employees.all, 'list'] }),
+        client.invalidateQueries({ queryKey: keys.insights.all }),
+      ]),
+  });
+}
+
+export function useUpdateEmployee(id: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: IdentityPatch) =>
+      apiFetch<EmployeeDetail>(`/employees/${id}/`, { method: 'PATCH', body: patch }),
     onSuccess: () => invalidateEmployee(client, id),
   });
 }

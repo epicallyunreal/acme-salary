@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { setSession } from '../lib/auth';
+import { employeeDetails, histories } from '../test/fixtures/detail';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
 
@@ -178,5 +179,111 @@ describe('EmployeeDetail', () => {
       await screen.findByText('Could not load this employee. Check your connection and try again.'),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+  it('adds a revision that starts from the latest amounts, then says so', async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    server.use(
+      http.post('/api/v1/employees/:id/compensation/', async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json(
+          { ...histories[1][0], id: 12, version: 2, warnings: [] },
+          { status: 201 },
+        );
+      }),
+    );
+    renderApp('/employees/1');
+
+    await user.click(await screen.findByRole('button', { name: 'Add revision' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add a revision for Asha Rao' });
+    const base = await within(dialog).findByLabelText('Base salary (INR)');
+    expect(base).toHaveValue('1000000.00');
+    fireEvent.change(within(dialog).getByLabelText(/Effective from/), {
+      target: { value: '2026-11-01' },
+    });
+    await user.clear(base);
+    await user.type(base, '1100000');
+    await user.click(within(dialog).getByRole('button', { name: 'Save revision' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Revision v2 saved.');
+    expect(sent).toEqual([
+      {
+        effective_from: '2026-11-01',
+        note: '',
+        bonus_annual: '50000.00',
+        lines: [
+          { component: 'BASE', annual_amount: '1100000' },
+          { component: 'HRA', annual_amount: '400000.00' },
+          { component: 'TAX', annual_amount: '200000.00' },
+          { component: 'EMPLOYER_CONTRIBUTION', annual_amount: '120000.00' },
+        ],
+      },
+    ]);
+  });
+
+  it("puts a revision's date error on the date field", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post('/api/v1/employees/:id/compensation/', () =>
+        HttpResponse.json(
+          { effective_from: ['effective_from must be after 2020-01-01 (latest record)'] },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderApp('/employees/1');
+    await user.click(await screen.findByRole('button', { name: 'Add revision' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add a revision for Asha Rao' });
+    await within(dialog).findByLabelText('Base salary (INR)');
+    fireEvent.change(within(dialog).getByLabelText(/Effective from/), {
+      target: { value: '2020-01-01' },
+    });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save revision' }));
+
+    expect(await within(dialog).findByLabelText(/Effective from/)).toHaveAccessibleDescription(
+      'effective_from must be after 2020-01-01 (latest record)',
+    );
+  });
+
+  it('sends only the identity fields that changed, then says so', async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    server.use(
+      http.patch('/api/v1/employees/:id/', async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json(employeeDetails[1]);
+      }),
+    );
+    renderApp('/employees/1');
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Asha Rao' });
+    const designation = within(dialog).getByLabelText(/Designation/);
+    await user.clear(designation);
+    await user.type(designation, 'Staff Engineer');
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Changes saved.');
+    expect(sent).toEqual([{ designation: 'Staff Engineer' }]);
+  });
+
+  it('closes the edit without a request when nothing changed', async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    server.use(
+      http.patch('/api/v1/employees/:id/', async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json(employeeDetails[1]);
+      }),
+    );
+    renderApp('/employees/1');
+
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Asha Rao' });
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(sent).toEqual([]);
   });
 });

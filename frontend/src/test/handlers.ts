@@ -64,6 +64,47 @@ export const metaHandlers = [
 
 export const employeeHandlers = [
   http.get('/api/v1/employees/', ({ request }) => authenticated(request, employeePage)),
+  http.post('/api/v1/employees/', async ({ request }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const body = (await request.json()) as { full_name: string; email: string };
+    return HttpResponse.json(
+      {
+        ...employeeDetails[1],
+        id: 5,
+        employee_code: 'ACME-000005',
+        full_name: body.full_name,
+        email: body.email.toLowerCase(),
+        warnings: [],
+      },
+      { status: 201 },
+    );
+  }),
+  http.patch('/api/v1/employees/:id/', async ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const employee = employeeDetails[Number(params.id)];
+    if (!employee) return notFound('Employee');
+    const patch = (await request.json()) as Record<string, unknown>;
+    return HttpResponse.json({ ...employee, ...patch, department: employee.department });
+  }),
+  http.post('/api/v1/employees/:id/compensation/', async ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const records = histories[Number(params.id)];
+    if (!records) return notFound('Employee');
+    const body = (await request.json()) as { effective_from: string; note: string };
+    return HttpResponse.json(
+      {
+        ...records[0],
+        id: 99,
+        version: Math.max(...records.map((record) => record.version)) + 1,
+        effective_from: body.effective_from,
+        note: body.note,
+        is_current: false,
+        is_scheduled: true,
+        warnings: [],
+      },
+      { status: 201 },
+    );
+  }),
   http.get('/api/v1/employees/:id/', ({ request, params }) => {
     if (!hasAccessToken(request)) return unauthorized();
     const employee = employeeDetails[Number(params.id)];

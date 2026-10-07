@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from './client';
 import { invalidateEmployee } from './employees';
 import { keys } from './keys';
-import type { CompensationRecord, HistoryParams } from './types';
+import type { CompensationRecord, HistoryParams, RevisionInput, WithWarnings } from './types';
 
 export function listHistory(
   employeeId: number,
@@ -30,6 +30,19 @@ export function useCancelRevision(employeeId: number) {
   return useMutation({
     mutationFn: (recordId: number) =>
       apiFetch<CompensationRecord>(`/compensation/${recordId}/`, { method: 'DELETE' }),
+    onSuccess: () => invalidateEmployee(client, employeeId),
+  });
+}
+
+/** A new revision; the response carries the validators' warnings (D27). */
+export function useReviseCompensation(employeeId: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RevisionInput) =>
+      apiFetch<WithWarnings<CompensationRecord>>(`/employees/${employeeId}/compensation/`, {
+        method: 'POST',
+        body: input,
+      }),
     onSuccess: () => invalidateEmployee(client, employeeId),
   });
 }

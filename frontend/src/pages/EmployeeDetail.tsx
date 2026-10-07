@@ -1,7 +1,7 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Alert, Box, Button, LinearProgress, Snackbar, Tab, Tabs, Typography } from '@mui/material';
-import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 
 import { ApiError } from '../api/client';
 import { useCompensationHistory } from '../api/compensation';
@@ -11,7 +11,10 @@ import type { CompensationRecord, EmployeeDetail as Employee } from '../api/type
 import { AuditList } from '../components/employee/AuditList';
 import { CurrentRecordCard } from '../components/employee/CurrentRecordCard';
 import { CancelRevisionDialog, HistoryList } from '../components/employee/HistoryList';
+import { EditIdentityDialog } from '../components/forms/EditIdentityDialog';
 import { ExitDialog } from '../components/forms/ExitDialog';
+import type { Notice } from '../components/forms/feedback';
+import { RevisionDialog } from '../components/forms/RevisionDialog';
 import { EmptyState } from '../components/layout/EmptyState';
 import { ErrorState } from '../components/layout/ErrorState';
 import { PageHeader } from '../components/layout/PageHeader';
@@ -93,10 +96,27 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
   const history = useCompensationHistory(employeeId);
   const components = useComponents(employee.data?.country.code);
   const [panel, setPanel] = useState<PanelName>('history');
-  const [exiting, setExiting] = useState(false);
+  const [dialog, setDialog] = useState<'edit' | 'revise' | 'exit' | null>(null);
   const [cancelling, setCancelling] = useState<CompensationRecord | null>(null);
-  const [notice, setNotice] = useState({ open: false, text: '' });
-  const announce = (text: string) => setNotice({ open: true, text });
+  // A save on another page (a new employee) hands its notice over in the router state.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const handedOver = (location.state as { notice?: Notice } | null)?.notice;
+  const [notice, setNotice] = useState({
+    open: Boolean(handedOver),
+    text: handedOver?.text ?? '',
+    severity: handedOver?.severity ?? 'success',
+  });
+  useEffect(() => {
+    if (handedOver) navigate(location.pathname, { replace: true, state: null });
+  }, [handedOver, location.pathname, navigate]);
+  const announce = (said: Notice | string) =>
+    setNotice(
+      typeof said === 'string'
+        ? { open: true, text: said, severity: 'success' }
+        : { open: true, ...said },
+    );
+  const closeDialog = () => setDialog(null);
 
   if (employee.isError) {
     if (employee.error instanceof ApiError && employee.error.status === 404) {
@@ -107,6 +127,7 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
   if (employee.isPending) return <LinearProgress aria-label="Loading the employee" />;
 
   const person = employee.data;
+  const latest = history.data?.find((record) => !record.cancelled_at) ?? person.current_record;
 
   return (
     <>
@@ -128,11 +149,19 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
           </Box>
         }
         actions={
-          person.last_date ? null : (
-            <Button variant="outlined" onClick={() => setExiting(true)}>
-              Mark exited
+          <>
+            <Button variant="outlined" onClick={() => setDialog('edit')}>
+              Edit
             </Button>
-          )
+            <Button variant="contained" onClick={() => setDialog('revise')}>
+              Add revision
+            </Button>
+            {person.last_date ? null : (
+              <Button variant="outlined" onClick={() => setDialog('exit')}>
+                Mark exited
+              </Button>
+            )}
+          </>
         }
       />
       <IdentityFacts employee={person} />
@@ -161,10 +190,16 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
         <AuditList employeeId={employeeId} />
       </Panel>
 
+      {dialog === 'edit' ? (
+        <EditIdentityDialog employee={person} onClose={closeDialog} onDone={announce} />
+      ) : null}
+      {dialog === 'revise' ? (
+        <RevisionDialog employee={person} latest={latest} onClose={closeDialog} onDone={announce} />
+      ) : null}
       <ExitDialog
         employee={person}
-        open={exiting}
-        onClose={() => setExiting(false)}
+        open={dialog === 'exit'}
+        onClose={closeDialog}
         onDone={announce}
       />
       {cancelling ? (
@@ -181,7 +216,7 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
         onClose={() => setNotice((current) => ({ ...current, open: false }))}
       >
         <Alert
-          severity="success"
+          severity={notice.severity}
           role="status"
           onClose={() => setNotice((current) => ({ ...current, open: false }))}
         >

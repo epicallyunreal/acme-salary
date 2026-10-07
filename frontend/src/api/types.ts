@@ -189,3 +189,40 @@ export type HistoryParams = {
 export interface ExitInput {
   last_date: string;
 }
+
+export interface LineInput {
+  component: string;
+  annual_amount: string;
+}
+
+/** POST /employees/{id}/compensation/. */
+export interface RevisionInput {
+  effective_from: string;
+  bonus_annual?: string;
+  note: string;
+  lines: LineInput[];
+}
+
+/** POST /employees/. The code is assigned by the server; effective_from defaults to joining. */
+export interface EmployeeCreateInput {
+  full_name: string;
+  email: string;
+  gender: Gender;
+  department: string;
+  designation: string;
+  level: number;
+  country_code: string;
+  joining_date: string;
+  effective_from?: string;
+  bonus_annual?: string;
+  note: string;
+  lines: LineInput[];
+}
+
+/** PATCH /employees/{id}/: only the identity fields that changed. */
+export type IdentityPatch = Partial<
+  Pick<
+    EmployeeCreateInput,
+    'full_name' | 'email' | 'gender' | 'department' | 'designation' | 'level' | 'joining_date'
+  >
+>;

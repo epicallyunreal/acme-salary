@@ -1,6 +1,7 @@
-import { Typography } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import { Button, Typography } from '@mui/material';
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { useEmployeeList } from '../api/employees';
 import { FilterBar } from '../components/filters/FilterBar';
@@ -36,6 +37,16 @@ export function Employees() {
     <>
       <PageHeader
         title="Employees"
+        actions={
+          <Button
+            component={Link}
+            to="/employees/new"
+            variant="contained"
+            startIcon={<AddIcon fontSize="small" />}
+          >
+            Add employee
+          </Button>
+        }
         subtitle={
           count === undefined ? undefined : (
             <Typography component="span" variant="body2" className="num">
