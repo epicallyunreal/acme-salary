@@ -322,6 +322,29 @@ def cancel(
     return record
 
 
+def cancel_unstarted(
+    record: CompensationRecord, employee: Employee, *, actor=None, at: datetime | None = None
+):
+    """Exit support (D50): an exit dated before the employee's only record starts cancels that
+    record, which has never been current. Audited as `cancel`, like any cancellation; the
+    caller's `exit` entry comes first."""
+    at = at or timezone.now()
+    before = audit.snapshot_record(record)
+    record.cancelled_at = at
+    record.cancelled_by = actor
+    record.save(update_fields=["cancelled_at", "cancelled_by"])
+    audit.record(
+        "cancel",
+        entity=record,
+        actor=actor,
+        before=before,
+        after=audit.snapshot_record(record),
+        employee=employee,
+        at=at,
+    )
+    return record
+
+
 def close_open_record(employee: Employee, *, at: date) -> CompensationRecord | None:
     """Exit support: the open live record ends at `at` (last_date + 1). Audited by the caller."""
     record = open_record(employee)
@@ -585,6 +608,7 @@ def bulk_apply(
         to_close: list[CompensationRecord] = []
         original_end: dict[int, date | None] = {}
         closed_for_exit: dict[int, CompensationRecord] = {}
+        cancelled_for_exit: dict[int, CompensationRecord] = {}
         new_rows: list[
             tuple[BulkEntry, CompensationRecord, list[CompensationLine], Superseded | None]
         ] = []
@@ -596,7 +620,11 @@ def bulk_apply(
             if not entry.records:
                 if entry.last_date is not None:
                     open_row = ctx.open_by_employee.get(employee.pk)
-                    if open_row is not None:
+                    unstarted = validators.unstarted_only_record(employee, entry.last_date, ctx)
+                    if open_row is not None and open_row is unstarted:
+                        # An exit before pay starts cancels the only record (D50).
+                        cancelled_for_exit[employee.pk] = open_row
+                    elif open_row is not None:
                         original_end[open_row.pk] = open_row.effective_to
                         open_row.effective_to = close_at
                         to_close.append(open_row)
@@ -633,6 +661,12 @@ def bulk_apply(
                 new_rows.append((entry, row, lines, superseded))
                 superseded = (row, lines)
         CompensationRecord.objects.bulk_update(to_close, ["effective_to"], batch_size=BATCH)
+        for row in cancelled_for_exit.values():
+            row.cancelled_at = at
+            row.cancelled_by = actor
+        CompensationRecord.objects.bulk_update(
+            list(cancelled_for_exit.values()), ["cancelled_at", "cancelled_by"], batch_size=BATCH
+        )
         CompensationRecord.objects.bulk_create([row for _, row, _, _ in new_rows], batch_size=BATCH)
         all_lines: list[CompensationLine] = []
         for _, row, lines, _ in new_rows:
@@ -644,8 +678,10 @@ def bulk_apply(
         # 4. Audit, one entry per entity written, stored lines fetched in one query.
         wanted = [s[0].pk for _, _, _, s in new_rows if s is not None and s[1] is None]
         wanted += [row.pk for row in closed_for_exit.values()]
+        wanted += [row.pk for row in cancelled_for_exit.values()]
         wanted += [item["record"].pk for _, item, _ in employee_entries if item["record"]]
         stored_lines = _lines_by_record(wanted)
+        cancelled_pks = {row.pk for row in cancelled_for_exit.values()}
         first_rows: dict[int, tuple[CompensationRecord, list[CompensationLine]]] = {}
         for entry, row, lines, _ in new_rows:
             first_rows.setdefault(id(entry), (row, lines))
@@ -675,7 +711,12 @@ def bulk_apply(
                 if before_record.pk in original_end:
                     # As it was before this run closed it.
                     before["current_record"]["effective_to"] = original_end[before_record.pk]
+                if before_record.pk in cancelled_pks:
+                    # As it was before this run cancelled it (D50).
+                    before["current_record"].update(cancelled_at=None, cancelled_by=None)
             after_record = closed_for_exit.get(employee.pk) or before_record
+            if employee.pk in cancelled_for_exit:
+                after_record = None
             after_lines = stored_lines.get(after_record.pk) if after_record is not None else None
             to_log.append(
                 audit.build(
@@ -685,6 +726,22 @@ def bulk_apply(
                     before=before,
                     after=audit.snapshot_employee(employee, record=after_record, lines=after_lines),
                     employee=employee,
+                    import_batch=batch,
+                    at=at,
+                )
+            )
+        for row in cancelled_for_exit.values():
+            lines = stored_lines.get(row.pk)
+            after = audit.snapshot_record(row, lines)
+            before = {**after, "cancelled_at": None, "cancelled_by": None}
+            to_log.append(
+                audit.build(
+                    "cancel",
+                    entity=row,
+                    actor=actor,
+                    before=before,
+                    after=after,
+                    employee=ctx.employees_by_id.get(row.employee_id),
                     import_batch=batch,
                     at=at,
                 )

@@ -547,12 +547,34 @@ def check_joining_before_first_record(row: NormalizedRow, ctx: ValidationContext
     return []
 
 
+def unstarted_only_record(
+    employee: Employee, last_date: date, ctx: ValidationContext
+) -> CompensationRecord | None:
+    """The employee's only live record when it starts after last_date and has never been current.
+    An exit before pay starts cancels it rather than waiting on a cancel that version 1 refuses
+    (D50). A first record that has been current keeps the last_date rules."""
+    first = ctx.first_by_employee.get(employee.pk)
+    if first is None or first is not ctx.latest_by_employee.get(employee.pk):
+        return None
+    if first.effective_from > ctx.today and first.effective_from > last_date:
+        return first
+    return None
+
+
 def check_last_date_vs_scheduled(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     employee = ctx.employee_for(row)
     if not _exit_requested(row, employee):
         return []
+    if unstarted_only_record(employee, row.last_date, ctx) is not None:
+        return []
+    # A first record that has never been current cannot be cancelled (D26), so the message names
+    # the revision to cancel, after which the exit cancels the first record itself (D50).
+    first = ctx.first_by_employee.get(employee.pk)
+    uncancellable = first.effective_from if first and first.effective_from > ctx.today else None
     after = sorted(
-        day for day in ctx.scheduled_by_employee.get(employee.pk, []) if day > row.last_date
+        day
+        for day in ctx.scheduled_by_employee.get(employee.pk, [])
+        if day > row.last_date and day != uncancellable
     )
     if after:
         return [error("last_date", "last_date_scheduled", date=after[0].isoformat())]
@@ -948,8 +970,11 @@ def validate_record(
     return raise_for_errors(run_rules(row, ctx, "record"))
 
 
-def validate_exit(employee: Employee, last_date: date, ctx: ValidationContext) -> None:
-    """Exit rules in F3's precedence. 409 for conflicts, 400 for the rest."""
+def validate_exit(
+    employee: Employee, last_date: date, ctx: ValidationContext
+) -> CompensationRecord | None:
+    """Exit rules in F3's precedence. 409 for conflicts, 400 for the rest. Returns the unstarted
+    only record the exit cancels (D50), else None."""
     if employee.last_date is not None:
         raise Conflict(msg("already_exited", date=employee.last_date.isoformat()))
     row = NormalizedRow(
@@ -968,3 +993,4 @@ def validate_exit(employee: Employee, last_date: date, ctx: ValidationContext) -
             if message.code in CONFLICT_CODES:
                 raise Conflict(message.message)
             raise Invalid({message.field: [message.message]})
+    return unstarted_only_record(employee, last_date, ctx)

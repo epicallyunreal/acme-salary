@@ -631,6 +631,37 @@ def test_exit_closes_the_open_record_and_a_second_exit_is_a_409(api, cast):
     )
 
 
+def test_an_exit_before_pay_starts_leaves_an_employee_who_still_shows(api, cast, hr_user):
+    """D50: the exit cancels the only record. With no live record the employee still renders in
+    the directory, the detail, the history and the audit list."""
+    gita = person("Gita Rao", joining_date=date(2026, 9, 1))
+    compensation.add_first_record(
+        gita, record_input(date(2026, 12, 1), BASE="900000"), actor=hr_user
+    )
+
+    response = api.post(
+        f"/api/v1/employees/{gita.pk}/exit/", {"last_date": "2026-09-30"}, format="json"
+    )
+
+    body = response.json()
+    assert response.status_code == 200, response.content
+    assert (body["last_date"], body["status"], body["current_record"]) == (
+        "2026-09-30",
+        "exited",
+        None,
+    )
+    rows = api.get(LIST, {"search": "Gita"}).json()["results"]
+    assert [(row["full_name"], row["status"], row["shown"]) for row in rows] == [
+        ("Gita Rao", "exited", None)
+    ]
+    detail = api.get(f"/api/v1/employees/{gita.pk}/")
+    assert (detail.status_code, detail.json()["current_record"]) == (200, None)
+    history = api.get(f"/api/v1/employees/{gita.pk}/compensation/").json()
+    assert [(row["version"], row["cancelled_at"] is not None) for row in history] == [(1, True)]
+    audit = api.get(f"/api/v1/employees/{gita.pk}/audit/").json()["results"]
+    assert [entry["action"] for entry in audit] == ["cancel", "exit", "revise"]
+
+
 def test_exit_errors_name_the_field_or_the_conflict(api, cast, hr_user):
     chloe = cast["chloe"]
     compensation.revise(chloe, record_input(date(2025, 4, 1), BASE="85000"), actor=hr_user)

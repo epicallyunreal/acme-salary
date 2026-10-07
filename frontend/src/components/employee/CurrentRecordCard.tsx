@@ -82,9 +82,13 @@ export function CurrentRecordCard({ employee, components }: CurrentRecordCardPro
   const title = employee.shown_label ? 'Latest record' : 'Current record';
 
   if (!record) {
+    // An exit before pay starts cancels the only record (D50), so nothing is left to show.
+    const message = employee.last_date
+      ? `Left on ${formatDate(employee.last_date)}, before pay started. The cancelled record stays in History.`
+      : 'No pay record yet. Add a revision to set one.';
     return (
       <Paper component="section" aria-label="Current record" sx={{ mb: 6 }}>
-        <EmptyState message="No pay record yet. Add a revision to set one." />
+        <EmptyState message={message} />
       </Paper>
     );
   }

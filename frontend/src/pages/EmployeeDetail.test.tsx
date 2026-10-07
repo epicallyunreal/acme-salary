@@ -49,6 +49,41 @@ describe('EmployeeDetail', () => {
     expect(screen.queryByRole('button', { name: 'Mark exited' })).not.toBeInTheDocument();
   });
 
+  it('shows an employee who left before pay started, with the cancelled record in history', async () => {
+    server.use(
+      http.get('/api/v1/employees/2/', () =>
+        HttpResponse.json({
+          ...employeeDetails[2],
+          status: 'exited',
+          last_date: '2026-09-30',
+          current_record: null,
+        }),
+      ),
+      http.get('/api/v1/employees/2/compensation/', () =>
+        HttpResponse.json([
+          {
+            ...histories[2][0],
+            is_current: false,
+            cancelled_at: '2026-10-07T09:00:00+00:00',
+            cancelled_by: 'hr@acme.example',
+          },
+        ]),
+      ),
+    );
+    renderApp('/employees/2');
+
+    const card = await screen.findByRole('region', { name: 'Current record' });
+    expect(
+      within(card).getByText(
+        'Left on 30 Sept 2026, before pay started. The cancelled record stays in History.',
+      ),
+    ).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Pay history' });
+    const rows = within(table).getAllByRole('row').slice(1);
+    expect(rows.map((row) => row.getAttribute('data-state'))).toEqual(['cancelled']);
+    expect(screen.queryByRole('button', { name: 'Mark exited' })).not.toBeInTheDocument();
+  });
+
   it('lists history newest first, greys the cancelled row, and offers Cancel only when scheduled', async () => {
     renderApp('/employees/4');
 

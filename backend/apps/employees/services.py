@@ -124,27 +124,37 @@ def exit_employee(
     at: datetime | None = None,
     today: date | None = None,
 ) -> Employee:
-    """Set last_date and close the open record at last_date + 1 (SPEC F3). One `exit` entry."""
+    """Set last_date and close the open record at last_date + 1 (SPEC F3). One `exit` entry.
+
+    An exit dated before the only record starts, a record never current, cancels that record
+    instead and adds its `cancel` entry after the exit's (D50).
+    """
     at = at or timezone.now()
     today = today or today_utc()
     with transaction.atomic():
         # Read and validated under the write lock, so a second exit is a 409 (D44).
         employee.refresh_from_db()
         ctx = validators.build_context(employees=[employee], today=today)
-        validators.validate_exit(employee, last_date, ctx)
+        unstarted = validators.validate_exit(employee, last_date, ctx)
         shown = compensation.shown_record(employee, today)
         before = audit.snapshot_employee(employee, record=shown)
         employee.last_date = last_date
         employee.updated_at = at
         employee.save(update_fields=["last_date", "updated_at"])
-        closed = compensation.close_open_record(employee, at=last_date + ONE_DAY)
+        if unstarted is not None:
+            # Left before pay started: the only record never takes effect (D50).
+            after_record = None
+        else:
+            after_record = compensation.close_open_record(employee, at=last_date + ONE_DAY) or shown
         audit.record(
             "exit",
             entity=employee,
             actor=actor,
             before=before,
-            after=audit.snapshot_employee(employee, record=closed or shown),
+            after=audit.snapshot_employee(employee, record=after_record),
             employee=employee,
             at=at,
         )
+        if unstarted is not None:
+            compensation.cancel_unstarted(unstarted, employee, actor=actor, at=at)
     return employee

@@ -123,6 +123,16 @@ def exited(existing):
     return existing
 
 
+@pytest.fixture
+def before_pay(lookups):
+    """Legacy code HR-10020, joined 2026-09-01, its only record from 2026-12-01: never current."""
+    employee = EmployeeFactory(legacy_code="HR-10020", joining_date=date(2026, 9, 1))
+    CompensationRecordFactory(
+        employee=employee, effective_from=date(2026, 12, 1), lines=INDIA_LINES
+    )
+    return employee
+
+
 def matched_row(employee, **overrides) -> NormalizedRow:
     values = dict(
         legacy_code=employee.legacy_code,
@@ -834,3 +844,30 @@ def test_an_import_row_cannot_move_joining_date_past_the_first_record(existing):
         "joining_date is after the first record (effective 2025-04-01)",
     )
     assert on_the_day is None
+
+
+def test_an_exit_before_pay_starts_hands_back_the_record_to_cancel(before_pay):
+    """D50: no scheduled-revision conflict, and validate_exit returns the record the exit cancels.
+    From the start date on, the exit closes the record as usual."""
+    ctx = build_context(employees=[before_pay])
+    only = ctx.first_by_employee[before_pay.pk]
+    row = matched_row(before_pay, last_date=date(2026, 10, 31))
+
+    assert find(messages(row), "last_date_scheduled") is None
+    assert v.validate_exit(before_pay, date(2026, 10, 31), ctx) is only
+    assert v.validate_exit(before_pay, date(2026, 12, 1), ctx) is None
+
+
+def test_the_scheduled_conflict_names_a_revision_not_the_first_record(before_pay):
+    """Version 1 cannot be cancelled (D26), so the 409 names the revision that can be."""
+    services.revise(before_pay, record_input(date(2027, 4, 1), RAISED))
+    ctx = build_context(employees=[before_pay])
+
+    assert_message(
+        messages(matched_row(before_pay, last_date=date(2026, 10, 31))),
+        "last_date_scheduled",
+        "last_date",
+        "error",
+        "scheduled revision on 2027-04-01 must be cancelled before exit",
+    )
+    assert v.unstarted_only_record(before_pay, date(2026, 10, 31), ctx) is None

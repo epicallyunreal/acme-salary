@@ -1,6 +1,6 @@
 """bulk_apply writes exactly what the single-row services would (DESIGN section 1.4)."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -215,6 +215,49 @@ def test_bulk_updates_exits_and_revisions_on_existing_employees(three, django_as
     )
     assert promotion_update.pk < revise_entry.pk
     assert result.audit_entries == 4
+
+
+def test_a_bulk_exit_before_pay_starts_cancels_the_only_record_as_single(lookups):
+    """D50 in bulk: the same record state and the same exit and cancel entries as exit_employee."""
+    at = datetime(2026, 10, 7, 9, tzinfo=UTC)
+    people = [EmployeeFactory(joining_date=date(2026, 9, 1)) for _ in range(2)]
+    for employee in people:
+        services.add_first_record(employee, record_input(effective_from=date(2026, 12, 1)))
+    single, bulk = people
+    employees.exit_employee(single, date(2026, 10, 31), at=at)
+
+    result = services.bulk_apply(
+        [BulkEntry(ref=1, employee=bulk, last_date=date(2026, 10, 31))], source="import", at=at
+    )
+
+    ids = {"id", "employee"}
+
+    def written(employee):
+        record = CompensationRecord.objects.get(employee=employee)
+        exit_entry, cancel_entry = AuditLog.objects.filter(
+            employee=employee, action__in=["exit", "cancel"]
+        ).order_by("pk")
+        return (
+            (record.cancelled_at, record.effective_to),
+            (exit_entry.action, exit_entry.before["last_date"], exit_entry.after["last_date"]),
+            {k: v for k, v in exit_entry.before["current_record"].items() if k not in ids},
+            exit_entry.after["current_record"],
+            (cancel_entry.action, cancel_entry.entity_id == record.pk),
+            {k: v for k, v in cancel_entry.before.items() if k not in ids},
+            {k: v for k, v in cancel_entry.after.items() if k not in ids},
+        )
+
+    assert result.exited == [bulk]
+    assert written(bulk) == written(single)
+    state, actions, before_record, after_record, cancel, cancel_before, _ = written(bulk)
+    assert (state, actions, after_record, cancel) == (
+        (at, None),
+        ("exit", None, "2026-10-31"),
+        None,
+        ("cancel", True),
+    )
+    assert before_record["cancelled_at"] is None
+    assert cancel_before["cancelled_at"] is None
 
 
 def test_a_revise_only_row_writes_one_revise_entry(three):

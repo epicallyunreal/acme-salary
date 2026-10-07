@@ -224,6 +224,8 @@ Decision: such a row writes one `exit` entry on the employee carrying any identi
 
 Consequences: one entry per entity holds for imports too. A future joiner's wrong pay is fixed by exit and re-create in v1, or by the P1 in-place correction. Owner's answers to DESIGN questions 3 and 4.
 
+Amended 7 Oct: an exit dated before the employee's only record starts, a record never current, cancels that record. Cancelling version 1 on its own is still a 409. See D50.
+
 ## D27. API conventions the spec left open
 
 Context: DESIGN questions 5, 6, 7, 10 and 11 proposed defaults for the JSON export shape, money encoding, warnings on writes, percentage precision and upload content types.
@@ -411,6 +413,14 @@ Context: the security review found that each line fits `Decimal(14, 2)` but thei
 Decision: every line and `bonus_annual` must be between 0 and 9,999,999,999.99 (`HRA must be at most 9,999,999,999.99, got 12,000,000,000.00`), and a given BASE must be at least 10 (`BASE must be at least 10.00, got 5.00`), while a blank BASE stays `BASE is required`. A bonus above BASE and a deduction above BASE are warnings. Errors are for impossible values, warnings for unusual ones. SPEC section 7 has the rows.
 
 Consequences: with ten integer digits per amount, a total stays inside its column for any sensible number of components, and a test derives that bound from the component counts and the column's digits, so adding a component cannot silently break it. The API serializer still caps each field at 14 digits, so a larger value gets DRF's own message first.
+
+## D50. An exit before pay starts cancels the only record
+
+Context: an employee created with `effective_from` after `joining_date` could not be exited before that date. The exit answered 409 naming the record, and cancelling version 1 answered 409 too (D26). The alternatives were a 400 with an explanation, which left them stuck, and refusing a first record dated after joining, which is not enough while D45 lets `joining_date` move earlier.
+
+Decision: when the record after `last_date` is the employee's only live record and has never been current, the exit cancels it instead of closing it, in `exit_employee` and `bulk_apply` alike, and writes `exit` then `cancel`. A first record that has been current keeps the 400. While later revisions are scheduled, the 409 names one of them, not version 1. SPEC section 4 rule 6 and F3.
+
+Consequences: such an employee has no live record. The directory lists them with no record, the detail says they left before pay started, and the history keeps the cancelled row. Step 6's insight population must skip employees with no live record, under `include_exited` too.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

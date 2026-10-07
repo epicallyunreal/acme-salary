@@ -49,6 +49,14 @@ def with_first(lookups):
     return employee
 
 
+@pytest.fixture
+def before_pay(lookups):
+    """Joined 2026-09-01 with pay from 2026-12-01, so the only record has never been current."""
+    employee = EmployeeFactory(joining_date=date(2026, 9, 1))
+    compensation.add_first_record(employee, record_input(effective_from=date(2026, 12, 1)))
+    return employee
+
+
 def test_create_employee_assigns_the_code_lowercases_the_email_and_audits(lookups):
     created = services.create_employee(identity(), record_input())
 
@@ -264,3 +272,67 @@ def test_update_identity_refuses_a_joining_date_past_the_first_record(with_first
     assert excinfo.value.errors == {
         "joining_date": ["joining_date is after the first record (effective 2024-03-01)"]
     }
+
+
+def test_an_exit_before_pay_starts_cancels_the_only_record(before_pay, hr_user, today):
+    """D50: the record would never be current, so the exit cancels it instead of closing it."""
+    services.exit_employee(before_pay, date(2026, 10, 31), actor=hr_user)
+
+    before_pay.refresh_from_db()
+    assert before_pay.last_date == date(2026, 10, 31)
+    record = CompensationRecord.objects.get(employee=before_pay)
+    assert (record.effective_to, record.cancelled_by) == (None, hr_user)
+    assert record.cancelled_at is not None
+    assert not compensation.live_records(before_pay).exists()
+    assert compensation.shown_record(before_pay, today) is None
+    exit_entry, cancel_entry = AuditLog.objects.filter(
+        employee=before_pay, action__in=["exit", "cancel"]
+    ).order_by("pk")
+    assert (exit_entry.action, cancel_entry.action) == ("exit", "cancel")
+    assert exit_entry.before["current_record"]["version"] == 1
+    assert exit_entry.after["last_date"] == "2026-10-31"
+    assert exit_entry.after["current_record"] is None
+    assert (cancel_entry.entity_type, cancel_entry.entity_id) == ("compensation_record", record.pk)
+    assert (cancel_entry.actor, cancel_entry.employee) == (hr_user, before_pay)
+    assert cancel_entry.before["cancelled_at"] is None
+    assert cancel_entry.after["cancelled_by"] == hr_user.email
+
+
+def test_an_exit_on_or_after_the_start_closes_the_unstarted_record(before_pay):
+    services.exit_employee(before_pay, date(2026, 12, 1))
+
+    record = CompensationRecord.objects.get(employee=before_pay)
+    assert (record.cancelled_at, record.effective_to) == (None, date(2026, 12, 2))
+    assert not AuditLog.objects.filter(action="cancel").exists()
+
+
+def test_an_exit_before_pay_starts_names_a_later_revision_to_cancel_first(before_pay):
+    """The 409 names the revision that can be cancelled, not version 1, which cannot (D26)."""
+    later = compensation.revise(
+        before_pay,
+        record_input(effective_from=date(2027, 4, 1), lines={**LINES, "BASE": Decimal("1600000")}),
+    ).record
+
+    with pytest.raises(
+        Conflict, match="scheduled revision on 2027-04-01 must be cancelled before exit"
+    ):
+        services.exit_employee(before_pay, date(2026, 10, 31))
+
+    compensation.cancel(later)
+    services.exit_employee(before_pay, date(2026, 10, 31))
+
+    assert not compensation.live_records(before_pay).exists()
+
+
+def test_a_first_record_that_has_been_current_keeps_the_400(lookups):
+    """D50 is narrow: pay that has started is history, so last_date cannot precede it."""
+    employee = EmployeeFactory(joining_date=date(2024, 1, 1))
+    compensation.add_first_record(employee, record_input(effective_from=date(2024, 3, 1)))
+
+    with pytest.raises(Invalid) as excinfo:
+        services.exit_employee(employee, date(2024, 2, 15))
+
+    assert excinfo.value.errors == {
+        "last_date": ["last_date precedes the current record (effective 2024-03-01)"]
+    }
+    assert CompensationRecord.objects.get(employee=employee).cancelled_at is None

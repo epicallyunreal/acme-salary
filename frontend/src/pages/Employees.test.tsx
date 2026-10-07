@@ -68,6 +68,27 @@ describe('Employees', () => {
     expect(screen.queryByText('asha@acme.example')).not.toBeInTheDocument();
   });
 
+  it('renders an employee with no live record, with empty pay cells', async () => {
+    server.use(
+      http.get('/api/v1/employees/', () =>
+        HttpResponse.json({
+          ...employeePage,
+          results: employees.map((row) =>
+            row.id === 2 ? { ...row, status: 'exited', last_date: '2026-09-30', shown: null } : row,
+          ),
+        }),
+      ),
+    );
+    renderApp('/employees');
+
+    const ben = (await rowsShown())[1];
+
+    expect(within(ben).getByText('Ben Carter')).toBeInTheDocument();
+    expect(within(ben).getByText('exited')).toBeInTheDocument();
+    expect(within(ben).getByText('no record')).toBeInTheDocument();
+    expect(within(ben).queryByText(/USD/)).not.toBeInTheDocument();
+  });
+
   it('keeps a deep link on its page and pages forward with the filters kept', async () => {
     const seen = recordRequests({ rows: 60 });
     const { router } = renderApp('/employees?page=2&country=IN');
