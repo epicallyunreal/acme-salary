@@ -58,6 +58,15 @@ def shown_label(employee: Employee, record: CompensationRecord | None, on: date)
     return None
 
 
+def next_employee_code() -> str:
+    """The greatest existing code plus one. Codes are fixed-width, so text order is numeric."""
+    last = (
+        Employee.objects.order_by("-employee_code").values_list("employee_code", flat=True).first()
+    )
+    number = int(last.split("-")[1]) + 1 if last else 1
+    return f"ACME-{number:06d}"
+
+
 def status_on(employee: Employee, on: date) -> str:
     if employee.joining_date > on:
         return "upcoming"

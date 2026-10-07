@@ -2,6 +2,7 @@
 
 One random.Random(seed) drives every draw in a fixed order per employee, and one Faker per
 locale is seeded the same way, so the same arguments give the same entries on any machine.
+Random draws are the only floats; they enter Decimal arithmetic exactly once, through dec().
 The generator produces BulkEntry values; compensation.services.bulk_apply writes them.
 """
 
@@ -11,7 +12,7 @@ import random
 import unicodedata
 from collections.abc import Iterator
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from faker import Faker
 
@@ -35,14 +36,21 @@ JITTERED = (
     "TAX",
     "EMPLOYER_CONTRIBUTION",
 )
+ONE = Decimal("1")
+KIND_OF = {spec.code: spec.kind for spec in profiles.COMPONENTS}
 
 
-def whole(value: float) -> Decimal:
-    return Decimal(int(round(value)))
+def dec(value: float) -> Decimal:
+    """A random draw into Decimal, once, exactly as Python prints it."""
+    return Decimal(repr(value))
 
 
-def round_to(value: float, step: int) -> Decimal:
-    return Decimal(int(round(value / step)) * step)
+def whole(value: Decimal) -> Decimal:
+    return value.quantize(ONE, rounding=ROUND_HALF_UP)
+
+
+def round_to(value: Decimal, step: int) -> Decimal:
+    return (value / step).quantize(ONE, rounding=ROUND_HALF_UP) * step
 
 
 def ascii_slug(text: str) -> str:
@@ -56,29 +64,21 @@ def lines_for(
     level: int,
     base: Decimal,
     bonus: Decimal,
-    jitter: dict[str, float],
+    jitter: dict[str, Decimal],
 ) -> dict[str, Decimal]:
     """The component lines for one record: shares of base, TAX as a share of gross."""
     lines: dict[str, Decimal] = {"BASE": base}
-    base_f = float(base)
     for code, share in country.components.items():
-        lines[code] = whole(base_f * share * jitter.get(code, 1.0))
+        lines[code] = whole(base * dec(share) * jitter.get(code, ONE))
     earnings = sum(
-        (amount for code, amount in lines.items() if _kind(code) == "earning"), Decimal("0")
+        (amount for code, amount in lines.items() if KIND_OF[code] == "earning"), Decimal("0")
     )
-    gross = float(earnings + bonus)
-    lines["TAX"] = whole(gross * profiles.TAX_SHARE_BY_LEVEL[level] * jitter.get("TAX", 1.0))
+    gross = earnings + bonus
+    lines["TAX"] = whole(gross * dec(profiles.TAX_SHARE_BY_LEVEL[level]) * jitter.get("TAX", ONE))
     lines["EMPLOYER_CONTRIBUTION"] = whole(
-        base_f * country.employer_share * jitter.get("EMPLOYER_CONTRIBUTION", 1.0)
+        base * dec(country.employer_share) * jitter.get("EMPLOYER_CONTRIBUTION", ONE)
     )
     return lines
-
-
-def _kind(code: str) -> str:
-    for spec in profiles.COMPONENTS:
-        if spec.code == code:
-            return spec.kind
-    raise KeyError(code)
 
 
 def april_firsts(after: date, until: date) -> list[date]:
@@ -126,31 +126,34 @@ def generate(count: int, seed: int, *, start_number: int = 1) -> Iterator[BulkEn
                 span = (profiles.REFERENCE_DATE - earliest).days
                 last_date = earliest + timedelta(days=rng.randrange(span + 1))
 
-        noise = rng.lognormvariate(0, profiles.NOISE_SIGMA)
+        noise = dec(rng.lognormvariate(0, profiles.NOISE_SIGMA))
         base = round_to(
-            country.anchor * profiles.LEVEL_MULTIPLIERS[level] * department.multiplier * noise,
+            Decimal(country.anchor)
+            * dec(profiles.LEVEL_MULTIPLIERS[level])
+            * dec(department.multiplier)
+            * noise,
             profiles.BASE_ROUNDING,
         )
-        bonus_share = 0.0
+        bonus_share = Decimal("0")
         if rng.random() < country.bonus_probability:
-            bonus_share = rng.uniform(*profiles.BONUS_RANGE)
+            bonus_share = dec(rng.uniform(*profiles.BONUS_RANGE))
         jitter = {
-            code: rng.uniform(1 - profiles.COMPONENT_JITTER, 1 + profiles.COMPONENT_JITTER)
+            code: dec(rng.uniform(1 - profiles.COMPONENT_JITTER, 1 + profiles.COMPONENT_JITTER))
             for code in JITTERED
         }
 
         history_end = min(last_date or profiles.REFERENCE_DATE, profiles.REFERENCE_DATE)
         raise_days = april_firsts(joining_date, history_end)
-        raises = [rng.uniform(*profiles.RAISE_RANGE) for _ in raise_days]
+        raises = [dec(rng.uniform(*profiles.RAISE_RANGE)) for _ in raise_days]
 
         bases = [base]
         for pct in raises:
-            bases.append(round_to(float(bases[-1]) * (1 + pct), profiles.BASE_ROUNDING))
+            bases.append(round_to(bases[-1] * (ONE + pct), profiles.BASE_ROUNDING))
         kept = list(zip(raise_days, bases[1:], strict=True))[-profiles.KEPT_RAISES :]
 
         records = []
         for effective_from, record_base in [(joining_date, base), *kept]:
-            bonus = round_to(float(record_base) * bonus_share, profiles.BASE_ROUNDING)
+            bonus = round_to(record_base * bonus_share, profiles.BASE_ROUNDING)
             records.append(
                 RecordInput(
                     effective_from=effective_from,

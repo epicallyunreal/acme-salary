@@ -192,6 +192,33 @@ def test_cancel_the_middle_of_two_scheduled_revisions_rechains(with_first):
     assert services.latest_record(with_first) == third
 
 
+def test_cancel_after_a_scheduled_exit_ends_the_previous_record_at_the_exit(with_first):
+    employees.exit_employee(with_first, date(2026, 12, 31))
+    scheduled = services.revise(
+        with_first, record_input(effective_from=date(2026, 11, 1), lines=RAISED)
+    ).record
+
+    services.cancel(scheduled)
+
+    first = CompensationRecord.objects.get(employee=with_first, version=1)
+    assert first.effective_to == date(2027, 1, 1)
+    assert services.open_record(with_first) is None
+    assert services.current_record(with_first, date(2026, 12, 1)) == first
+
+
+def test_cancel_after_a_revision_then_a_scheduled_exit_ends_the_previous_at_the_exit(with_first):
+    scheduled = services.revise(
+        with_first, record_input(effective_from=date(2026, 11, 1), lines=RAISED)
+    ).record
+    employees.exit_employee(with_first, date(2026, 12, 31))
+
+    services.cancel(scheduled)
+
+    first = CompensationRecord.objects.get(employee=with_first, version=1)
+    assert first.effective_to == date(2027, 1, 1)
+    assert services.open_record(with_first) is None
+
+
 def test_versions_are_never_reused_after_a_cancel(with_first):
     second = services.revise(
         with_first, record_input(effective_from=date(2027, 1, 1), lines=RAISED)
@@ -221,6 +248,27 @@ def test_only_one_open_live_record_per_employee(with_first):
         )
 
 
+def test_version_is_unique_per_employee(with_first):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        CompensationRecord.objects.create(
+            employee=with_first,
+            version=1,
+            currency_code="INR",
+            effective_from=date(2025, 1, 1),
+            effective_to=date(2025, 2, 1),
+            gross_annual=1,
+            net_annual=1,
+            total_cost_annual=1,
+            source="ui",
+        )
+
+
+def test_close_open_record_without_an_open_record_returns_none(with_first):
+    employees.exit_employee(with_first, date(2026, 9, 30))
+
+    assert services.close_open_record(with_first, at=date(2026, 10, 1)) is None
+
+
 def test_a_record_cannot_end_where_it_starts(with_first):
     with pytest.raises(IntegrityError), transaction.atomic():
         CompensationRecord.objects.create(
@@ -236,8 +284,26 @@ def test_a_record_cannot_end_where_it_starts(with_first):
         )
 
 
-def test_no_revision_after_an_exit(with_first):
+def test_a_revision_dated_after_an_exit_is_a_409(with_first):
     employees.exit_employee(with_first, date(2026, 9, 30))
 
-    with pytest.raises(Conflict, match="employee exited on 2026-09-30"):
-        services.revise(with_first, record_input(effective_from=date(2026, 11, 1), lines=RAISED))
+    with pytest.raises(Conflict, match="no revision after the exit on 2026-09-30"):
+        services.revise(with_first, record_input(effective_from=date(2026, 10, 1), lines=RAISED))
+
+
+def test_a_revision_dated_before_a_scheduled_exit_ends_the_day_after_it(with_first, today):
+    employees.exit_employee(with_first, date(2026, 12, 31))
+
+    written = services.revise(
+        with_first, record_input(effective_from=date(2026, 11, 1), lines=RAISED)
+    )
+
+    first = CompensationRecord.objects.get(employee=with_first, version=1)
+    assert first.effective_to == date(2026, 11, 1)
+    assert (written.record.effective_from, written.record.effective_to) == (
+        date(2026, 11, 1),
+        date(2027, 1, 1),
+    )
+    assert services.current_record(with_first, today) == first
+    assert services.current_record(with_first, date(2026, 12, 1)) == written.record
+    assert services.open_record(with_first) is None

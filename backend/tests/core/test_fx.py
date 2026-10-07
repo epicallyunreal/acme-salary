@@ -36,19 +36,22 @@ def test_identity_rate_is_one(rates):
 
 
 def test_direct_pair_to_eur(rates):
-    assert RateTable.load(OCTOBER).rate("INR", "EUR") == Decimal("0.01021")
+    assert RateTable.load(OCTOBER).convert(Decimal("1000000.00"), "INR", "EUR") == Decimal(
+        "10210.00"
+    )
 
 
 def test_a_pair_without_a_direct_row_routes_through_usd(rates):
     table = RateTable.load(OCTOBER)
 
-    expected = Decimal("1.3450") * (Decimal("1") / Decimal("0.7810"))
-    assert table.rate("GBP", "SGD") == expected
+    # 1 GBP = 1.3450 USD and 1 SGD = 0.7810 USD, so 1,000 GBP = 1,722.15 SGD.
+    assert table.convert(Decimal("1000.00"), "GBP", "SGD") == Decimal("1722.15")
     assert table.effective_from("GBP", "SGD") == date(2026, 10, 1)
 
 
 def test_usd_to_a_local_currency_uses_the_inverse_of_the_seeded_leg(rates):
-    assert RateTable.load(OCTOBER).rate("USD", "INR") == Decimal("1") / Decimal("0.01200")
+    # 1 INR = 0.012 USD, so 100 USD = 8,333.33 INR.
+    assert RateTable.load(OCTOBER).convert(Decimal("100.00"), "USD", "INR") == Decimal("8333.33")
 
 
 def test_an_unknown_pair_raises_a_400(rates):
@@ -115,16 +118,16 @@ def test_resolve_reporting_currency(currency, countries, expected):
 
 
 @pytest.mark.parametrize(
-    ("currency", "countries", "field"),
+    ("currency", "countries", "message"),
     [
-        ("local", ["IN", "US"], "currency"),
-        ("local", [], "currency"),
-        ("local", ["XX"], "country"),
-        ("gbp", [], "currency"),
+        ("local", ["IN", "US"], "currency=local needs exactly one country in the filter"),
+        ("local", [], "currency=local needs exactly one country in the filter"),
+        ("local", ["XX"], "Unknown country_code: XX"),
+        ("gbp", [], "currency must be usd, eur or local, got gbp"),
     ],
 )
-def test_resolve_reporting_currency_rejects(currency, countries, field):
+def test_resolve_reporting_currency_rejects(currency, countries, message):
     with pytest.raises(Invalid) as excinfo:
         resolve_reporting_currency(currency, countries, CURRENCIES)
 
-    assert list(excinfo.value.errors) == [field]
+    assert [m for messages in excinfo.value.errors.values() for m in messages] == [message]

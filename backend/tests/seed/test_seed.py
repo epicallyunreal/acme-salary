@@ -1,4 +1,7 @@
-"""Determinism and invariants of seed_data (SPEC section 11 rule 8). Marked slow: 500 employees."""
+"""Determinism and invariants of seed_data (SPEC section 11 rule 8).
+
+The two 500-employee tests are marked slow; the command's contracts run on every commit.
+"""
 
 from collections import Counter
 from datetime import timedelta
@@ -11,14 +14,15 @@ from django.core.management import CommandError, call_command
 
 from apps.audit.models import AuditLog
 from apps.compensation.models import CompensationRecord
-from apps.core.models import ExchangeRate
+from apps.core.models import Country, ExchangeRate
 from apps.employees.models import Employee
 from seed import profiles
 from seed.dump import dump_hash
+from seed.management.commands import seed_data as seed_module
 
 GOLDEN = Path(__file__).with_name("golden.txt")
 
-pytestmark = [pytest.mark.django_db, pytest.mark.slow]
+pytestmark = pytest.mark.django_db
 
 
 def seed(employees: int, **options) -> str:
@@ -27,6 +31,7 @@ def seed(employees: int, **options) -> str:
     return out.getvalue()
 
 
+@pytest.mark.slow
 def test_seed_matches_the_golden_hash_and_a_reset_reproduces_it():
     seed(500)
 
@@ -39,19 +44,35 @@ def test_seed_matches_the_golden_hash_and_a_reset_reproduces_it():
     assert CompensationRecord.objects.order_by("id").first().pk == 1
 
 
+@pytest.mark.slow
 def test_shares_and_invariants():
     seed(500)
 
     assert Employee.objects.count() == 500
-    by_country = Counter(Employee.objects.values_list("country_id", flat=True))
-    for spec in profiles.COUNTRIES:
-        assert abs(by_country[spec.code] / 500 - spec.share) < 0.06, spec.code
-    by_level = Counter(Employee.objects.values_list("level", flat=True))
-    assert by_level[1] > by_level[6]
-    by_gender = Counter(Employee.objects.values_list("gender", flat=True))
-    assert by_gender["female"] > 150 and by_gender["male"] > 150
-    exited = Employee.objects.filter(last_date__isnull=False)
-    assert 0.03 < exited.count() / 500 < 0.14
+    assert dict(Counter(Employee.objects.values_list("country_id", flat=True))) == {
+        "DE": 50,
+        "GB": 66,
+        "IN": 226,
+        "NL": 42,
+        "SG": 19,
+        "US": 97,
+    }
+    assert dict(Counter(Employee.objects.values_list("level", flat=True))) == {
+        1: 106,
+        2: 147,
+        3: 84,
+        4: 81,
+        5: 52,
+        6: 30,
+    }
+    assert dict(Counter(Employee.objects.values_list("gender", flat=True))) == {
+        "female": 229,
+        "male": 260,
+        "other": 4,
+        "undisclosed": 7,
+    }
+    assert Employee.objects.filter(last_date__isnull=False).count() == 36
+    assert CompensationRecord.objects.count() == 1799
 
     for employee in Employee.objects.prefetch_related("compensation_records"):
         records = sorted(employee.compensation_records.all(), key=lambda r: r.effective_from)
@@ -65,7 +86,8 @@ def test_shares_and_invariants():
             assert records[-1].effective_to == employee.last_date + timedelta(days=1)
         assert [record.version for record in records] == list(range(1, len(records) + 1))
 
-    assert AuditLog.objects.count() == 500 + CompensationRecord.objects.count() + 16
+    # 500 create entries, 1,799 revise entries and 16 set_rate entries.
+    assert AuditLog.objects.count() == 2315
     assert set(AuditLog.objects.values_list("timestamp", flat=True)) == {
         profiles.REFERENCE_DATETIME
     }
@@ -81,6 +103,11 @@ def test_if_empty_skips_and_a_bare_rerun_is_refused():
     assert dump_hash() == hash_before
     with pytest.raises(CommandError, match="pass --reset"):
         seed(30)
+
+
+def test_reset_and_if_empty_exclude_each_other():
+    with pytest.raises(CommandError, match="exclude each other"):
+        seed(30, reset=True, if_empty=True)
 
 
 def test_a_reset_keeps_the_users_and_their_passwords():
@@ -111,3 +138,40 @@ def test_reset_demo_runs_the_fixed_seed(monkeypatch):
 
     assert calls == [(10000, 42, True)]
     assert "demo reset in 1.5 s" in out.getvalue()
+
+
+def test_a_failure_mid_seed_leaves_every_business_table_empty(monkeypatch):
+    monkeypatch.setattr(seed_module, "CHUNK", 10)
+    real_bulk_apply = seed_module.bulk_apply
+    calls = {"n": 0}
+
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("disk full")
+        return real_bulk_apply(*args, **kwargs)
+
+    monkeypatch.setattr(seed_module, "bulk_apply", flaky)
+
+    with pytest.raises(RuntimeError, match="disk full"):
+        seed(30)
+
+    assert calls["n"] == 2
+    assert Employee.objects.count() == 0
+    assert CompensationRecord.objects.count() == 0
+    assert AuditLog.objects.count() == 0
+    assert ExchangeRate.objects.count() == 0
+    assert Country.objects.count() == 0
+
+
+@pytest.mark.parametrize(
+    ("password", "message"),
+    [(None, "must be set"), ("password", "too weak"), ("12345678", "too weak")],
+)
+def test_a_missing_or_weak_seed_password_is_refused(settings, password, message):
+    settings.SEED_ADMIN_PASSWORD = password
+
+    with pytest.raises(CommandError, match=message):
+        seed(5)
+
+    assert Employee.objects.count() == 0

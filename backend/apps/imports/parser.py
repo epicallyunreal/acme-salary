@@ -34,7 +34,6 @@ ALIASES = {
     "employeecode": "EmployeeID",
     "employeeid": "EmployeeID",
     "empid": "EmployeeID",
-    "id": "EmployeeID",
 }
 
 

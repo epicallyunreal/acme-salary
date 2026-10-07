@@ -1,6 +1,6 @@
-# ACME Salary Management: Engineering Spec, v2.2
+# ACME Salary Management: Engineering Spec, v2.3
 
-Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D32). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
+Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D37). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
 
 ## 1. System overview
 
@@ -237,12 +237,12 @@ flowchart LR
 - Row actions: skip, unskip. Batch actions: approve, discard. A wrong value is fixed in the spreadsheet and re-uploaded. Inline cell editing is P1.
 - Approve applies valid and warning rows that are not skipped and not `noop`. If any error row remains unskipped, approve is refused with `409` and the count. Approve, skip, unskip and discard on a batch not in `review` are `409`.
 - Approve is one database transaction. The date and duplicate rules are re-run against the database inside it. All accepted rows apply or none do. On exception the batch becomes `failed` with `error_summary` and the rows are kept.
-- Audit: one entry per entity written with `import_batch` set, so a create row writes a `create` entry on the employee and a `revise` entry on the record, an identity-only row writes one `update` entry, a revise row writes one `revise` entry on the new record (its `before` is the previous record's snapshot). One `import_apply` entry is written on the batch itself with the counts in `after`.
+- Audit: one entry per entity written with `import_batch` set, so a create row writes a `create` entry on the employee and a `revise` entry on the record, an identity-only row writes one `update` entry, a revise row writes one `revise` entry on the new record (its `before` is the previous record's snapshot), and a row that changes identity fields or sets `last_date` as well as amounts writes its `update` or `exit` entry on the employee first and then the `revise` entry on the record, the same order as the API path. One `import_apply` entry is written on the batch itself with the counts in `after`.
 
 Acceptance:
 
 - [ ] `[test]` A batch with 3 error rows is refused on approve with `3 rows have errors`.
-- [ ] `[test]` With those 3 rows skipped, approve sets `approved`, `applied_rows` = total minus skipped minus no-ops, and audit entries equal 2 x created + updated + revised + 1 for the batch.
+- [ ] `[test]` With those 3 rows skipped, approve sets `approved`, `applied_rows` = total minus skipped minus no-ops, and audit entries equal 2 x created + updated + revised + (revised rows that also changed identity or set `last_date`) + 1 for the batch.
 - [ ] `[test]` A simulated failure mid-apply leaves zero partial employees or records and the batch is `failed`.
 - [ ] `[test]` Approving an approved batch returns `409`.
 
@@ -251,8 +251,9 @@ Acceptance:
 - Create an employee with identity fields, `bonus_annual` and the first record's lines, in one transaction. `employee_code` is assigned as the next `ACME-NNNNNN` when omitted. `effective_from` defaults to `joining_date`.
 - Edit identity fields. `employee_code` and `country_code` cannot change through the API (`400`).
 - Add a revision: `effective_from` after the latest record's, lines, `bonus_annual`, note. The service closes the previous open-ended record at the new `effective_from`, assigns the next `version`, recomputes totals.
-- Cancel a scheduled revision: allowed only while `effective_from > today`, else `409`. The service sets `cancelled_at` and `cancelled_by`, and the previous non-cancelled record's `effective_to` becomes the next non-cancelled scheduled record's `effective_from`, or `null`. Audit action `cancel` with the full record in `before` and the cancelled row in `after`.
+- Cancel a scheduled revision: allowed only while `effective_from > today`, else `409`. The service sets `cancelled_at` and `cancelled_by`, and the previous non-cancelled record's `effective_to` becomes the next non-cancelled scheduled record's `effective_from`, else `last_date + 1 day` when the employee has a `last_date`, else `null`. Audit action `cancel` with the full record in `before` and the cancelled row in `after`.
 - Exit: `last_date >= joining_date` and `last_date + 1 > effective_from` of the open record, else `400`. Already exited, or non-cancelled scheduled revisions after `last_date`, is `409` (cancel them first). Closes the open-ended record at `last_date + 1 day`. Undo exit is P1.
+- Revisions and exits: for an employee with a `last_date`, a revision dated after it is a `409`, and a revision dated on or before it is accepted and ends at `last_date + 1 day`. The same rule applies through the API, the import and the seed.
 - Detail shows the record current on the reporting date, or the latest record labelled "from <date>" or "exited <date>", the revision history newest first with version and note, and the audit list.
 - The same validators run for UI edits and imports.
 
@@ -350,6 +351,7 @@ One validator module, `compensation/validators.py`, called by the services for i
 | `last_date` set but non-cancelled scheduled revisions follow it | error | `scheduled revision on 2027-04-01 must be cancelled before exit` |
 | `effective_from` before `joining_date` | error | `effective_from precedes joining_date` |
 | `effective_from` not after the latest record | error | `effective_from must be after 2025-04-01 (latest record)` |
+| `effective_from` after the employee's `last_date` | error | `no revision after the exit on 2026-06-30` |
 | Amounts changed and `effective_from` blank (matched row) | error | `effective_from is required when amounts change` |
 | Component column not applicable to the country, non-blank (zero included) | error | `HRA is not a component for US` |
 | Amount negative or non-numeric | error | `BASE must be a non-negative number, got -5000` |
@@ -393,7 +395,7 @@ REST under `/api/v1/`, paths with a trailing slash, JSON, JWT bearer on every ro
 | GET | `/exports/employees/?file=csv&...filters` | same filters as the directory, `file` is `csv`, `xlsx` or `json` |
 | GET | `/exports/insights/{name}/?file=&...filters` | the insight's table |
 
-Errors: `400` with per-field messages, including a past-dated revision, a wrong upload extension or content type, and more than 10,000 data rows (`{"rows": "file has 10,450 data rows, limit 10,000"}`, counted while streaming since the sheet's dimension header cannot be trusted). `401` unauthenticated. `404` for unknown ids, insight names and template countries. `409` for batch state, double exit, cancelling a non-scheduled record. `413` upload over 10 MB. `429` login throttle. There is no `422`: a date before the first seeded rate uses the earliest rate (section 4 rule 4).
+Errors: `400` with per-field messages, including a past-dated revision, a wrong upload extension or content type, and more than 10,000 data rows (`{"rows": "file has 10,450 data rows, limit 10,000"}`, counted while streaming since the sheet's dimension header cannot be trusted). `401` unauthenticated. `404` for unknown ids, insight names and template countries. `409` for batch state, double exit, cancelling a non-scheduled record, a revision dated after an exit. `413` upload over 10 MB. `429` login throttle. There is no `422`: a date before the first seeded rate uses the earliest rate (section 4 rule 4).
 
 ## 9. Insights
 

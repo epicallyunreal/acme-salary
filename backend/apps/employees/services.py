@@ -16,7 +16,9 @@ from apps.compensation import validators
 from apps.compensation.models import Source
 from apps.core.dates import today_utc
 from apps.core.exceptions import Invalid
+from apps.employees.identity import apply_identity
 from apps.employees.models import Employee
+from apps.employees.queries import next_employee_code
 
 ONE_DAY = timedelta(days=1)
 
@@ -32,15 +34,6 @@ class Created:
 class Updated:
     employee: Employee
     warnings: list[validators.Message]
-
-
-def next_employee_code() -> str:
-    """The greatest existing code plus one. Codes are fixed-width, so text order is numeric."""
-    last = (
-        Employee.objects.order_by("-employee_code").values_list("employee_code", flat=True).first()
-    )
-    number = int(last.split("-")[1]) + 1 if last else 1
-    return f"ACME-{number:06d}"
 
 
 def create_employee(
@@ -108,17 +101,9 @@ def update_identity(
     ctx = validators.build_context(employees=[employee], emails=[changes.get("email")])
     warnings = validators.validate_identity(changes, ctx, employee=employee)
     with transaction.atomic():
-        shown = compensation.current_record(employee, ctx.today) or compensation.latest_record(
-            employee
-        )
+        shown = compensation.shown_record(employee, ctx.today)
         before = audit.snapshot_employee(employee, record=shown)
-        for name, value in changes.items():
-            if name == "department":
-                employee.department = ctx.department_for(value)
-            elif name == "email":
-                employee.email = value.lower()
-            elif name in validators.IDENTITY_FIELDS and name != "last_date":
-                setattr(employee, name, value)
+        apply_identity(employee, changes, ctx)
         employee.updated_at = at
         employee.save()
         audit.record(
@@ -147,7 +132,7 @@ def exit_employee(
     ctx = validators.build_context(employees=[employee], today=today)
     validators.validate_exit(employee, last_date, ctx)
     with transaction.atomic():
-        shown = compensation.current_record(employee, today) or compensation.latest_record(employee)
+        shown = compensation.shown_record(employee, today)
         before = audit.snapshot_employee(employee, record=shown)
         employee.last_date = last_date
         employee.updated_at = at

@@ -270,6 +270,46 @@ Decision: the `whitenoise[brotli]` extra, which adds the `brotli` codec and noth
 
 Consequences: `/assets/*.js` on the live site answers `Content-Encoding: br` to a brotli-capable client (215 KB to 57 KB) and gzip otherwise.
 
+## D33. Lookups and rates are seed data, not migrations, and a reset clears sqlite_sequence
+
+Context: the six countries, twelve departments, ten components and sixteen rates could have been data migrations. The determinism scope (SPEC section 11 rule 8) includes those tables, and reset_demo has to rebuild them byte for byte.
+
+Decision: `seed/lookups.py` creates them idempotently through `update_or_create` and `set_exchange_rate`, and `seed_data` and the test fixtures both call it. `--reset` deletes the business tables in dependency order through the ORM and then runs one parameterised `DELETE FROM sqlite_sequence WHERE name = %s` per table, the only raw SQL in the project.
+
+Consequences: migrations stay schema-only. A reseed restarts ids at 1, which the determinism test checks after `--reset`. The sixteen `set_rate` audit rows are part of the seed and of the hash.
+
+## D34. Audit snapshots are plain functions that mirror the serializers
+
+Context: SPEC F7 says before and after match the detail serializer. The seed writes about 46,000 audit rows, and a DRF serializer per row would eat the 60 s budget.
+
+Decision: `audit.snapshot_employee` and `audit.snapshot_record` build the dicts directly, taking in-memory lines for bulk writes, rendered JSON-safe by `core.money.render`. A test in step 4 asserts they equal the serializer output minus the request-dependent keys.
+
+Consequences: two places describe the shape, kept equal by a test. The 10,000-employee seed measured 10.0 s on the laptop.
+
+## D35. Seed parameters the spec left open
+
+Context: SPEC section 11 gives shares, anchors and multipliers but not rounding, jitter or name sources.
+
+Decision: base is rounded to the nearest 100 units of local currency, every component share is multiplied by a per-employee jitter drawn uniformly between 0.95 and 1.05, TAX is a share of gross by level band, amounts are whole units, the bonus share of base is drawn once per employee, raises compound, and the history keeps the joining record plus the three most recent raises with the joining record running until the first kept raise. Faker has no Singapore locale, so Singapore names come from en_US. Emails are `first.last.N@acme.example` folded to ASCII.
+
+Consequences: any change here changes the golden hash, and the commit that changes it regenerates `tests/seed/golden.txt` and says so.
+
+## D36. Readings made while building the validators and services
+
+Context: five points the spec is silent on surfaced while writing step 2.
+
+Decision: an import matches `department` by code or by name, case-insensitively, because the template is filled by hand. A changed `last_date` on an exited employee is the exit service's "already exited" conflict as a row error. For an employee with a `last_date`, a revision dated after it is a 409 (`no revision after the exit on <date>`) and one dated on or before it is allowed and ends at `last_date + 1`, the same rule through the API, the import and the seed; the owner confirmed this at the step 2 close and it is in SPEC F3, section 7 and section 8 (v2.3). A cancel that leaves no later live record re-chains the previous record to `last_date + 1` when the employee has one, so a scheduled exit never reopens pay; the owner found the bug at the step 2 close and SPEC F3 says so. In bulk, a row that changes identity fields or sets `last_date` as well as amounts writes its `update` or `exit` entry on the employee and then the `revise` entry on the record, the same order as the API path, as the owner decided; the batch counts do not change and SPEC F2's audit count carries the extra term. The parser's column constants live in `apps/imports/parser.py` from step 2 because `make_import_file` needs them, and the `timing` command's seed case lands in step 2 because `/perf-timing` asks for it at the close of any step that touches the seed.
+
+Consequences: one entry per entity written holds everywhere. The step 5 fixture includes one promotion row and one exit-with-raise row. The seed only creates, so neither answer changed the golden hash.
+
+## D37. The seed validates SEED_ADMIN_PASSWORD
+
+Context: the step 1 security review noted that `AUTH_PASSWORD_VALIDATORS` applied to nothing, since the only account is created by the seed. SPEC section 11 requires the variable in production and defaults it to `change-me` in development, and says nothing about strength.
+
+Decision: `seed_data` runs Django's `validate_password` on `SEED_ADMIN_PASSWORD` before writing anything: minimum length eight, not in the common-password list, not all digits. The minimum stays at eight so the development default is valid. The live secret was checked against the same validators before step 3's deploy.
+
+Consequences: a weak owner-chosen password fails the first boot at the entrypoint with a clear `CommandError` instead of fronting every salary row. The step 1 guard in `prod.py` already refuses the placeholders.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

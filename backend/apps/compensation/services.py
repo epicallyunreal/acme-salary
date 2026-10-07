@@ -22,7 +22,9 @@ from apps.core.dates import today_utc
 from apps.core.exceptions import Conflict, Invalid
 from apps.core.models import SalaryComponent
 from apps.core.money import q2
+from apps.employees.identity import apply_identity
 from apps.employees.models import Employee
+from apps.employees.queries import next_employee_code
 
 ZERO = Decimal("0")
 BATCH = 1000
@@ -211,12 +213,12 @@ def revise(
     at: datetime | None = None,
     ctx: validators.ValidationContext | None = None,
 ) -> Written:
-    """A new record dated after the latest; the previous open record closes at that date."""
+    """A new record dated after the latest; the previous open record closes at that date.
+
+    On an exited employee the revision must be dated on or before last_date (the validators
+    answer 409 otherwise) and the new record ends at last_date + 1 (D36).
+    """
     at = at or timezone.now()
-    if employee.last_date is not None:
-        raise Conflict(
-            f"employee exited on {employee.last_date.isoformat()}, no revision after an exit"
-        )
     ctx = ctx or validators.build_context(employees=[employee])
     warnings = validators.validate_record(
         ctx,
@@ -239,7 +241,7 @@ def revise(
             record,
             version=next_version(employee),
             effective_from=record.effective_from,
-            effective_to=None,
+            effective_to=employee.last_date + ONE_DAY if employee.last_date else None,
             components=components,
             actor=actor,
             source=source,
@@ -293,7 +295,14 @@ def cancel(
             .order_by("effective_from")
             .first()
         )
-        previous.effective_to = following.effective_from if following is not None else None
+        # Re-chain: the next live record's start, else the exit day plus one when the employee
+        # has a last_date (a scheduled exit must keep the history closed), else open-ended.
+        if following is not None:
+            previous.effective_to = following.effective_from
+        elif employee.last_date is not None:
+            previous.effective_to = employee.last_date + ONE_DAY
+        else:
+            previous.effective_to = None
         previous.save(update_fields=["effective_to"])
         audit.record(
             "cancel",
@@ -354,6 +363,10 @@ class Chained:
     effective_to: date | None
 
 
+# What a new record supersedes: a stored record (lines fetched later) or an in-memory one.
+Superseded = tuple[CompensationRecord, list[CompensationLine] | None]
+
+
 def chain_records(
     records: Sequence[RecordInput], *, joining_date: date, close_at: date | None
 ) -> list[Chained]:
@@ -385,9 +398,6 @@ def _validate_entries(entries: list[BulkEntry], ctx: validators.ValidationContex
                 validators.validate_identity(identity, ctx)
                 if not entry.records:
                     raise Invalid({"records": ["a new employee needs a first record"]})
-                last_date = identity.get("last_date")
-                if last_date is not None and last_date < identity["joining_date"]:
-                    raise Invalid({"last_date": ["last_date precedes joining_date"]})
                 for record in entry.records:
                     validators.validate_record(
                         ctx,
@@ -397,6 +407,7 @@ def _validate_entries(entries: list[BulkEntry], ctx: validators.ValidationContex
                         effective_from=record.effective_from,
                         bonus_annual=record.bonus_annual,
                         lines=record.lines,
+                        last_date=identity.get("last_date"),
                     )
             else:
                 employee = entry.employee
@@ -413,41 +424,12 @@ def _validate_entries(entries: list[BulkEntry], ctx: validators.ValidationContex
                         effective_from=record.effective_from,
                         bonus_annual=record.bonus_annual,
                         lines=record.lines,
+                        last_date=entry.last_date,
                     )
         except Invalid as exc:
             raise BulkInvalid(entry.ref, exc.errors) from exc
         except Conflict as exc:
             raise BulkInvalid(entry.ref, {"detail": [exc.detail]}) from exc
-
-
-def _next_code_number() -> int:
-    last = (
-        Employee.objects.order_by("-employee_code").values_list("employee_code", flat=True).first()
-    )
-    return int(last.split("-")[1]) + 1 if last else 1
-
-
-def _apply_identity(employee: Employee, values: Mapping[str, Any], ctx) -> None:
-    for name, value in values.items():
-        if name == "department":
-            employee.department = ctx.department_for(value)
-        elif name == "email":
-            employee.email = value.lower()
-        elif name in validators.IDENTITY_FIELDS and name != "last_date":
-            setattr(employee, name, value)
-
-
-def _record_for_snapshot(employee: Employee, ctx) -> CompensationRecord | None:
-    """The record the employee's detail shows: current today, else the latest live one."""
-    latest = ctx.latest_by_employee.get(employee.pk)
-    for record in (ctx.open_by_employee.get(employee.pk), latest):
-        if (
-            record is not None
-            and record.effective_from <= ctx.today
-            and (record.effective_to is None or record.effective_to > ctx.today)
-        ):
-            return record
-    return latest
 
 
 def _max_versions(employee_ids: list[int]) -> dict[int, int]:
@@ -514,7 +496,7 @@ def bulk_apply(
 
     with transaction.atomic():
         # 1. New employees.
-        next_number = _next_code_number()
+        next_number = int(next_employee_code().split("-")[1])
         new_employees: list[tuple[BulkEntry, Employee]] = []
         for entry in entries:
             if entry.employee is not None:
@@ -557,9 +539,9 @@ def bulk_apply(
             if not entry.identity_changes and entry.last_date is None:
                 continue
             before = audit.snapshot_employee(employee)
-            before_record = _record_for_snapshot(employee, ctx)
+            before_record = ctx.shown_record_for(employee)
             if entry.identity_changes:
-                _apply_identity(employee, entry.identity_changes, ctx)
+                apply_identity(employee, entry.identity_changes, ctx)
             employee.updated_at = at
             changed.append(employee)
             item = {"before": before, "record": before_record}
@@ -570,11 +552,12 @@ def bulk_apply(
                 result.by_ref.setdefault(
                     entry.ref, {"employee": employee, "record": None, "action": "exit"}
                 )
-            elif not entry.records:
-                # An identity-only row writes one `update` entry. A row that also revises writes
-                # only its `revise` entry (SPEC F2); the identity change rides in the same
-                # transaction.
-                result.updated.append(employee)
+            else:
+                # SPEC F2: an identity change writes an `update` entry on the employee, logged
+                # before the `revise` entry of any record the same row adds, as the API path
+                # does. Only identity-only rows count as updated for the batch.
+                if not entry.records:
+                    result.updated.append(employee)
                 employee_entries.append((entry, item, "update"))
                 result.by_ref.setdefault(
                     entry.ref, {"employee": employee, "record": None, "action": "update"}
@@ -598,9 +581,10 @@ def bulk_apply(
         # 3. Records: close what the new ones supersede, then insert the new ones.
         max_versions = _max_versions([entry.employee.pk for entry in entries])
         to_close: list[CompensationRecord] = []
+        original_end: dict[int, date | None] = {}
         closed_for_exit: dict[int, CompensationRecord] = {}
         new_rows: list[
-            tuple[BulkEntry, CompensationRecord, list[CompensationLine], CompensationRecord | None]
+            tuple[BulkEntry, CompensationRecord, list[CompensationLine], Superseded | None]
         ] = []
         for entry in entries:
             employee = entry.employee
@@ -611,6 +595,7 @@ def bulk_apply(
                 if entry.last_date is not None:
                     open_row = ctx.open_by_employee.get(employee.pk)
                     if open_row is not None:
+                        original_end[open_row.pk] = open_row.effective_to
                         open_row.effective_to = close_at
                         to_close.append(open_row)
                         closed_for_exit[employee.pk] = open_row
@@ -623,13 +608,12 @@ def bulk_apply(
                 raise BulkInvalid(entry.ref, {"effective_from": [str(exc)]}) from exc
             previous = None if is_new else ctx.latest_by_employee.get(employee.pk)
             if previous is not None:
+                original_end[previous.pk] = previous.effective_to
                 previous.effective_to = chained[0].effective_from
                 to_close.append(previous)
             components = ctx.components_for(employee.country_id)
             version = max_versions.get(employee.pk, 0)
-            # What each new record supersedes: the stored previous record for the first one, the
-            # in-memory prior record for the rest of a chain. Lines come with the in-memory one.
-            superseded = (previous, None) if previous is not None else None
+            superseded: Superseded | None = (previous, None) if previous is not None else None
             for item in chained:
                 version += 1
                 row, lines = _build_record(
@@ -655,18 +639,12 @@ def bulk_apply(
             all_lines.extend(lines)
         CompensationLine.objects.bulk_create(all_lines, batch_size=BATCH)
 
-        # 4. Audit, one entry per entity written, lines fetched in one query.
-        wanted_lines = [
-            superseded[0].pk
-            for _, _, _, superseded in new_rows
-            if superseded is not None and superseded[1] is None
-        ]
-        wanted_lines += [row.pk for row in closed_for_exit.values()]
-        wanted_lines += [
-            item["record"].pk for _, item, _ in employee_entries if item["record"] is not None
-        ]
-        stored_lines = _lines_by_record(wanted_lines)
-        first_rows = {}
+        # 4. Audit, one entry per entity written, stored lines fetched in one query.
+        wanted = [s[0].pk for _, _, _, s in new_rows if s is not None and s[1] is None]
+        wanted += [row.pk for row in closed_for_exit.values()]
+        wanted += [item["record"].pk for _, item, _ in employee_entries if item["record"]]
+        stored_lines = _lines_by_record(wanted)
+        first_rows: dict[int, tuple[CompensationRecord, list[CompensationLine]]] = {}
         for entry, row, lines, _ in new_rows:
             first_rows.setdefault(id(entry), (row, lines))
         to_log: list = []
@@ -692,9 +670,9 @@ def bulk_apply(
                 before["current_record"] = audit.snapshot_record(
                     before_record, stored_lines.get(before_record.pk)
                 )
-                if before_record in to_close:
-                    # The before snapshot shows the record as it was, still open-ended.
-                    before["current_record"]["effective_to"] = None
+                if before_record.pk in original_end:
+                    # As it was before this run closed it.
+                    before["current_record"]["effective_to"] = original_end[before_record.pk]
             after_record = closed_for_exit.get(employee.pk) or before_record
             after_lines = stored_lines.get(after_record.pk) if after_record is not None else None
             to_log.append(
@@ -714,10 +692,13 @@ def bulk_apply(
             if superseded is not None:
                 prior, prior_lines = superseded
                 if prior_lines is None:
-                    prior_lines = stored_lines.get(prior.pk)
-                before = audit.snapshot_record(prior, prior_lines)
-                # As the single path snapshots it: before the new record closed it.
-                before["effective_to"] = None
+                    before = audit.snapshot_record(prior, stored_lines.get(prior.pk))
+                    before["effective_to"] = original_end.get(prior.pk)
+                else:
+                    # An in-memory prior of the same chain: as the single path would have seen
+                    # it, still open-ended, before the next record closed it.
+                    before = audit.snapshot_record(prior, prior_lines)
+                    before["effective_to"] = None
             to_log.append(
                 audit.build(
                     "revise",

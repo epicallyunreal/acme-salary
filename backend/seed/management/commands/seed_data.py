@@ -43,13 +43,14 @@ def truncate_business_tables() -> None:
 
 
 def ensure_hr_manager(password: str):
+    """Create the one account when it is missing, in one write; an existing one keeps its
+    password, which is how reset_demo keeps the owner's."""
     user_model = get_user_model()
-    user, created = user_model.objects.get_or_create(
-        email=profiles.HR_MANAGER_EMAIL, defaults={"first_name": "HR", "last_name": "Manager"}
-    )
-    if created:
-        user.set_password(password)
-        user.save(update_fields=["password"])
+    user = user_model.objects.filter(email=profiles.HR_MANAGER_EMAIL).first()
+    if user is None:
+        user = user_model.objects.create_user(
+            profiles.HR_MANAGER_EMAIL, password, first_name="HR", last_name="Manager"
+        )
     return user
 
 

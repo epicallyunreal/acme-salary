@@ -72,12 +72,6 @@ def test_snapshot_record_reads_lines_in_component_order(record, hr_user):
     assert snapshot["bonus_annual"] == Decimal("5000.00")
 
 
-def test_snapshot_record_accepts_a_mapping_of_lines(record):
-    snapshot = audit.snapshot_record(record, {"BASE": Decimal("1")})
-
-    assert snapshot["lines"] == [{"component": "BASE", "annual_amount": Decimal("1")}]
-
-
 def test_snapshot_employee_shape(record):
     employee = record.employee
 

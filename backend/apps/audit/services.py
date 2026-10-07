@@ -66,25 +66,18 @@ def bulk_record(entries: Iterable[AuditLog]) -> int:
     return len(rows)
 
 
-def snapshot_record(record, lines: Iterable | Mapping[str, Any] | None = None) -> dict[str, Any]:
+def snapshot_record(record, lines: Iterable | None = None) -> dict[str, Any]:
     """The record as the detail serializer shows it, minus the request-dependent keys.
 
-    `lines` may be CompensationLine objects (saved or not, component loaded) or a mapping of
-    component code to amount; when omitted they are read from the database.
+    `lines` are CompensationLine objects (saved or not, component loaded); when omitted they are
+    read from the database.
     """
     if lines is None:
         lines = list(record.lines.select_related("component").order_by("component__sort_order"))
-    if isinstance(lines, Mapping):
-        line_items = [
-            {"component": code, "annual_amount": amount} for code, amount in lines.items()
-        ]
-    else:
-        line_items = [
-            {"component": line.component.code, "annual_amount": line.annual_amount}
-            for line in sorted(
-                lines, key=lambda line: (line.component.sort_order, line.component.code)
-            )
-        ]
+    line_items = [
+        {"component": line.component.code, "annual_amount": line.annual_amount}
+        for line in sorted(lines, key=lambda line: (line.component.sort_order, line.component.code))
+    ]
     return {
         "id": record.pk,
         "employee": record.employee_id,
@@ -108,7 +101,6 @@ def snapshot_record(record, lines: Iterable | Mapping[str, Any] | None = None) -
 
 def snapshot_employee(employee, record=None, lines=None) -> dict[str, Any]:
     """Identity as the detail serializer shows it, plus the shown record when one is given."""
-    shown = record
     return {
         "id": employee.pk,
         "employee_code": employee.employee_code,
@@ -127,7 +119,7 @@ def snapshot_employee(employee, record=None, lines=None) -> dict[str, Any]:
         "last_date": employee.last_date,
         "created_at": employee.created_at,
         "updated_at": employee.updated_at,
-        "current_record": snapshot_record(shown, lines) if shown is not None else None,
+        "current_record": snapshot_record(record, lines) if record is not None else None,
     }
 
 

@@ -5,9 +5,12 @@ from decimal import Decimal
 
 import pytest
 
+from apps.compensation import services
 from apps.compensation import validators as v
+from apps.compensation.services import RecordInput
 from apps.compensation.validators import NormalizedRow, build_context, validate_row
 from apps.core.exceptions import Conflict, Invalid
+from apps.employees import services as employees
 from tests.factories import CompensationRecordFactory, EmployeeFactory, department
 
 pytestmark = pytest.mark.django_db
@@ -40,6 +43,7 @@ INDIA_LINES = {
     "TAX": Decimal("478500"),
     "EMPLOYER_CONTRIBUTION": Decimal("174000"),
 }
+RAISED = {**INDIA_LINES, "BASE": Decimal("1500000")}
 
 
 def new_row(**overrides) -> NormalizedRow:
@@ -82,6 +86,10 @@ def assert_message(found, code, field, severity, text):
     assert (message.field, message.severity, message.message) == (field, severity, text)
 
 
+def record_input(effective_from, lines=INDIA_LINES) -> RecordInput:
+    return RecordInput(effective_from, Decimal("0"), "", lines)
+
+
 @pytest.fixture
 def existing(lookups):
     """ACME-000010, joined 2024-03-01, current record from 2025-04-01 with the India lines."""
@@ -97,6 +105,20 @@ def existing(lookups):
     )
     CompensationRecordFactory(employee=employee, effective_from=date(2025, 4, 1), lines=INDIA_LINES)
     return employee
+
+
+@pytest.fixture
+def with_scheduled(existing):
+    """`existing` with a revision scheduled for 2027-04-01, written by the service."""
+    services.revise(existing, record_input(date(2027, 4, 1), RAISED))
+    return existing
+
+
+@pytest.fixture
+def exited(existing):
+    """`existing` exited on 2026-06-30 through the service."""
+    employees.exit_employee(existing, date(2026, 6, 30))
+    return existing
 
 
 def matched_row(employee, **overrides) -> NormalizedRow:
@@ -139,9 +161,9 @@ def test_employee_code_must_match_the_pattern(lookups, code):
 
 
 def test_a_blank_code_is_allowed_when_the_server_assigns_it(lookups):
-    assert (
-        find(messages(new_row(employee_code=None, allow_blank_code=True)), "code_invalid") is None
-    )
+    found = messages(new_row(employee_code=None, allow_blank_code=True))
+
+    assert find(found, "code_invalid") is None
 
 
 @pytest.mark.parametrize("email", ["", "not-an-email", "a@b"])
@@ -242,6 +264,32 @@ def test_a_negative_amount_names_the_field_and_value(lookups):
     )
 
 
+def test_more_than_two_decimal_places_is_an_error(lookups):
+    amounts = dict(INDIA_LINES, BASE=Decimal("1450000.005"))
+
+    assert_message(
+        messages(new_row(amounts=amounts)),
+        "too_many_decimals",
+        "BASE",
+        "error",
+        "BASE has more than 2 decimal places",
+    )
+    assert (
+        find(
+            messages(new_row(amounts=dict(INDIA_LINES, BASE=Decimal("1450000.50")))),
+            "too_many_decimals",
+        )
+        is None
+    )
+    assert_message(
+        messages(new_row(bonus_annual=Decimal("0.001"))),
+        "too_many_decimals",
+        "bonus_annual",
+        "error",
+        "bonus_annual has more than 2 decimal places",
+    )
+
+
 def test_a_component_that_does_not_apply_to_the_country_is_an_error_even_at_zero(lookups):
     us = {"BASE": Decimal("100000"), "HRA": Decimal("0"), "TAX": Decimal("20000")}
 
@@ -253,10 +301,8 @@ def test_a_component_that_does_not_apply_to_the_country_is_an_error_even_at_zero
         "HRA is not a component for US",
     )
     blank = {"BASE": Decimal("100000"), "HRA": None}
-    assert (
-        find(messages(new_row(country_code="US", amounts=blank)), "component_not_applicable")
-        is None
-    )
+    found = messages(new_row(country_code="US", amounts=blank))
+    assert find(found, "component_not_applicable") is None
 
 
 # Identity references
@@ -274,8 +320,10 @@ def test_email_in_use_by_another_employee(existing):
 
 
 def test_country_cannot_change_through_import(existing):
+    row = matched_row(existing, country_code="US", amounts={"BASE": Decimal("100000")})
+
     assert_message(
-        messages(matched_row(existing, country_code="US", amounts={"BASE": Decimal("100000")})),
+        messages(row),
         "country_changed",
         "country_code",
         "error",
@@ -283,19 +331,16 @@ def test_country_cannot_change_through_import(existing):
     )
 
 
-def test_a_different_last_date_on_an_exited_employee_is_a_conflict(existing):
-    existing.last_date = date(2026, 6, 30)
-    existing.save()
-
+def test_a_different_last_date_on_an_exited_employee_is_a_conflict(exited):
     assert_message(
-        messages(matched_row(existing, last_date=date(2026, 7, 31))),
+        messages(matched_row(exited, last_date=date(2026, 7, 31))),
         "already_exited",
         "last_date",
         "error",
         "employee already exited on 2026-06-30",
     )
     assert (
-        find(messages(matched_row(existing, last_date=date(2026, 6, 30))), "already_exited") is None
+        find(messages(matched_row(exited, last_date=date(2026, 6, 30))), "already_exited") is None
     )
 
 
@@ -355,7 +400,7 @@ def test_an_identity_change_alone_is_not_a_noop_and_needs_no_effective_from(exis
 
 
 def test_changed_amounts_need_an_effective_from(existing):
-    row = matched_row(existing, amounts=dict(INDIA_LINES, BASE=Decimal("1500000")))
+    row = matched_row(existing, amounts=RAISED)
 
     found = messages(row)
 
@@ -387,23 +432,16 @@ def test_last_date_before_joining(lookups):
     )
 
 
-def test_last_date_before_a_scheduled_revision(existing):
-    current = existing.compensation_records.get()
-    current.effective_to = date(2027, 4, 1)
-    current.save()
-    CompensationRecordFactory(employee=existing, effective_from=date(2027, 4, 1), lines=INDIA_LINES)
-
+def test_last_date_before_a_scheduled_revision(with_scheduled):
     assert_message(
-        messages(matched_row(existing, last_date=date(2026, 12, 31))),
+        messages(matched_row(with_scheduled, last_date=date(2026, 12, 31))),
         "last_date_scheduled",
         "last_date",
         "error",
         "scheduled revision on 2027-04-01 must be cancelled before exit",
     )
-    assert (
-        find(messages(matched_row(existing, last_date=date(2027, 6, 30))), "last_date_scheduled")
-        is None
-    )
+    later = matched_row(with_scheduled, last_date=date(2027, 6, 30))
+    assert find(messages(later), "last_date_scheduled") is None
 
 
 def test_last_date_before_the_current_record(existing):
@@ -414,24 +452,19 @@ def test_last_date_before_the_current_record(existing):
         "error",
         "last_date precedes the current record (effective 2025-04-01)",
     )
-    assert (
-        find(messages(matched_row(existing, last_date=date(2025, 4, 1))), "last_date_before_record")
-        is None
-    )
+    same_day = matched_row(existing, last_date=date(2025, 4, 1))
+    assert find(messages(same_day), "last_date_before_record") is None
 
 
-def test_clearing_last_date_is_not_supported(existing):
-    existing.last_date = date(2026, 6, 30)
-    existing.save()
-
+def test_clearing_last_date_is_not_supported(exited):
     assert_message(
-        messages(matched_row(existing, last_date=None)),
+        messages(matched_row(exited, last_date=None)),
         "last_date_cleared",
         "last_date",
         "error",
         "clearing last_date is not supported by import",
     )
-    without_column = matched_row(existing, last_date=None, columns=TEMPLATE_COLUMNS - {"last_date"})
+    without_column = matched_row(exited, last_date=None, columns=TEMPLATE_COLUMNS - {"last_date"})
     assert find(messages(without_column), "last_date_cleared") is None
 
 
@@ -446,17 +479,27 @@ def test_effective_from_before_joining(lookups):
 
 
 def test_effective_from_must_be_after_the_latest_record(existing):
-    raised = dict(INDIA_LINES, BASE=Decimal("1500000"))
-
     assert_message(
-        messages(matched_row(existing, amounts=raised, effective_from=date(2025, 4, 1))),
+        messages(matched_row(existing, amounts=RAISED, effective_from=date(2025, 4, 1))),
         "effective_not_after_latest",
         "effective_from",
         "error",
         "effective_from must be after 2025-04-01 (latest record)",
     )
-    next_day = matched_row(existing, amounts=raised, effective_from=date(2025, 4, 2))
+    next_day = matched_row(existing, amounts=RAISED, effective_from=date(2025, 4, 2))
     assert find(messages(next_day), "effective_not_after_latest") is None
+
+
+def test_a_revision_after_the_exit_is_refused_and_one_before_it_is_allowed(exited):
+    assert_message(
+        messages(matched_row(exited, amounts=RAISED, effective_from=date(2026, 7, 1))),
+        "revision_after_exit",
+        "effective_from",
+        "error",
+        "no revision after the exit on 2026-06-30",
+    )
+    before = matched_row(exited, amounts=RAISED, effective_from=date(2026, 6, 1))
+    assert find(messages(before), "revision_after_exit") is None
 
 
 def test_a_new_employee_without_effective_from_gets_the_joining_date(lookups):
@@ -525,9 +568,8 @@ def test_warnings_are_skipped_when_a_matched_row_leaves_amounts_alone(lookups):
 def test_worst_severity():
     assert v.worst_severity([]) == "valid"
     assert v.worst_severity([v.info("x", "noop")]) == "valid"
-    assert (
-        v.worst_severity([v.warning("x", "deductions_exceed_gross"), v.info("x", "noop")])
-        == "warning"
+    assert v.worst_severity([v.warning("x", "deductions_exceed_gross"), v.info("x", "noop")]) == (
+        "warning"
     )
     assert (
         v.worst_severity([v.warning("x", "deductions_exceed_gross"), v.error("x", "base_required")])
@@ -559,6 +601,26 @@ def test_validate_identity_for_a_create_without_a_code(lookups):
         "email": ["email is not a valid address"],
         "level": ["level must be between 1 and 6"],
     }
+
+
+def test_validate_identity_checks_a_new_employees_last_date(lookups):
+    ctx = build_context()
+    identity = {
+        "full_name": "Asha Rao",
+        "email": "asha.rao@acme.example",
+        "department": "engineering",
+        "designation": "Engineer",
+        "level": 2,
+        "country_code": "IN",
+        "gender": "female",
+        "joining_date": date(2026, 11, 1),
+        "last_date": date(2026, 1, 1),
+    }
+
+    with pytest.raises(Invalid) as excinfo:
+        v.validate_identity(identity, ctx)
+
+    assert excinfo.value.errors == {"last_date": ["last_date precedes joining_date"]}
 
 
 def test_validate_identity_for_an_edit_checks_only_the_given_fields(existing):
@@ -596,30 +658,47 @@ def test_validate_record_for_a_first_record_and_a_revision(existing):
     }
 
 
+def test_validate_record_raises_a_conflict_for_a_revision_after_the_exit(exited):
+    ctx = build_context(employees=[exited])
+
+    with pytest.raises(Conflict, match="no revision after the exit on 2026-06-30"):
+        v.validate_record(
+            ctx,
+            employee=exited,
+            country_code="IN",
+            joining_date=exited.joining_date,
+            effective_from=date(2026, 7, 1),
+            bonus_annual=Decimal("0"),
+            lines=RAISED,
+        )
+
+
 def test_validate_exit_precedence(existing):
     ctx = build_context(employees=[existing])
 
     assert v.validate_exit(existing, date(2026, 10, 31), ctx) is None
-    with pytest.raises(Invalid):
+    with pytest.raises(Invalid) as before_joining:
         v.validate_exit(existing, date(2024, 1, 1), ctx)
-    with pytest.raises(Invalid):
+    assert before_joining.value.errors == {"last_date": ["last_date precedes joining_date"]}
+    with pytest.raises(Invalid) as before_record:
         v.validate_exit(existing, date(2025, 3, 15), ctx)
-
-    existing.last_date = date(2026, 6, 30)
-    existing.save()
-    ctx = build_context(employees=[existing])
-    with pytest.raises(Conflict, match="already exited on 2026-06-30"):
-        v.validate_exit(existing, date(2026, 7, 31), ctx)
+    assert before_record.value.errors == {
+        "last_date": ["last_date precedes the current record (effective 2025-04-01)"]
+    }
 
 
-def test_validate_exit_refuses_while_a_scheduled_revision_follows(existing):
-    current = existing.compensation_records.get()
-    current.effective_to = date(2027, 4, 1)
-    current.save()
-    CompensationRecordFactory(employee=existing, effective_from=date(2027, 4, 1), lines=INDIA_LINES)
-    ctx = build_context(employees=[existing])
+def test_validate_exit_refuses_an_exited_employee_whatever_the_date(exited):
+    ctx = build_context(employees=[exited])
+
+    for day in (date(2026, 7, 31), date(2026, 6, 30)):
+        with pytest.raises(Conflict, match="employee already exited on 2026-06-30"):
+            v.validate_exit(exited, day, ctx)
+
+
+def test_validate_exit_refuses_while_a_scheduled_revision_follows(with_scheduled):
+    ctx = build_context(employees=[with_scheduled])
 
     with pytest.raises(
         Conflict, match="scheduled revision on 2027-04-01 must be cancelled before exit"
     ):
-        v.validate_exit(existing, date(2026, 12, 31), ctx)
+        v.validate_exit(with_scheduled, date(2026, 12, 31), ctx)

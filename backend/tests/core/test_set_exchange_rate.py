@@ -85,17 +85,32 @@ def test_rate_must_be_positive_and_the_pair_distinct():
     with pytest.raises(Invalid) as excinfo:
         set_exchange_rate("USD", "USD", Decimal("0"), OCT)
 
-    assert set(excinfo.value.errors) == {"to_currency", "rate"}
+    assert excinfo.value.errors == {
+        "to_currency": ["to_currency must differ from from_currency"],
+        "rate": ["rate must be greater than 0"],
+    }
 
 
-def test_management_command_records_a_rate_and_reports_bad_input():
+def test_management_command_records_a_rate():
     out = StringIO()
+
     call_command(
         "set_exchange_rate", "INR", "USD", "0.012", "--effective-from", "2026-10-01", stdout=out
     )
 
     assert out.getvalue().strip() == "1 INR = 0.012 USD from 2026-10-01"
-    with pytest.raises(CommandError, match="effective_from"):
+    assert ExchangeRate.objects.get().rate == Decimal("0.012")
+
+
+def test_management_command_reports_a_rule_violation():
+    set_exchange_rate("INR", "USD", Decimal("0.012"), OCT)
+
+    with pytest.raises(CommandError, match="on or before the latest row 2026-10-01"):
         call_command("set_exchange_rate", "INR", "USD", "0.011", "--effective-from", "2026-09-01")
+
+
+def test_management_command_reports_bad_arguments():
     with pytest.raises(CommandError, match="bad argument"):
         call_command("set_exchange_rate", "INR", "USD", "x", "--effective-from", "2026-11-01")
+    with pytest.raises(CommandError, match="bad argument"):
+        call_command("set_exchange_rate", "INR", "USD", "0.1", "--effective-from", "next month")

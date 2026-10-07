@@ -27,6 +27,7 @@ MESSAGES = {
     "effective_before_joining": "effective_from precedes joining_date",
     "effective_not_after_latest": "effective_from must be after {date} (latest record)",
     "effective_required": "effective_from is required when amounts change",
+    "revision_after_exit": "no revision after the exit on {date}",
     "component_not_applicable": "{code} is not a component for {country}",
     "amount_invalid": "{field} must be a non-negative number, got {value}",
     "comma_decimal": "use a dot as the decimal separator, got {value}",

@@ -74,7 +74,7 @@ Commits:
 
 Hours: 6.5.
 
-Acceptance closed: SPEC F3 lines 261 to 267 at the service level (the API form of the same criteria closes in step 4); F7 line 312 at the service level; section 11 line 433 `[measured]` (seed under 60 s, one transaction, `--if-empty`, `--reset` clearing `sqlite_sequence`) and line 457 (determinism hash, golden file); section 7 lines 331 to 363 (every rule with a passing and a failing test); section 12 line 467 service rows.
+Acceptance closed: SPEC F3 lines 261 to 267 at the service level (the API form of the same criteria closes in step 4); F7 line 312 at the service level; section 11 line 433 `[measured]` (seed under 60 s, one transaction, `--if-empty`, `--reset` clearing `sqlite_sequence`) and line 457 (determinism hash, golden file); section 7 lines 331 to 363 (every rule with a passing and a failing test, except the rows the parser produces, lines 333 to 335, 346, 355 for non-numeric text, 356 and 357, which close with the parser in step 5); section 12 line 467 service rows.
 
 Risks: the biggest step and the one everything else stands on; if it runs long the owner sees it first (D23). `bulk_create` returning primary keys on SQLite is a Django-on-SQLite-3.35 behaviour and is asserted by a test on the first commit that needs it. The golden hash changes whenever `profiles.py` changes, which is expected during this step and settles at its close. Seed timing on a laptop is not Fly timing; the Fly number is recorded at the first boot in step 1 and again at step 8.
 
@@ -133,7 +133,7 @@ Goal: a 10,000-row template file is staged with per-row messages in under 30 s, 
 
 Files to create: `apps/imports/{parser,services,applier,template,serializers,views,urls}.py`, `tests/imports/{test_parser,test_staging,test_review,test_applier,test_template,test_api}.py`, `apps/core/management/commands/timing.py` import cases, `sample-data/acme-sample-50.xlsx` and `.csv`. Frontend: `src/api/imports.ts`, `src/components/imports/{UploadDropzone,BatchList,BatchSummaryStrip,RowMessagesCell,SkipToggle}.tsx`, `src/pages/{Imports,ImportReview}.tsx`, `columns.importRows`, fixtures and handlers; tests `Imports.test.tsx`, `ImportReview.test.tsx`.
 
-Tests: SPEC F1's eight criteria (the first `[measured]`) and F2's four, the decision table row by row, header aliases, the three number cases, the 10,001st row, the content-type and size rejections, skip and unskip restoring status, re-validation after a UI revision, the simulated failure; frontend: status filter calls the API with `status=`, Approve disabled with the reason, skip toggles a row and refetches the summary.
+Tests: SPEC F1's eight criteria (the first `[measured]`) and F2's four, the decision table row by row over a fixture that includes a promotion row (identity and amounts) and an exit-with-raise row so F2's audit count is exercised in full, header aliases, the three number cases, the 10,001st row, the content-type and size rejections, skip and unskip restoring status, re-validation after a UI revision, the simulated failure; frontend: status filter calls the API with `status=`, Approve disabled with the reason, skip toggles a row and refetches the summary.
 
 Commits:
 

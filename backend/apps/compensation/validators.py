@@ -3,7 +3,8 @@
 Rules are small functions over a NormalizedRow and a ValidationContext, registered in RULES in the
 order SPEC F1 fixes: structure and types, identity references, duplicates within the file, amounts
 changed, no-op, date rules, then warnings. The import pipeline, the API services and the seed all
-call them; the rules themselves never touch the database, build_context() does that once.
+call them; the rules themselves never query, build_context() loads what they need once (the
+country medians lazily, on the first rule that asks).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from typing import Any, Literal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.validators import validate_email as django_validate_email
+from django.db.models import Q
 
 from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
@@ -99,6 +101,27 @@ class NormalizedRow:
     noop: bool = False
 
 
+def current_q(on: date) -> Q:
+    return Q(effective_from__lte=on) & (Q(effective_to__isnull=True) | Q(effective_to__gt=on))
+
+
+def active_q(on: date) -> Q:
+    return Q(employee__joining_date__lte=on) & (
+        Q(employee__last_date__isnull=True) | Q(employee__last_date__gte=on)
+    )
+
+
+def load_country_medians(on: date) -> dict[str, Decimal]:
+    """Median gross per country over the records current on `on`, for the ten-times warning."""
+    by_country: dict[str, list[Decimal]] = defaultdict(list)
+    population = CompensationRecord.objects.filter(cancelled_at__isnull=True).filter(
+        current_q(on) & active_q(on)
+    )
+    for country_code, gross in population.values_list("employee__country_id", "gross_annual"):
+        by_country[country_code].append(gross)
+    return {code: q2(Decimal(statistics.median(values))) for code, values in by_country.items()}
+
+
 @dataclass
 class ValidationContext:
     """Everything the rules need, loaded once. Rules read it and never query."""
@@ -111,12 +134,13 @@ class ValidationContext:
     email_owner: dict[str, str] = field(default_factory=dict)
     latest_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     open_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
+    current_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     scheduled_by_employee: dict[int, list[date]] = field(default_factory=dict)
     current_lines_by_employee: dict[int, dict[str, Decimal]] = field(default_factory=dict)
     current_bonus_by_employee: dict[int, Decimal] = field(default_factory=dict)
-    country_median_gross: dict[str, Decimal] = field(default_factory=dict)
     rows_of_code: dict[str, list[int]] = field(default_factory=dict)
     rows_of_email: dict[str, list[int]] = field(default_factory=dict)
+    _medians: dict[str, Decimal] | None = field(default=None, repr=False)
 
     def employee_for(self, row: NormalizedRow) -> Employee | None:
         if not row.employee_code:
@@ -130,6 +154,16 @@ class ValidationContext:
 
     def components_for(self, country_code: str | None) -> dict[str, SalaryComponent]:
         return self.components_by_country.get(country_code or "", {})
+
+    def shown_record_for(self, employee: Employee) -> CompensationRecord | None:
+        """Current today, else the latest live record: what the detail page shows."""
+        return self.current_by_employee.get(employee.pk) or self.latest_by_employee.get(employee.pk)
+
+    def median_gross_for(self, country_code: str) -> Decimal | None:
+        """Loaded on the first call, because only the bounds warning needs it."""
+        if self._medians is None:
+            self._medians = load_country_medians(self.today)
+        return self._medians.get(country_code)
 
 
 def build_context(
@@ -171,7 +205,10 @@ def build_context(
     matched = {employee.employee_code: employee for employee in employees}
     code_list = sorted(codes - set(matched))
     for start in range(0, len(code_list), CHUNK):
-        for employee in Employee.objects.filter(employee_code__in=code_list[start : start + CHUNK]):
+        found = Employee.objects.filter(
+            employee_code__in=code_list[start : start + CHUNK]
+        ).select_related("country", "department")
+        for employee in found:
             matched[employee.employee_code] = employee
     ctx.employees_by_code = matched
 
@@ -183,7 +220,6 @@ def build_context(
             ctx.email_owner[email.lower()] = code
 
     ids = [employee.pk for employee in matched.values()]
-    current_ids: dict[int, int] = {}
     for start in range(0, len(ids), CHUNK):
         records = CompensationRecord.objects.filter(
             employee_id__in=ids[start : start + CHUNK], cancelled_at__isnull=True
@@ -199,14 +235,15 @@ def build_context(
             if record.effective_from <= today and (
                 record.effective_to is None or record.effective_to > today
             ):
-                current_ids[record.employee_id] = record.pk
-                ctx.current_bonus_by_employee[record.employee_id] = record.bonus_annual
+                ctx.current_by_employee[record.employee_id] = record
     # A future joiner has no current record: the latest one stands in for the comparison.
-    for employee_id, record in ctx.latest_by_employee.items():
-        if employee_id not in current_ids:
-            current_ids[employee_id] = record.pk
-            ctx.current_bonus_by_employee[employee_id] = record.bonus_annual
-    record_to_employee = {record_id: employee_id for employee_id, record_id in current_ids.items()}
+    comparison = {
+        employee_id: ctx.current_by_employee.get(employee_id, latest)
+        for employee_id, latest in ctx.latest_by_employee.items()
+    }
+    record_to_employee = {record.pk: employee_id for employee_id, record in comparison.items()}
+    for employee_id, record in comparison.items():
+        ctx.current_bonus_by_employee[employee_id] = record.bonus_annual
     record_ids = list(record_to_employee)
     for start in range(0, len(record_ids), CHUNK):
         lines = CompensationLine.objects.filter(
@@ -217,19 +254,6 @@ def build_context(
                 amount
             )
 
-    by_country: dict[str, list[Decimal]] = defaultdict(list)
-    population = CompensationRecord.objects.filter(
-        cancelled_at__isnull=True,
-        effective_from__lte=today,
-        employee__joining_date__lte=today,
-    ).filter(models_q_current(today) & models_q_active(today))
-    for country_code, gross in population.values_list("employee__country_id", "gross_annual"):
-        by_country[country_code].append(gross)
-    ctx.country_median_gross = {
-        country_code: q2(Decimal(statistics.median(values)))
-        for country_code, values in by_country.items()
-    }
-
     for row in rows:
         if row.row_number is None:
             continue
@@ -238,20 +262,6 @@ def build_context(
         if row.email:
             ctx.rows_of_email.setdefault(row.email.lower(), []).append(row.row_number)
     return ctx
-
-
-def models_q_current(on: date):
-    from django.db.models import Q
-
-    return Q(effective_from__lte=on) & (Q(effective_to__isnull=True) | Q(effective_to__gt=on))
-
-
-def models_q_active(on: date):
-    from django.db.models import Q
-
-    return Q(employee__joining_date__lte=on) & (
-        Q(employee__last_date__isnull=True) | Q(employee__last_date__gte=on)
-    )
 
 
 # Rules. Each takes (row, ctx) and returns messages. Groups follow SPEC F1's order.
@@ -323,6 +333,21 @@ def check_amounts_non_negative(row: NormalizedRow, ctx: ValidationContext) -> li
         for code, value in row.amounts.items()
         if value is not None and value < ZERO
     ]
+
+
+def _too_precise(value: Decimal | None) -> bool:
+    return value is not None and value == value and value.as_tuple().exponent < -2
+
+
+def check_decimal_places(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    messages = [
+        error(code, "too_many_decimals", field=code)
+        for code, value in row.amounts.items()
+        if _too_precise(value)
+    ]
+    if _too_precise(row.bonus_annual):
+        messages.append(error("bonus_annual", "too_many_decimals", field="bonus_annual"))
+    return messages
 
 
 def check_components_applicable(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
@@ -530,6 +555,21 @@ def check_effective_from_after_latest(row: NormalizedRow, ctx: ValidationContext
     return []
 
 
+def check_revision_after_exit(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A revision dated after an exit would reopen a closed history (D36). One dated on or
+    before last_date is allowed and ends at last_date + 1."""
+    employee = ctx.employee_for(row)
+    if not row.amounts_changed or row.effective_from is None:
+        return []
+    if "last_date" in row.columns:
+        exit_day = row.last_date
+    else:
+        exit_day = employee.last_date if employee is not None else None
+    if exit_day is not None and row.effective_from > exit_day:
+        return [error("effective_from", "revision_after_exit", date=exit_day.isoformat())]
+    return []
+
+
 def check_effective_from_defaulted(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     if row.is_new and row.effective_from is None and row.joining_date is not None:
         return [info("effective_from", "effective_defaulted", date=row.joining_date.isoformat())]
@@ -583,7 +623,7 @@ def check_gross_vs_country_bounds(row: NormalizedRow, ctx: ValidationContext) ->
                 minimum=format_amount(country.min_gross_annual),
             )
         )
-    median = ctx.country_median_gross.get(country.code)
+    median = ctx.median_gross_for(country.code)
     if median and gross > median * TEN:
         messages.append(
             warning(
@@ -623,6 +663,7 @@ RULES: list[RuleSpec] = [
     rule(check_base_required, "structure", "import", "record"),
     rule(check_bonus_non_negative, "structure", "import", "record"),
     rule(check_amounts_non_negative, "structure", "import", "record"),
+    rule(check_decimal_places, "structure", "import", "record"),
     rule(check_components_applicable, "structure", "import", "record"),
     rule(check_email_in_use, "references", "import", "identity"),
     rule(check_country_unchanged, "references", "import", "identity"),
@@ -632,19 +673,20 @@ RULES: list[RuleSpec] = [
     rule(check_identity_changed, "changes", "import"),
     rule(check_amounts_changed, "changes", "import"),
     rule(check_noop, "noop", "import"),
-    rule(check_last_date_after_joining, "dates", "import", "exit"),
+    rule(check_last_date_after_joining, "dates", "import", "identity", "exit"),
     rule(check_last_date_vs_scheduled, "dates", "import", "exit"),
     rule(check_last_date_vs_open_record, "dates", "import", "exit"),
     rule(check_last_date_cleared, "dates", "import"),
     rule(check_effective_from_required, "dates", "import", "record"),
     rule(check_effective_from_after_joining, "dates", "import", "record"),
     rule(check_effective_from_after_latest, "dates", "import", "record"),
+    rule(check_revision_after_exit, "dates", "import", "record"),
     rule(check_effective_from_defaulted, "dates", "import", "record"),
     rule(check_deductions_exceed_gross, "warnings", "import", "record"),
     rule(check_gross_vs_country_bounds, "warnings", "import", "record"),
 ]
 
-CONFLICT_CODES = {"already_exited", "last_date_scheduled"}
+CONFLICT_CODES = {"already_exited", "last_date_scheduled", "revision_after_exit"}
 
 
 def run_rules(row: NormalizedRow, ctx: ValidationContext, scope: str) -> list[Message]:
@@ -684,7 +726,10 @@ def errors_of(messages: Iterable[Message]) -> dict[str, list[str]]:
 
 
 def raise_for_errors(messages: Sequence[Message]) -> list[Message]:
-    """Raise Invalid on any error, else return the warnings for the response."""
+    """Raise Conflict for a state conflict, Invalid for any other error, else return warnings."""
+    for message in messages:
+        if message.severity == "error" and message.code in CONFLICT_CODES:
+            raise Conflict(message.message)
     errors = errors_of(messages)
     if errors:
         raise Invalid(errors)
@@ -707,7 +752,7 @@ def row_from_identity(identity: Mapping[str, Any], employee: Employee | None) ->
         country_code=identity.get("country_code") or (employee.country_id if employee else None),
         gender=_or_existing(identity, "gender", employee),
         joining_date=_or_existing(identity, "joining_date", employee),
-        last_date=employee.last_date if employee else None,
+        last_date=identity.get("last_date") if employee is None else employee.last_date,
         columns=columns,
         present=frozenset(name for name in columns if identity.get(name) not in (None, "")),
         allow_blank_code=employee is None,
@@ -742,19 +787,23 @@ def row_from_record(
     effective_from: date | None,
     bonus_annual: Decimal,
     lines: Mapping[str, Decimal],
-    amounts_changed: bool = True,
+    last_date: date | None = None,
 ) -> NormalizedRow:
+    columns = {"effective_from", "bonus_annual", *lines}
+    if last_date is not None:
+        columns.add("last_date")
     row = NormalizedRow(
         employee_code=employee.employee_code if employee else None,
         country_code=country_code,
         joining_date=joining_date,
+        last_date=last_date,
         effective_from=effective_from,
         bonus_annual=bonus_annual,
         amounts=dict(lines),
-        columns=frozenset({"effective_from", "bonus_annual", *lines}),
+        columns=frozenset(columns),
         allow_blank_code=True,
     )
-    row.amounts_changed = amounts_changed
+    row.amounts_changed = True
     row.identity_changed = False
     return row
 
@@ -768,8 +817,12 @@ def validate_record(
     effective_from: date | None,
     bonus_annual: Decimal,
     lines: Mapping[str, Decimal],
+    last_date: date | None = None,
 ) -> list[Message]:
-    """A first record (employee None) or a revision. Raises Invalid, returns warnings."""
+    """A first record (employee None) or a revision. Raises Conflict or Invalid, returns warnings.
+
+    `last_date` is the exit date of a new employee whose history is being written in bulk.
+    """
     row = row_from_record(
         employee=employee,
         country_code=country_code,
@@ -777,12 +830,15 @@ def validate_record(
         effective_from=effective_from,
         bonus_annual=bonus_annual,
         lines=lines,
+        last_date=last_date,
     )
     return raise_for_errors(run_rules(row, ctx, "record"))
 
 
 def validate_exit(employee: Employee, last_date: date, ctx: ValidationContext) -> None:
     """Exit rules in F3's precedence. 409 for conflicts, 400 for the rest."""
+    if employee.last_date is not None:
+        raise Conflict(msg("already_exited", date=employee.last_date.isoformat()))
     row = NormalizedRow(
         employee_code=employee.employee_code,
         country_code=employee.country_id,

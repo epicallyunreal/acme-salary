@@ -181,11 +181,14 @@ def test_a_future_last_date_is_a_scheduled_exit(with_first, today):
     assert compensation.current_record(with_first, today) == record
 
 
-def test_a_second_exit_is_a_409(with_first):
+@pytest.mark.parametrize("again", [date(2026, 10, 31), date(2026, 9, 30)])
+def test_a_second_exit_is_a_409_even_with_the_same_date(with_first, again):
     services.exit_employee(with_first, date(2026, 9, 30))
 
     with pytest.raises(Conflict, match="employee already exited on 2026-09-30"):
-        services.exit_employee(with_first, date(2026, 10, 31))
+        services.exit_employee(with_first, again)
+
+    assert AuditLog.objects.filter(action="exit").count() == 1
 
 
 def test_a_last_date_before_joining_is_a_400(with_first):

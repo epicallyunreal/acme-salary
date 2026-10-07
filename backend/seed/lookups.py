@@ -6,7 +6,7 @@ reset_demo can rebuild everything in the determinism scope.
 
 from datetime import datetime
 
-from apps.core.models import Country, Department, SalaryComponent
+from apps.core.models import Country, Department, ExchangeRate, SalaryComponent
 from apps.core.services import set_exchange_rate
 from seed import profiles
 
@@ -38,11 +38,9 @@ def ensure_lookups() -> None:
 
 def ensure_rates(at: datetime | None = None) -> None:
     """The sixteen rows through the service, September before October, skipping rows that exist."""
-    existing = set()
-    from apps.core.models import ExchangeRate
-
-    for row in ExchangeRate.objects.values_list("from_currency", "to_currency", "effective_from"):
-        existing.add(row)
+    existing = set(
+        ExchangeRate.objects.values_list("from_currency", "to_currency", "effective_from")
+    )
     for from_currency, to_currency, effective_from, rate in profiles.RATES:
         if (from_currency, to_currency, effective_from) in existing:
             continue

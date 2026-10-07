@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import csv
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q
 from openpyxl import Workbook
+from openpyxl.cell import WriteOnlyCell
 
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core.models import SalaryComponent
@@ -70,7 +71,7 @@ def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list
         effective_from = None
         if index < raise_count:
             amounts = {
-                code: (amount * Decimal("1.05")).quantize(Decimal("1"))
+                code: (amount * Decimal("1.05")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
                 for code, amount in amounts.items()
             }
             effective_from = raise_date
@@ -150,7 +151,7 @@ def write_file(path: Path, columns: list[str], rows: list[dict]) -> None:
         sheet = workbook.create_sheet("employees")
         sheet.append(columns)
         for row in rows:
-            sheet.append([_cell(row.get(column)) for column in columns])
+            sheet.append([_xlsx_cell(sheet, row.get(column)) for column in columns])
         workbook.save(path)
     elif path.suffix.lower() == ".csv":
         with path.open("w", newline="", encoding="utf-8") as handle:
@@ -162,9 +163,13 @@ def write_file(path: Path, columns: list[str], rows: list[dict]) -> None:
         raise CommandError("--out must end in .xlsx or .csv")
 
 
-def _cell(value):
-    if isinstance(value, Decimal):
-        return float(value) if value != value.to_integral_value() else int(value)
+def _xlsx_cell(sheet, value):
+    """Numbers and dates as typed cells; every string as text, so a value that begins with `=`
+    is never written as a formula."""
+    if isinstance(value, str):
+        cell = WriteOnlyCell(sheet, value=value)
+        cell.data_type = "s"
+        return cell
     return value
 
 
