@@ -7,10 +7,8 @@ export const PAGE_SIZES = [25, 50, 100] as const;
 export const DEFAULT_PAGE_SIZE = 25;
 
 export const REPORTING_CURRENCIES = ['usd', 'eur', 'local'] as const;
-export type ReportingCurrency = (typeof REPORTING_CURRENCIES)[number];
-
 export const EMPLOYEE_STATUSES = ['active', 'exited', 'upcoming'] as const;
-export type EmployeeStatus = (typeof EMPLOYEE_STATUSES)[number];
+export const LEVELS = [1, 2, 3, 4, 5, 6] as const;
 
 /** `apiUrl('/auth/me/')` is the absolute URL for the API path on the page's own origin. */
 export function apiUrl(path: string): string {

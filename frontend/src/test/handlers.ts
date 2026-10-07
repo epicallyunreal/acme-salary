@@ -1,5 +1,8 @@
 import { http, HttpResponse } from 'msw/http';
 
+import { employeePage } from './fixtures/employees';
+import { countries, departments } from './fixtures/meta';
+
 // One handler per API route the app calls. Each step adds its routes with realistic fixtures.
 // Paths are relative, so MSW resolves them against the test page's origin.
 
@@ -41,7 +44,23 @@ export const authHandlers = [
   ),
 ];
 
+/** Guarded like the real API: no bearer, no data. */
+function authenticated(request: Request, body: Parameters<typeof HttpResponse.json>[0]) {
+  return hasAccessToken(request) ? HttpResponse.json(body) : unauthorized();
+}
+
+export const metaHandlers = [
+  http.get('/api/v1/meta/countries/', ({ request }) => authenticated(request, countries)),
+  http.get('/api/v1/meta/departments/', ({ request }) => authenticated(request, departments)),
+];
+
+export const employeeHandlers = [
+  http.get('/api/v1/employees/', ({ request }) => authenticated(request, employeePage)),
+];
+
 export const handlers = [
   http.get('/healthz', () => HttpResponse.json({ status: 'ok' })),
   ...authHandlers,
+  ...metaHandlers,
+  ...employeeHandlers,
 ];
