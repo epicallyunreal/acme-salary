@@ -11,4 +11,7 @@ def test_healthz_is_public_and_makes_one_query(client, django_assert_num_queries
 
 
 def test_healthz_only_answers_get(client):
-    assert client.post("/healthz").status_code == 405
+    response = client.post("/healthz")
+
+    assert response.status_code == 405
+    assert response["Allow"] == "GET"

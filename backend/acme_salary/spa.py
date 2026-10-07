@@ -9,10 +9,12 @@ from pathlib import Path
 
 from django.conf import settings
 from django.http import Http404, HttpRequest, HttpResponse
+from django.views.decorators.http import require_safe
 
 
+@require_safe
 def spa_index(request: HttpRequest) -> HttpResponse:
-    spa_dir = getattr(settings, "SPA_DIR", None)
+    spa_dir = settings.SPA_DIR
     if not spa_dir:
         raise Http404("No SPA bundle is configured")
     index = Path(spa_dir) / "index.html"

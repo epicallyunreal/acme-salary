@@ -24,7 +24,8 @@ primary_region = 'sin'
   processes = ['app']
 
   [[http_service.checks]]
-    grace_period = '300s'
+    # Fly caps an HTTP service check grace at 60 s (SPEC section 14, D31).
+    grace_period = '60s'
     interval = '30s'
     method = 'GET'
     timeout = '10s'

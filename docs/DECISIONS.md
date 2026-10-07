@@ -254,6 +254,22 @@ Decision: `fly deploy` runs at the close of every step that adds a page (1, 3, 4
 
 Consequences: the live URL always shows the latest page at about five minutes per deploy. Commits stay fast. At the plan's estimates steps 1 to 4 close by 06:00 on 8 October and the rest by 20:30, which D23 accepts knowingly.
 
+## D31. Step 1 deploy: the health-check grace is 60 s, one volume, SQLite confirmed
+
+Context: the first `fly deploy` built the image but could not place a 1 GB machine on the host holding the volume (`insufficient resources to create new machine with existing volume 'data'`), and `fly config validate` warned that an HTTP service check grace period above one minute is lowered to one minute, so SPEC section 14's 300 s could not take effect.
+
+Decision: a second empty volume named `data` was created in `sin` and the machine launched on its host, as Fly's own message suggests, and the first, never-attached volume was destroyed so the app has exactly one machine and one volume. `fly.toml` says `grace_period = '60s'` to match the cap, SPEC section 14 says so, and there is no top-level `[checks]` entry. A failed check does not restart the machine, it only stops routing and makes `fly deploy` wait, so the seeded first boot, which happens once per volume, runs its deploy with `--wait-timeout 10m` and records the measured boot in PERFORMANCE. The live image runs SQLite 3.46.1 on Debian 13 with Python 3.14.8, above Django 6.1's 3.37 minimum.
+
+Consequences: later boots skip the seed and were healthy 6 s after init. The seed has no health-check budget to fit, only the deploy's wait. Owner's answer to the step 1 spec-checker question.
+
+## D32. whitenoise[brotli] for the pre-compressed bundle
+
+Context: SPEC section 14 ships assets gzip and brotli, and WhiteNoise's compressor writes `.br` files only when the `brotli` package is installed. Rule 9 asks for a line per runtime dependency.
+
+Decision: the `whitenoise[brotli]` extra, which adds the `brotli` codec and nothing else. It landed in commit ed03445 and this line in the step's closing commit, one commit late.
+
+Consequences: `/assets/*.js` on the live site answers `Content-Encoding: br` to a brotli-capable client (215 KB to 57 KB) and gzip otherwise.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.
