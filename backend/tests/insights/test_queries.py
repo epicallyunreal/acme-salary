@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 
 from apps.core import fx
+from apps.core import services as core_services
 from apps.core.exceptions import Invalid
 from apps.core.money import render
 from apps.employees import services as employees
@@ -88,7 +89,13 @@ def empty(*names):
     return [department_row(codes[name], name, 0, None, None, None) for name in names]
 
 
-EIGHT_EMPTY = empty("Data", "Design", "HR", "IT", "Legal", "Marketing", "Operations", "Product")
+FINANCE = department_row("finance", "Finance", 1, None, None, None)
+# After the groups that show a total: the withheld and the empty, in name order.
+THE_REST = [
+    *empty("Data", "Design"),
+    FINANCE,
+    *empty("HR", "IT", "Legal", "Marketing", "Operations", "Product"),
+]
 
 
 # summary
@@ -195,13 +202,13 @@ def test_summary(people, given, expected):
     assert insight("summary", **given) == expected
 
 
-def test_a_small_population_shows_its_headcount_and_total_cost_only(people):
-    """SPEC section 9: under five people, no mean or median, so no one's pay can be singled out."""
+def test_a_population_under_five_shows_its_headcount_alone(people):
+    """D59: a one-person total is that person's cost, read straight off the card."""
     assert insight("summary", country=["GB"]) == {
         "currency": "USD",
         "rate_month": USD_RATES,
         "headcount": 1,
-        "total_cost": "71250.00",
+        "total_cost": None,
         "mean_gross": None,
         "median_gross": None,
         "countries": 1,
@@ -219,17 +226,17 @@ def test_a_small_population_shows_its_headcount_and_total_cost_only(people):
             {},
             [
                 country_row("US", "United States", 10, "1595000.00", "145000.00", "65.5"),
-                country_row("DE", "Germany", 4, "450000.00", None, "18.5"),
                 country_row("IN", "India", 12, "319200.00", "23750.00", "13.1"),
-                country_row("GB", "United Kingdom", 1, "71250.00", None, "2.9"),
+                country_row("DE", "Germany", 4, None, None, None),
                 *NOBODY_IN,
+                country_row("GB", "United Kingdom", 1, None, None, None),
             ],
         ),
         (
             {"country": ["IN", "GB"]},
             [
                 country_row("IN", "India", 12, "319200.00", "23750.00", "81.8"),
-                country_row("GB", "United Kingdom", 1, "71250.00", None, "18.2"),
+                country_row("GB", "United Kingdom", 1, None, None, None),
             ],
         ),
         (
@@ -246,10 +253,10 @@ def test_a_small_population_shows_its_headcount_and_total_cost_only(people):
             {"include_exited": True},
             [
                 country_row("US", "United States", 11, "1727000.00", "140000.00", "67.1"),
-                country_row("DE", "Germany", 4, "450000.00", None, "17.5"),
                 country_row("IN", "India", 13, "326200.00", "22500.00", "12.7"),
-                country_row("GB", "United Kingdom", 1, "71250.00", None, "2.8"),
+                country_row("DE", "Germany", 4, None, None, None),
                 *NOBODY_IN,
+                country_row("GB", "United Kingdom", 1, None, None, None),
             ],
         ),
         (
@@ -258,18 +265,18 @@ def test_a_small_population_shows_its_headcount_and_total_cost_only(people):
                 country_row("US", "United States", 10, "1628000.00", "145000.00", "62.2"),
                 country_row("DE", "Germany", 5, "600000.00", "100000.00", "22.9"),
                 country_row("IN", "India", 12, "319200.00", "23750.00", "12.2"),
-                country_row("GB", "United Kingdom", 1, "71250.00", None, "2.7"),
                 *NOBODY_IN,
+                country_row("GB", "United Kingdom", 1, None, None, None),
             ],
         ),
         (
             {"currency": "eur"},
             [
                 country_row("US", "United States", 10, "1276000.00", "116000.00", "65.5"),
-                country_row("DE", "Germany", 4, "360000.00", None, "18.5"),
                 country_row("IN", "India", 12, "255360.00", "19000.00", "13.1"),
-                country_row("GB", "United Kingdom", 1, "57000.00", None, "2.9"),
+                country_row("DE", "Germany", 4, None, None, None),
                 *NOBODY_IN,
+                country_row("GB", "United Kingdom", 1, None, None, None),
             ],
         ),
         (
@@ -299,8 +306,7 @@ def test_by_country(people, given, rows):
                 department_row(
                     "customer-support", "Customer Support", 6, "210000.00", "31250.00", "31250.00"
                 ),
-                department_row("finance", "Finance", 1, "71250.00", None, None),
-                *EIGHT_EMPTY,
+                *THE_REST,
             ],
         ),
         (
@@ -320,7 +326,7 @@ def test_by_country(people, given, rows):
                 department_row(
                     "engineering", "Engineering", 15, "1219200.00", "71500.00", "87500.00"
                 ),
-                department_row("finance", "Finance", 1, "71250.00", None, None),
+                FINANCE,
             ],
         ),
         (
@@ -333,8 +339,7 @@ def test_by_country(people, given, rows):
                 department_row(
                     "customer-support", "Customer Support", 7, "217000.00", "27678.57", "30000.00"
                 ),
-                department_row("finance", "Finance", 1, "71250.00", None, None),
-                *EIGHT_EMPTY,
+                *THE_REST,
             ],
         ),
         (
@@ -347,8 +352,7 @@ def test_by_country(people, given, rows):
                 department_row(
                     "customer-support", "Customer Support", 6, "210000.00", "31250.00", "31250.00"
                 ),
-                department_row("finance", "Finance", 1, "71250.00", None, None),
-                *EIGHT_EMPTY,
+                *THE_REST,
             ],
         ),
         (
@@ -361,16 +365,17 @@ def test_by_country(people, given, rows):
                 department_row(
                     "customer-support", "Customer Support", 6, "168000.00", "25000.00", "25000.00"
                 ),
-                department_row("finance", "Finance", 1, "57000.00", None, None),
-                *EIGHT_EMPTY,
+                *THE_REST,
             ],
         ),
         (
+            # Germany's four engineers show their headcount alone, so nothing is ranked by cost.
             {"country": ["DE"], "currency": "local"},
             [
-                department_row("engineering", "Engineering", 4, "360000.00", None, None),
-                *empty("Customer Support", "Data", "Design", "Finance", "HR", "IT"),
-                *empty("Legal", "Marketing", "Operations", "Product", "Sales"),
+                *empty("Customer Support", "Data", "Design"),
+                department_row("engineering", "Engineering", 4, None, None, None),
+                *empty("Finance", "HR", "IT", "Legal", "Marketing", "Operations", "Product"),
+                *empty("Sales"),
             ],
         ),
     ],
@@ -392,14 +397,12 @@ def test_a_scheduled_revision_counts_from_its_date_and_not_before(people):
     """F3, the insights half (D42): U1's revision to 130,000 is scheduled for 2027-01-01, so it
     is not his record today, and is from that day."""
     u1 = people["U1"]
-    today = queries.population(filters()).get(employee=u1)
-    new_year = queries.population(filters(on=NEW_YEAR)).get(employee=u1)
+    grosses = [
+        queries.population(filters(on=on)).get(employee=u1).gross_annual
+        for on in (TODAY, date(2026, 12, 31), NEW_YEAR)
+    ]
 
-    assert (today.gross_annual, new_year.gross_annual) == (Decimal("100000"), Decimal("130000"))
-    assert (insight("summary")["headcount"], insight("summary", on=NEW_YEAR)["headcount"]) == (
-        27,
-        28,
-    )
+    assert grosses == [Decimal("100000"), Decimal("100000"), Decimal("130000")]
 
 
 def test_an_exit_counts_on_its_last_date_and_is_gone_the_day_after(people):
@@ -433,6 +436,80 @@ def test_an_employee_with_no_live_record_is_never_counted(people):
     assert insight("summary", include_exited=True)["headcount"] == 29
 
 
+def test_include_exited_counts_someone_who_left_once_at_their_last_record(people):
+    """SPEC section 9: a leaver counts at the last record, not once per record they ever had."""
+    z1 = EmployeeFactory(country=country("US"), last_date=date(2026, 3, 31))
+    for gross, starts, ends in (
+        (100_000, date(2024, 1, 1), date(2025, 4, 1)),
+        (110_000, date(2025, 4, 1), date(2026, 4, 1)),
+    ):
+        CompensationRecordFactory(
+            employee=z1, lines=us_lines(Decimal(gross)), effective_from=starts, effective_to=ends
+        )
+
+    counted = queries.population(filters(include_exited=True)).filter(employee=z1)
+
+    assert [record.gross_annual for record in counted] == [Decimal("110000")]
+    assert insight("summary", include_exited=True)["headcount"] == 30
+
+
+def test_nobody_in_the_filters_is_headcount_zero_and_nothing_else(people):
+    """The dashboard's empty state reads this: Legal has nobody."""
+    assert insight("summary", department=["legal"]) == {
+        "currency": "USD",
+        "rate_month": USD_RATES,
+        "headcount": 0,
+        "total_cost": None,
+        "mean_gross": None,
+        "median_gross": None,
+        "countries": 0,
+        "departments": 0,
+    }
+    assert insight("distribution", department=["legal"]) == headcount_only("USD", USD_RATES, 0)
+    assert insight("by-level", department=["legal"])["rows"] == [
+        level(number, 0) for number in range(1, 7)
+    ]
+
+
+def test_local_currency_is_labelled_local_even_when_the_toggle_offers_it_too(people):
+    """D58: US figures in local currency use no rate, so the label says local, not a rate month."""
+    assert insight("summary", country=["US"], currency="local") == {
+        "currency": "USD",
+        "rate_month": {"label": "local currency (USD)", "effective_from": None},
+        "headcount": 10,
+        "total_cost": "1595000.00",
+        "mean_gross": "145000.00",
+        "median_gross": "145000.00",
+        "countries": 1,
+        "departments": 2,
+    }
+
+
+def test_the_rates_are_those_of_the_reporting_date(people):
+    """INR to USD becomes 0.015 on 2027-01-01: India's figures and the rate month follow `on`."""
+    core_services.set_exchange_rate("INR", "USD", Decimal("0.015"), NEW_YEAR)
+
+    today = insight("summary", country=["IN"])
+    new_year = insight("summary", country=["IN"], on=NEW_YEAR)
+
+    assert (today["total_cost"], today["rate_month"]) == ("319200.00", USD_RATES)
+    assert new_year["rate_month"] == {"label": "January 2027 rates", "effective_from": "2027-01-01"}
+    assert (new_year["total_cost"], new_year["mean_gross"], new_year["median_gross"]) == (
+        "383040.00",
+        "28500.00",
+        "28500.00",
+    )
+
+
+def test_a_code_given_twice_is_one_group(people):
+    by_department = insight("by-department", department=["sales", "sales"])["rows"]
+
+    assert insight("by-country", country=["IN", "IN"])["rows"] == [
+        country_row("IN", "India", 12, "319200.00", "23750.00", "100.0")
+    ]
+    assert [row["department"]["code"] for row in by_department] == ["sales"]
+
+
 def test_an_unknown_country_or_department_is_refused_with_section_7s_words(people):
     with pytest.raises(Invalid) as excinfo:
         filters(country=["XX"], department=["growth"])
@@ -453,6 +530,18 @@ def bands(edges: list[str], top: str, counts: list[int]) -> list[dict]:
         {"index": index, "from": edges[index], "to": tops[index], "count": counts[index]}
         for index in range(12)
     ]
+
+
+def headcount_only(currency, rates, headcount):
+    return {
+        "currency": currency,
+        "rate_month": rates,
+        "headcount": headcount,
+        "p1": None,
+        "p99": None,
+        "bands": None,
+        "markers": None,
+    }
 
 
 def spread(currency, rates, headcount, p1, p99, markers, edges, counts):
@@ -486,31 +575,20 @@ def spread(currency, rates, headcount, p1, p99, markers, edges, counts):
         ),
         (
             {"country": ["US"]},
-            spread(
-                "USD",
-                USD_RATES,
-                10,
-                "100900.00",
-                "189100.00",
-                ("109000.00", "145000.00", "181000.00"),
-                ["100900.00", "108250.00", "115600.00", "122950.00", "130300.00", "137650.00"]
-                + ["145000.00", "152350.00", "159700.00", "167050.00", "174400.00", "181750.00"],
-                [1, 1, 1, 1, 0, 1, 1, 0, 1, 1, 1, 1],
-            ),
+            headcount_only("USD", USD_RATES, 10),
         ),
         (
-            # 170,000 sits exactly on band 6's lower edge and is counted in band 6.
-            {"department": ["sales"]},
+            {"department": ["engineering", "sales"]},
             spread(
                 "USD",
                 USD_RATES,
-                5,
-                "150400.00",
-                "189600.00",
-                ("154000.00", "170000.00", "186000.00"),
-                ["150400.00", "153666.67", "156933.33", "160200.00", "163466.67", "166733.33"]
-                + ["170000.00", "173266.67", "176533.33", "179800.00", "183066.67", "186333.33"],
-                [1, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1],
+                20,
+                "10475.00",
+                "188100.00",
+                ("14750.00", "105000.00", "171000.00"),
+                ["10475.00", "25277.08", "40079.17", "54881.25", "69683.33", "84485.42"]
+                + ["99287.50", "114089.58", "128891.67", "143693.75", "158495.83", "173297.92"],
+                [6, 0, 0, 0, 1, 1, 4, 1, 2, 1, 2, 2],
             ),
         ),
         (
@@ -557,18 +635,7 @@ def spread(currency, rates, headcount, p1, p99, markers, edges, counts):
         ),
         (
             {"country": ["IN"], "currency": "local"},
-            spread(
-                "INR",
-                {"label": "local currency (INR)", "effective_from": None},
-                12,
-                "822000.00",
-                "2978000.00",
-                ("1020000.00", "1900000.00", "2780000.00"),
-                ["822000.00", "1001666.67", "1181333.33", "1361000.00", "1540666.67"]
-                + ["1720333.33", "1900000.00", "2079666.67", "2259333.33", "2439000.00"]
-                + ["2618666.67", "2798333.33"],
-                [2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 2],
-            ),
+            headcount_only("INR", {"label": "local currency (INR)", "effective_from": None}, 12),
         ),
     ],
     ids=["no filter", "country", "department", "include_exited", "on", "eur", "local"],
@@ -577,32 +644,37 @@ def test_distribution(people, given, expected):
     assert insight("distribution", **given) == expected
 
 
-def test_a_distribution_whose_p1_is_its_p99_is_one_band(people):
-    """SPEC section 9: five people on one salary leave no width to split into twelve."""
-    for n in range(5):
-        CompensationRecordFactory(
-            employee=EmployeeFactory(country=country("NL"), full_name=f"N{n + 1}"),
-            lines={"BASE": Decimal(70_000)},
-            effective_from=date(2024, 1, 1),
-        )
+def test_a_distribution_needs_twenty_people_and_one_salary_is_one_band(people):
+    """D59: under twenty, the headcount alone. Twenty people on one salary leave no width to
+    split into twelve, so one band holds them all (SPEC section 9)."""
 
+    def hire(count):
+        for _ in range(count):
+            CompensationRecordFactory(
+                employee=EmployeeFactory(country=country("NL")),
+                lines={"BASE": Decimal(70_000)},
+                effective_from=date(2024, 1, 1),
+            )
+
+    hire(queries.SPREAD_GROUP - 1)
+    assert insight("distribution", country=["NL"]) == headcount_only("USD", USD_RATES, 19)
+
+    hire(1)
     result = insight("distribution", country=["NL"])
 
-    assert (result["headcount"], result["p1"], result["p99"]) == (5, "87500.00", "87500.00")
-    assert result["bands"] == [{"index": 0, "from": "87500.00", "to": "87500.00", "count": 5}]
+    assert (result["headcount"], result["p1"], result["p99"]) == (20, "87500.00", "87500.00")
+    assert result["bands"] == [{"index": 0, "from": "87500.00", "to": "87500.00", "count": 20}]
     assert result["markers"] == {"p10": "87500.00", "p50": "87500.00", "p90": "87500.00"}
 
 
-def test_a_distribution_of_under_five_people_is_its_headcount_alone(people):
-    result = insight("distribution", country=["GB"])
+def test_a_value_on_a_band_edge_lands_in_that_band():
+    """170,000 between p1 150,400 and p99 189,600 is exactly band 6's lower edge."""
+    low, high = Decimal("150400.00"), Decimal("189600.00")
 
-    assert [result[key] for key in ("headcount", "p1", "p99", "bands", "markers")] == [
-        1,
-        None,
-        None,
-        None,
-        None,
-    ]
+    assert queries.band_of(Decimal("170000.00"), low, high) == 6
+    assert queries.band_of(Decimal("169999.99"), low, high) == 5
+    assert queries.band_of(Decimal("100.00"), low, high) == 0
+    assert queries.band_of(Decimal("999999.00"), low, high) == 11
 
 
 def test_one_value_is_every_percentile():
@@ -613,7 +685,7 @@ def test_one_value_is_every_percentile():
 
 
 def level(number, headcount, *figures):
-    names = ("min", "p25", "median", "p75", "max")
+    names = ("p10", "p25", "median", "p75", "p90")
     return {
         "level": number,
         "headcount": headcount,
@@ -621,75 +693,53 @@ def level(number, headcount, *figures):
     }
 
 
-SAME_L2 = level(2, 6, "12500.00", "36250.00", "68750.00", "108750.00", "130000.00")
-SAME_L4 = level(4, 5, "17500.00", "32500.00", "100000.00", "160000.00", "170000.00")
-
-
 @pytest.mark.parametrize(
-    ("given", "rows"),
+    ("given", "headcounts"),
     [
-        (
-            # Level 3 has exactly five people, the boundary of the small-group rule.
-            {},
-            [
-                level(1, 4),
-                SAME_L2,
-                level(3, 5, "15000.00", "30000.00", "87500.00", "140000.00", "150000.00"),
-                SAME_L4,
-                level(5, 4),
-                level(6, 3),
-            ],
-        ),
-        (
-            {"country": ["US"]},
-            [level(1, 2), level(2, 2), level(3, 2), level(4, 2), level(5, 1), level(6, 1)],
-        ),
-        (
-            {"department": ["engineering"]},
-            [level(1, 3), level(2, 4), level(3, 3), level(4, 2), level(5, 2), level(6, 1)],
-        ),
-        (
-            {"include_exited": True},
-            [
-                level(1, 5, "6250.00", "10000.00", "25000.00", "100000.00", "110000.00"),
-                SAME_L2,
-                level(3, 6, "15000.00", "44375.00", "103750.00", "135000.00", "150000.00"),
-                SAME_L4,
-                level(5, 4),
-                level(6, 3),
-            ],
-        ),
-        (
-            {"on": NEW_YEAR},
-            [
-                level(1, 4),
-                SAME_L2,
-                level(3, 6, "15000.00", "44375.00", "106250.00", "136250.00", "150000.00"),
-                SAME_L4,
-                level(5, 4),
-                level(6, 3),
-            ],
-        ),
-        (
-            {"currency": "eur"},
-            [
-                level(1, 4),
-                level(2, 6, "10000.00", "29000.00", "55000.00", "87000.00", "104000.00"),
-                level(3, 5, "12000.00", "24000.00", "70000.00", "112000.00", "120000.00"),
-                level(4, 5, "14000.00", "26000.00", "80000.00", "128000.00", "136000.00"),
-                level(5, 4),
-                level(6, 3),
-            ],
-        ),
-        (
-            {"country": ["IN"], "currency": "local"},
-            [level(number, 2) for number in range(1, 7)],
-        ),
+        ({}, [4, 6, 5, 5, 4, 3]),
+        ({"country": ["US"]}, [2, 2, 2, 2, 1, 1]),
+        ({"department": ["engineering"]}, [3, 4, 3, 2, 2, 1]),
+        ({"include_exited": True}, [5, 6, 6, 5, 4, 3]),
+        ({"on": NEW_YEAR}, [4, 6, 6, 5, 4, 3]),
+        ({"currency": "eur"}, [4, 6, 5, 5, 4, 3]),
+        ({"country": ["IN"], "currency": "local"}, [2, 2, 2, 2, 2, 2]),
     ],
     ids=["no filter", "country", "department", "include_exited", "on", "eur", "local"],
 )
-def test_by_level(people, given, rows):
-    assert insight("by-level", **given)["rows"] == rows
+def test_by_level_shows_headcount_alone_under_twenty(people, given, headcounts):
+    """No level of DESIGN section 9's fixture reaches twenty, level 3's five included: at five,
+    the five figures were every salary in the level (D59)."""
+    rows = insight("by-level", **given)["rows"]
+
+    assert rows == [level(number, count) for number, count in enumerate(headcounts, start=1)]
+
+
+def test_a_level_of_twenty_shows_p10_to_p90_and_one_of_nineteen_its_headcount(people):
+    """D59, by the inclusive method: twenty Dutch salaries of 50,000 to 97,500 USD in steps of
+    2,500, so p10 sits at position 1.9, p25 at 4.75, the median at 9.5, p75 at 14.25, p90 at
+    17.1. Never min or max, each of which is one person's pay."""
+    assert (queries.SMALL_GROUP, queries.SPREAD_GROUP) == (5, 20)
+    for step in range(queries.SPREAD_GROUP):
+        CompensationRecordFactory(
+            employee=EmployeeFactory(country=country("NL"), level=1),
+            lines={"BASE": Decimal(40_000 + 2_000 * step)},
+            effective_from=date(2024, 1, 1),
+        )
+    for _ in range(queries.SPREAD_GROUP - 1):
+        CompensationRecordFactory(
+            employee=EmployeeFactory(country=country("NL"), level=2),
+            lines={"BASE": Decimal(60_000)},
+            effective_from=date(2024, 1, 1),
+        )
+
+    assert insight("by-level", country=["NL"])["rows"] == [
+        level(1, 20, "54750.00", "61875.00", "73750.00", "85625.00", "92750.00"),
+        level(2, 19),
+        level(3, 0),
+        level(4, 0),
+        level(5, 0),
+        level(6, 0),
+    ]
 
 
 # gender-gap
@@ -792,6 +842,14 @@ NOBODY_ELSE = [
 )
 def test_gender_gap(people, given, rows):
     assert insight("gender-gap", **given)["rows"] == rows
+
+
+def test_a_gap_needs_five_of_each_gender(people):
+    """Seven women and four men in Sales and Customer Support: the men's median and the gap are
+    withheld (SPEC section 9, either gender under five)."""
+    rows = insight("gender-gap", department=["sales", "customer-support"])["rows"]
+
+    assert rows[-1] == gap(None, None, 7, "160000.00", 4, None)
 
 
 def test_other_and_undisclosed_are_counted_never_given_a_median(people):

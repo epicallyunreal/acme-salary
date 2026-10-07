@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router';
 
 import { useEmployeeList } from '../api/employees';
+import { useCountries } from '../api/meta';
 import { FilterBar } from '../components/filters/FilterBar';
 import { useUrlFilters } from '../components/filters/useUrlFilters';
 import { DIRECTORY_HIDDEN_COLUMNS, directoryColumns } from '../components/grid/columns';
@@ -27,7 +28,15 @@ export function Employees() {
   const { page, page_size: pageSize, ordering, currency } = state;
   const paginationModel = useMemo(() => toPaginationModel(page, pageSize), [page, pageSize]);
   const sortModel = useMemo(() => toSortModel(ordering), [ordering]);
-  const columns = useMemo(() => directoryColumns(currency), [currency]);
+  const countries = useCountries();
+  const localCurrency =
+    currency === 'local'
+      ? countries.data?.find((country) => country.code === state.country[0])?.currency_code
+      : undefined;
+  const columns = useMemo(
+    () => directoryColumns(currency, localCurrency),
+    [currency, localCurrency],
+  );
   const params = toListParams({ paginationModel, sortModel, filters: state, search: state.search });
   const employees = useEmployeeList(params);
   const filtered = isFiltered(state);

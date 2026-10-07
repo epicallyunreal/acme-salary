@@ -24,7 +24,7 @@ class InsightView(APIView):
             lookups,
             country=parse_csv(params.get("country")),
             department=parse_csv(params.get("department")),
-            include_exited=parse_bool(params.get("include_exited")),
+            include_exited=parse_bool(params.get("include_exited"), name="include_exited"),
             on=parse_on(params.get("on")),
             currency=params.get("currency"),
         )

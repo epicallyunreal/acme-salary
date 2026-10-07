@@ -2,7 +2,7 @@
 
 from datetime import UTC, date, datetime
 
-from apps.core.exceptions import Invalid
+from apps.core.exceptions import Invalid, clip
 
 
 def today_utc() -> date:
@@ -15,7 +15,7 @@ def parse_on(value: str | None) -> date:
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
-        raise Invalid({"on": [f"on must be a date in YYYY-MM-DD form, got {value}"]}) from exc
+        raise Invalid({"on": [f"on must be a date in YYYY-MM-DD form, got {clip(value)}"]}) from exc
 
 
 def month_label(day: date) -> str:

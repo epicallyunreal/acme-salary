@@ -13,12 +13,13 @@ from decimal import Decimal
 from django.db.models import Case, DecimalField, Value, When
 
 from apps.core.dates import month_label as label_for_month
-from apps.core.exceptions import Invalid
+from apps.core.exceptions import Invalid, clip
 from apps.core.models import ExchangeRate
 from apps.core.money import q2
 
 USD = "USD"
 EUR = "EUR"
+LOCAL = "local"
 ONE = Decimal("1")
 
 
@@ -125,7 +126,7 @@ class RateTable:
     def month_label(self, to_currency: str) -> str:
         month = self.month_of(to_currency)
         if month is None:
-            return f"local currency ({to_currency})"
+            return local_label(to_currency)
         return f"{label_for_month(month)} rates"
 
     def rows(self) -> list[dict]:
@@ -138,6 +139,16 @@ class RateTable:
             }
             for _, rate in sorted(self._direct.items())
         ]
+
+
+def asks_local(currency: str | None) -> bool:
+    """Whether a request's `currency` asks for the one country's own currency."""
+    return (currency or "").strip().lower() == LOCAL
+
+
+def local_label(currency: str) -> str:
+    """What a page says when its figures are in a local currency, converted by no rate."""
+    return f"local currency ({currency})"
 
 
 def resolve_reporting_currency(
@@ -154,11 +165,11 @@ def resolve_reporting_currency(
         return USD
     if value == "eur":
         return EUR
-    if value == "local":
+    if value == LOCAL:
         if len(country_codes) != 1:
             raise Invalid({"currency": ["currency=local needs exactly one country in the filter"]})
         code = country_codes[0]
         if code not in currency_by_country:
-            raise Invalid({"country": [f"Unknown country_code: {code}"]})
+            raise Invalid({"country": [f"Unknown country_code: {clip(code)}"]})
         return currency_by_country[code]
-    raise Invalid({"currency": [f"currency must be usd, eur or local, got {currency}"]})
+    raise Invalid({"currency": [f"currency must be usd, eur or local, got {clip(currency)}"]})

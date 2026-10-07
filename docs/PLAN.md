@@ -181,7 +181,7 @@ Goal: any filtered directory view and any insight table downloads as CSV, XLSX o
 
 Files to create: `apps/exports/{writers,tables,views,urls}.py`, `tests/exports/{test_writers,test_api}.py`. Frontend: `src/api/exports.ts` (bearer fetch, blob, programmatic save), `src/components/ExportMenu.tsx` wired into the directory header and every insight card; tests `ExportMenu.test.tsx`.
 
-Tests: a filtered export has exactly the filtered rows across pages; the unfiltered directory export has 10,000 rows (`[measured]`, through the timing command on the seed); a name starting with `=` is escaped in CSV and XLSX; column order and headers; JSON shape; unknown insight 404; the export endpoints need auth (covered by the route-coverage test).
+Tests: a filtered export has exactly the filtered rows across pages; the unfiltered directory export has 10,000 rows (`[measured]`, through the timing command on the seed); a name starting with `=` is escaped in CSV and XLSX; column order and headers; JSON shape; unknown insight 404; a by-level export with a level under twenty people carries its headcount and empty figures, as the card does (D59); the export endpoints need auth (covered by the route-coverage test).
 
 Commits:
 

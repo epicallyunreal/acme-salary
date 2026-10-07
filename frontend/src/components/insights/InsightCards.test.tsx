@@ -1,4 +1,5 @@
 import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { JsonBodyType } from 'msw';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -53,7 +54,8 @@ function answer(name: string, payload: JsonBodyType) {
   server.use(http.get(`/api/v1/insights/${name}/`, () => HttpResponse.json(payload)));
 }
 
-const WITHHELD = 'fewer than 5 people';
+const UNDER_FIVE = 'fewer than 5 people';
+const UNDER_TWENTY = 'fewer than 20 people';
 
 describe('insight cards', () => {
   beforeEach(() => {
@@ -62,27 +64,33 @@ describe('insight cards', () => {
 
   it('the key figures show headcount, total cost, mean and median with their counts', async () => {
     renderWithProviders(<Kpis />);
+    const kpis = await screen.findByRole('region', { name: 'Key figures' });
 
-    expect(await screen.findByText('27')).toBeInTheDocument();
-    expect(screen.getByText('4 countries')).toBeInTheDocument();
-    expect(screen.getByText('2.4M').closest('p')).toHaveAttribute(
-      'title',
-      expect.stringMatching(/^USD\s2,435,450$/),
-    );
-    expect(screen.getByText('4 departments')).toBeInTheDocument();
-    expect(screen.getByText('80,463')).toBeInTheDocument();
-    expect(screen.getByText('75,000')).toBeInTheDocument();
+    expect(await within(kpis).findByText('27')).toBeInTheDocument();
+    expect(within(kpis).getByText('4 countries')).toBeInTheDocument();
+    expect(within(kpis).getByTitle(/^USD\s2,435,450$/)).toHaveTextContent('2.4M');
+    expect(within(kpis).getByText('4 departments')).toBeInTheDocument();
+    expect(within(kpis).getByText('80,463')).toBeInTheDocument();
+    expect(within(kpis).getByText('75,000')).toBeInTheDocument();
   });
 
-  it('the key figures withhold mean and median for a group under five', async () => {
-    answer('summary', { ...summary, headcount: 3, mean_gross: null, median_gross: null });
+  it('the key figures show a population under five by its headcount alone', async () => {
+    answer('summary', {
+      ...summary,
+      headcount: 3,
+      total_cost: null,
+      mean_gross: null,
+      median_gross: null,
+    });
     renderWithProviders(<Kpis />);
+    const kpis = await screen.findByRole('region', { name: 'Key figures' });
 
-    expect(await screen.findByText('3')).toBeInTheDocument();
-    expect(screen.getAllByText('Shown for 5 people or more')).toHaveLength(2);
+    expect(await within(kpis).findByText('3')).toBeInTheDocument();
+    expect(within(kpis).getAllByText('—')).toHaveLength(3);
+    expect(within(kpis).getAllByText('Shown for 5 people or more')).toHaveLength(3);
   });
 
-  it('by country lists every country, withholding the median of a small one', async () => {
+  it('by country lists every country, a small one by its headcount alone', async () => {
     renderWithProviders(<Countries />);
 
     expect(await row('Payroll by country', 'United States')).toEqual([
@@ -93,14 +101,17 @@ describe('insight cards', () => {
     ]);
     expect(await row('Payroll by country', 'Germany')).toEqual([
       '4',
-      'USD 450,000',
-      WITHHELD,
-      '18.5%',
+      UNDER_FIVE,
+      UNDER_FIVE,
+      UNDER_FIVE,
     ]);
     expect(await row('Payroll by country', 'Netherlands')).toEqual(['0', '—', '—', '—']);
+    expect(
+      screen.getByText('Not shown, fewer than 5 people: Germany, United Kingdom.'),
+    ).toBeInTheDocument();
   });
 
-  it('by department lists every department and names the empty ones', async () => {
+  it('by department lists every department and names the small and the empty ones', async () => {
     renderWithProviders(<Departments />);
 
     expect(await row('Payroll by department', 'Engineering')).toEqual([
@@ -111,11 +122,12 @@ describe('insight cards', () => {
     ]);
     expect(await row('Payroll by department', 'Finance')).toEqual([
       '1',
-      'USD 71,250',
-      WITHHELD,
-      WITHHELD,
+      UNDER_FIVE,
+      UNDER_FIVE,
+      UNDER_FIVE,
     ]);
     expect(await row('Payroll by department', 'Legal')).toEqual(['0', '—', '—', '—']);
+    expect(screen.getByText('Not shown, fewer than 5 people: Finance.')).toBeInTheDocument();
     expect(screen.getByText('Nobody in Legal.')).toBeInTheDocument();
   });
 
@@ -134,10 +146,13 @@ describe('insight cards', () => {
     expect(screen.getByText(/^p90 USD\s164,000$/)).toBeInTheDocument();
   });
 
-  it('the distribution of under five people says so', async () => {
+  it.each([
+    [12, 'Shown for 20 people or more; these filters match 12.'],
+    [0, 'Nobody matches these filters.'],
+  ])('a distribution of %i people says why it has no chart', async (headcount, message) => {
     answer('distribution', {
       ...distribution,
-      headcount: 1,
+      headcount,
       p1: null,
       p99: null,
       bands: null,
@@ -145,40 +160,45 @@ describe('insight cards', () => {
     });
     renderWithProviders(<Spread />);
 
-    expect(
-      await screen.findByText('Shown for 5 people or more; these filters match 1.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'Salary distribution' })).not.toBeInTheDocument();
   });
 
   it('a distribution of one salary is one sentence', async () => {
     answer('distribution', {
       ...distribution,
-      headcount: 5,
+      headcount: 20,
       p1: '87500.00',
       p99: '87500.00',
-      bands: [{ index: 0, from: '87500.00', to: '87500.00', count: 5 }],
+      bands: [{ index: 0, from: '87500.00', to: '87500.00', count: 20 }],
       markers: { p10: '87500.00', p50: '87500.00', p90: '87500.00' },
     });
     renderWithProviders(<Spread />);
 
     expect(
-      await screen.findByText(/^All 5 people in these filters earn USD\s87,500\.$/),
+      await screen.findByText(/^All 20 people in these filters earn USD\s87,500\.$/),
     ).toBeInTheDocument();
   });
 
-  it('by level gives the five figures, and names the levels it withholds', async () => {
+  it('by level gives p10 to p90 for twenty people, and names the levels it withholds', async () => {
     renderWithProviders(<Levels />);
 
-    expect(await row('Pay by level', 'Level 3')).toEqual([
-      '5',
-      'USD 15,000',
-      'USD 30,000',
-      'USD 87,500',
-      'USD 140,000',
-      'USD 150,000',
+    expect(await row('Pay by level', 'Level 1')).toEqual([
+      '20',
+      'USD 54,750',
+      'USD 61,875',
+      'USD 73,750',
+      'USD 85,625',
+      'USD 92,750',
     ]);
-    expect(await row('Pay by level', 'Level 1')).toEqual(['4', ...Array(5).fill(WITHHELD)]);
-    expect(screen.getByText('Not shown, fewer than 5 people: L1, L5, L6.')).toBeInTheDocument();
+    expect(await row('Pay by level', 'Level 2')).toEqual(['19', ...Array(5).fill(UNDER_TWENTY)]);
+    expect(
+      screen.getByText('Not shown, fewer than 20 people: L2, L3, L4, L5, L6.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Dot: median. Bar: p25 to p75. Whiskers: p10 to p90.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/\b(min|max|range)\b/i)).not.toBeInTheDocument();
   });
 
   it('the gender gap gives each country and overall, and why a gap is missing', async () => {
@@ -195,7 +215,7 @@ describe('insight cards', () => {
     ]);
     expect(await row('Gender pay gap', 'United States')).toEqual([
       '4',
-      WITHHELD,
+      UNDER_FIVE,
       '6',
       'USD 125,000',
       '0',
@@ -211,5 +231,26 @@ describe('insight cards', () => {
       '0',
       '37.5%',
     ]);
+  });
+
+  it('a card that fails to load says so, and its Retry loads it', async () => {
+    let failing = true;
+    server.use(
+      http.get('/api/v1/insights/by-country/', () =>
+        failing ? HttpResponse.json({ detail: 'down' }, { status: 500 }) : undefined,
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<Countries />);
+
+    expect(
+      await screen.findByText(
+        'Could not load the payroll by country. Check your connection and try again.',
+      ),
+    ).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('table', { name: 'Payroll by country' })).toBeInTheDocument();
   });
 });

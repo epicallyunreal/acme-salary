@@ -38,7 +38,17 @@ def parse_csv(value: str | None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def parse_bool(value: str | None, default: bool = False) -> bool:
+TRUE = frozenset({"1", "true", "yes", "on"})
+FALSE = frozenset({"0", "false", "no", "off"})
+
+
+def parse_bool(value: str | None, *, name: str, default: bool = False) -> bool:
+    """A query parameter that is true or false. Anything else is a 400, not a quiet false."""
     if value in (None, ""):
         return default
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    given = value.strip().lower()
+    if given in TRUE:
+        return True
+    if given in FALSE:
+        return False
+    raise Invalid({name: [f"{name} must be true or false"]})

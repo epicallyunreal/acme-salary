@@ -146,7 +146,7 @@ describe('Employees', () => {
     await user.click(await screen.findByRole('option', { name: 'Local' }));
 
     await waitFor(() => expect(seen.at(-1)?.get('currency')).toBe('local'));
-    expect(screen.getByText('Gross (local currency)')).toBeInTheDocument();
+    expect(await screen.findByText('Gross (INR)')).toBeInTheDocument();
 
     await user.click(screen.getByLabelText('Country'));
     await user.click(await screen.findByRole('option', { name: 'United States' }));
@@ -159,6 +159,48 @@ describe('Employees', () => {
     await user.click(screen.getByLabelText('Currency'));
     expect(await screen.findByRole('option', { name: 'EUR' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Local' })).not.toBeInTheDocument();
+  });
+
+  it('keeps local through a switch from India to Germany, and drops it for two countries', async () => {
+    const seen = recordRequests();
+    const user = userEvent.setup();
+    renderApp('/employees?country=IN&currency=local');
+    await rowsShown();
+    expect(await screen.findByText('Gross (INR)')).toBeInTheDocument();
+
+    // India to Germany in one visit to the menu: still one country, so local stays.
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(await screen.findByRole('option', { name: 'India' }));
+    await user.click(screen.getByRole('option', { name: 'Germany' }));
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(seen.at(-1)?.get('country')).toBe('DE'));
+    expect(seen.at(-1)?.get('currency')).toBe('local');
+    expect(await screen.findByText('Gross (EUR)')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(await screen.findByRole('option', { name: 'India' }));
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(seen.at(-1)?.get('country')).toBe('DE,IN'));
+    expect(seen.at(-1)?.has('currency')).toBe(false);
+    expect(await screen.findByText('Gross (USD)')).toBeInTheDocument();
+  });
+
+  it('drops local when no country is left', async () => {
+    const seen = recordRequests();
+    const user = userEvent.setup();
+    renderApp('/employees?country=DE&currency=local');
+    await rowsShown();
+    expect(await screen.findByText('Gross (EUR)')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(await screen.findByRole('option', { name: 'Germany' }));
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(seen.at(-1)?.has('country')).toBe(false));
+    expect(seen.at(-1)?.has('currency')).toBe(false);
+    expect(await screen.findByText('Gross (USD)')).toBeInTheDocument();
   });
 
   it('searches after a pause and sorts by the reporting gross', async () => {

@@ -124,6 +124,8 @@ def test_resolve_reporting_currency(currency, countries, expected):
         ("local", [], "currency=local needs exactly one country in the filter"),
         ("local", ["XX"], "Unknown country_code: XX"),
         ("gbp", [], "currency must be usd, eur or local, got gbp"),
+        ("g" * 4000, [], f"currency must be usd, eur or local, got {'g' * 63}\u2026"),
+        ("local", ["X" * 4000], f"Unknown country_code: {'X' * 63}\u2026"),
     ],
 )
 def test_resolve_reporting_currency_rejects(currency, countries, message):

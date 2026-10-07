@@ -26,7 +26,7 @@ import {
   SERIES,
   STILL,
 } from './chartTheme';
-import { money } from './figures';
+import { count, money } from './figures';
 import { ChartTable, ChartTooltip, InsightCard } from './InsightCard';
 
 type GenderGap = InsightPayloads['gender-gap'];
@@ -94,8 +94,8 @@ function GapChart({ data }: { data: GenderGap }) {
                 <ChartTooltip
                   title={item.label}
                   lines={[
-                    `Female: ${row.female.headcount}, median ${money(row.female.median_gross, currency, row.female.headcount)}`,
-                    `Male: ${row.male.headcount}, median ${money(row.male.median_gross, currency, row.male.headcount)}`,
+                    `Female: ${count(row.female.headcount)}, median ${money(row.female.median_gross, currency, row.female.headcount)}`,
+                    `Male: ${count(row.male.headcount)}, median ${money(row.male.median_gross, currency, row.male.headcount)}`,
                     `Gap ${item.gap}`,
                   ]}
                 />
@@ -129,12 +129,12 @@ function GapChart({ data }: { data: GenderGap }) {
         ]}
         rows={data.rows.map((row) => [
           row.country?.name ?? 'Overall',
-          row.female.headcount,
+          count(row.female.headcount),
           money(row.female.median_gross, currency, row.female.headcount),
-          row.male.headcount,
+          count(row.male.headcount),
           money(row.male.median_gross, currency, row.male.headcount),
-          row.other_count,
-          row.undisclosed_count,
+          count(row.other_count),
+          count(row.undisclosed_count),
           gap(row),
         ])}
       />

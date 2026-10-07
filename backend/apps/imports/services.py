@@ -19,10 +19,10 @@ from django.db import transaction
 from django.db.models import Count, Q
 
 from apps.compensation import validators
-from apps.compensation.messages import clip, msg
+from apps.compensation.messages import msg
 from apps.compensation.validators import NormalizedRow, ValidationContext
 from apps.core import queries as core_queries
-from apps.core.exceptions import Conflict, Invalid, PayloadTooLarge
+from apps.core.exceptions import Conflict, Invalid, PayloadTooLarge, clip
 from apps.employees.models import LEGACY_CODE_MAX
 from apps.imports import parser
 from apps.imports.models import ImportBatch, ImportRow

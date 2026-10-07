@@ -76,12 +76,27 @@ def test_an_insight_runs_a_fixed_number_of_queries(
     assert response.status_code == 200
 
 
+def test_on_reaches_the_query(api, people):
+    """The frozen today would hide a view that ignores `on`; on 2027-01-01 D5 has joined and U1's
+    revision is current (DESIGN section 9)."""
+    response = api.get(URL.format("summary"), {"on": "2027-01-01"})
+
+    assert (response.json()["headcount"], response.json()["total_cost"]) == (28, "2618450.00")
+
+
 def test_an_unknown_insight_is_a_404(api, people):
-    assert api.get(URL.format("top-earners")).status_code == 404
+    response = api.get(URL.format("top-earners"))
+
+    assert (response.status_code, response.json()) == (404, {"detail": "Not found."})
 
 
 def test_an_insight_needs_a_signed_in_user(anon, people):
-    assert anon.get(URL.format("summary")).status_code == 401
+    response = anon.get(URL.format("summary"))
+
+    assert (response.status_code, response.json()) == (
+        401,
+        {"detail": "Authentication credentials were not provided."},
+    )
 
 
 @pytest.mark.parametrize(
@@ -95,6 +110,11 @@ def test_an_insight_needs_a_signed_in_user(anon, people):
         ),
         ({"currency": "gbp"}, {"currency": ["currency must be usd, eur or local, got gbp"]}),
         ({"on": "07/10/2026"}, {"on": ["on must be a date in YYYY-MM-DD form, got 07/10/2026"]}),
+        (
+            {"currency": "g" * 1000},
+            {"currency": [f"currency must be usd, eur or local, got {'g' * 63}\u2026"]},
+        ),
+        ({"include_exited": "maybe"}, {"include_exited": ["include_exited must be true or false"]}),
     ],
 )
 def test_a_filter_that_names_nothing_is_a_400(api, people, params, errors):

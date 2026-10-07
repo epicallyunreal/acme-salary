@@ -4,6 +4,8 @@ The parser (step 5) and the rules in validators.py both format their text here, 
 worded the same wherever it is raised.
 """
 
+from apps.core.exceptions import clip
+
 MESSAGES = {
     "missing_column": "Missing required column: {column}",
     "unknown_column": "Ignored unknown column: {column}",
@@ -76,16 +78,6 @@ MESSAGES = {
 }
 
 
-# A message repeats at most this much of any value it names (D56): a sheet cell can be
-# 100,000 characters, and messages are stored on every staged row.
-ECHO_LIMIT = 64
-
-
-def clip(value: object, limit: int = ECHO_LIMIT) -> str:
-    """`value` as text, cut to `limit` characters with an ellipsis when it is longer."""
-    text = str(value)
-    return text if len(text) <= limit else f"{text[: limit - 1]}\u2026"
-
-
 def msg(key: str, **values) -> str:
+    """The message, each value in it cut by `clip` (D56)."""
     return MESSAGES[key].format(**{name: clip(value) for name, value in values.items()})

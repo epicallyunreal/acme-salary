@@ -1,11 +1,14 @@
 """The insights of SPEC section 9, each one read over one population (DESIGN 1.6).
 
 Sums and counts are aggregated per (group, currency) in SQL, converted in Python with the Decimal
-rate and quantised once. Medians convert every value first. Nothing converted is stored. A group
-of fewer than five people publishes its headcount and total cost only, so a filter that isolates
-one person never shows their pay.
+rate and quantised once. Medians convert every value first. Nothing converted is stored.
 
-TODO(step 7, exports): register each insight's table in apps/exports for /exports/insights/.
+Two thresholds keep one person's pay off a card, a screenshot or an export (D59). A group of fewer
+than five people shows its headcount alone, since a one-person total is that person's cost. The
+spread figures, by-level's p10 to p90 and the distribution's range, bands and markers, need
+twenty: at exactly five, by-level's five figures were every salary in the group.
+
+TODO(owner, step 7): register each insight's table in apps/exports for /exports/insights/.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ import math
 import statistics
 from collections import defaultdict
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -27,14 +30,18 @@ from apps.core import fx
 from apps.core.exceptions import Invalid
 from apps.core.models import Country, Department
 from apps.core.money import q1, q2
+from apps.employees.models import Gender
 
-SMALL_GROUP = 5  # SPEC section 9: under five people, headcount and total cost only
+SMALL_GROUP = 5  # under five people a group shows its headcount alone (SPEC section 9, D59)
+SPREAD_GROUP = 20  # under twenty, no percentile figures: each would be one person's pay (D59)
 BANDS = 12
 LEVELS = range(1, 7)
-GENDERS = ("female", "male", "other", "undisclosed")
+GENDERS = tuple(choice.value for choice in Gender)
 
 COUNTRY = "employee__country_id"
 DEPARTMENT = "employee__department__code"
+LEVEL = "employee__level"
+GENDER = "employee__gender"
 
 
 @dataclass(frozen=True)
@@ -73,7 +80,10 @@ def build_filters(
     currency: str | None,
 ) -> InsightFilters:
     """The filters a request names. A code that names nothing is refused with section 7's words,
-    since the per-country and per-department insights list every code in the filter."""
+    since the per-country and per-department insights list every code in the filter. A code given
+    twice is one group."""
+    country = tuple(dict.fromkeys(country))
+    department = tuple(dict.fromkeys(department))
     errors = {}
     if unknown := [code for code in country if code not in lookups.countries]:
         errors["country"] = [msg("country_unknown", value=code) for code in unknown]
@@ -81,10 +91,11 @@ def build_filters(
         errors["department"] = [msg("department_unknown", value=code) for code in unknown]
     if errors:
         raise Invalid(errors)
-    currencies = {code: c.currency_code for code, c in lookups.countries.items()}
-    reporting = fx.resolve_reporting_currency(currency, list(country), currencies)
-    local = (currency or "").strip().lower() == "local"
-    return InsightFilters(tuple(country), tuple(department), include_exited, on, reporting, local)
+    currency_by_country = {code: c.currency_code for code, c in lookups.countries.items()}
+    reporting = fx.resolve_reporting_currency(currency, list(country), currency_by_country)
+    return InsightFilters(
+        country, department, include_exited, on, reporting, fx.asks_local(currency)
+    )
 
 
 def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
@@ -122,7 +133,6 @@ class Group:
     headcount: int = 0
     total_cost: Decimal = Decimal(0)
     gross: Decimal = Decimal(0)
-    grosses: list[Decimal] = field(default_factory=list)  # each converted and quantised
 
 
 class Converter:
@@ -172,6 +182,13 @@ def median(values: list[Decimal]) -> Decimal | None:
     return q2(statistics.median(values)) if values else None
 
 
+def band_of(value: Decimal, low: Decimal, high: Decimal) -> int:
+    """`floor((v - p1) / width)` with `width = (p99 - p1) / 12`, multiplied out so a value on a
+    band's lower edge lands in that band, which a rounded width would miss. Values outside p1 to
+    p99 are clipped into the end bands."""
+    return min(max(math.floor((value - low) * BANDS / (high - low)), 0), BANDS - 1)
+
+
 def percentiles(values: list[Decimal]) -> list[Decimal]:
     """p1 to p99 by the inclusive method, p1 at index 0 and p99 at index 98. One value is every
     percentile (SPEC section 9); callers have already turned away an empty list."""
@@ -181,11 +198,13 @@ def percentiles(values: list[Decimal]) -> list[Decimal]:
 
 
 def published(group: Group, values: list[Decimal], *, mean: bool = False) -> dict:
-    """Headcount and total cost, then the mean and median for a group of five or more."""
-    shown = group.headcount >= SMALL_GROUP
+    """The headcount, then the total cost, mean and median for five people or more. A smaller group
+    shows its headcount alone (D59). The values are counted as well as the aggregate, in case a
+    write landed between the two queries."""
+    shown = group.headcount >= SMALL_GROUP and len(values) >= SMALL_GROUP
     figures = {
         "headcount": group.headcount,
-        "total_cost": q2(group.total_cost) if group.headcount else None,
+        "total_cost": q2(group.total_cost) if shown else None,
     }
     if mean:
         figures["mean_gross"] = q2(group.gross / group.headcount) if shown else None
@@ -196,7 +215,7 @@ def published(group: Group, values: list[Decimal], *, mean: bool = False) -> dic
 def header(f: InsightFilters, rates: fx.RateTable) -> dict:
     """The reporting currency and the month of its rates (D28). Local currency uses no rate."""
     if f.local:
-        rate_month = {"label": f"local currency ({f.currency})", "effective_from": None}
+        rate_month = {"label": fx.local_label(f.currency), "effective_from": None}
     else:
         rate_month = {
             "label": rates.month_label(f.currency),
@@ -206,7 +225,8 @@ def header(f: InsightFilters, rates: fx.RateTable) -> dict:
 
 
 def by_cost(row: dict, name: Callable[[dict], str]) -> tuple:
-    """Largest total cost first; groups with nobody last; equal costs by name."""
+    """Largest total cost first, equal costs by name. Groups that show their headcount alone follow
+    in name order, so the order never hints at a withheld total (D59)."""
     cost = row["total_cost"]
     return (cost is None, -(cost or 0), name(row))
 
@@ -263,7 +283,7 @@ def by_department(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> d
 
 def distribution(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
     """Question 4: gross in twelve equal bands from p1 to p99, values outside clipped into the end
-    bands, with p10, p50 and p90 marked. Nothing but the headcount for under five people."""
+    bands, with p10, p50 and p90 marked. The headcount alone for under twenty people (D59)."""
     values = grosses(f, rates)[()]
     payload = {
         **header(f, rates),
@@ -273,7 +293,7 @@ def distribution(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> di
         "bands": None,
         "markers": None,
     }
-    if len(values) < SMALL_GROUP:
+    if len(values) < SPREAD_GROUP:
         return payload
     points = percentiles(values)
     low, high = points[0], points[98]
@@ -285,10 +305,7 @@ def distribution(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> di
         return payload
     counts = [0] * BANDS
     for value in values:
-        # floor((v - p1) / width) with width = (p99 - p1) / 12, multiplied out so a value on a
-        # band's edge lands in that band rather than the one below.
-        band = math.floor((value - low) * BANDS / (high - low))
-        counts[min(max(band, 0), BANDS - 1)] += 1
+        counts[band_of(value, low, high)] += 1
     width = (high - low) / BANDS
     payload["bands"] = [
         {
@@ -303,24 +320,25 @@ def distribution(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> di
 
 
 def by_level(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
-    """Question 5: min, p25, median, p75 and max gross per level, for five people or more."""
-    values = grosses(f, rates, "employee__level")
+    """Question 5: p10, p25, median, p75 and p90 gross per level, for twenty people or more. No
+    min or max: each is one person's pay (D59)."""
+    values = grosses(f, rates, LEVEL)
     rows = []
     for level in LEVELS:
-        group = sorted(values.get((level,), []))
+        group = values.get((level,), [])
         row = {
             "level": level,
             "headcount": len(group),
-            "min": None,
+            "p10": None,
             "p25": None,
             "median": None,
             "p75": None,
-            "max": None,
+            "p90": None,
         }
-        if len(group) >= SMALL_GROUP:
+        if len(group) >= SPREAD_GROUP:
             points = percentiles(group)
             row.update(
-                min=group[0], p25=points[24], median=median(group), p75=points[74], max=group[-1]
+                p10=points[9], p25=points[24], median=median(group), p75=points[74], p90=points[89]
             )
         rows.append(row)
     return {**header(f, rates), "rows": rows}
@@ -355,7 +373,7 @@ def gap_row(country: dict | None, by_gender: dict[str, list[Decimal]]) -> dict:
 
 def gender_gap(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
     """Question 6: per country in the filter, in name order, then overall."""
-    values = grosses(f, rates, COUNTRY, "employee__gender")
+    values = grosses(f, rates, COUNTRY, GENDER)
     rows = []
     for code, country in lookups.countries.items():
         if not f.country or code in f.country:

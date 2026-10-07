@@ -20,10 +20,12 @@ import {
   CURSOR,
   GRID,
   MARKER,
+  plot,
   ROUND_TOP,
   SERIES,
   STILL,
 } from './chartTheme';
+import { SPREAD_GROUP } from './figures';
 import { ChartNote, ChartTable, ChartTooltip, InsightCard } from './InsightCard';
 
 const MARKERS = [
@@ -52,7 +54,7 @@ function Distribution({ data }: { data: DistributionInsight }) {
       <ChartNote>
         {data.headcount === 0
           ? 'Nobody matches these filters.'
-          : `Shown for 5 people or more; these filters match ${data.headcount}.`}
+          : `Shown for ${SPREAD_GROUP} people or more; these filters match ${data.headcount}.`}
       </ChartNote>
     );
   }
@@ -82,7 +84,7 @@ function Distribution({ data }: { data: DistributionInsight }) {
   // Recharts leaves the category gap on each side of a bar, so half of it makes the 2 px gap.
   const rows = bands.map((band) => ({
     band,
-    middle: (Number(band.from) + Number(band.to)) / 2,
+    middle: ((plot(band.from) ?? 0) + (plot(band.to) ?? 0)) / 2,
     count: band.count,
   }));
   return (
@@ -97,8 +99,8 @@ function Distribution({ data }: { data: DistributionInsight }) {
           <XAxis
             type="number"
             dataKey="middle"
-            domain={[Number(p1), Number(p99)]}
-            ticks={[Number(p1), Number(markers.p50), Number(p99)]}
+            domain={[plot(p1) ?? 0, plot(p99) ?? 0]}
+            ticks={[plot(p1) ?? 0, plot(markers.p50) ?? 0, plot(p99) ?? 0]}
             tickFormatter={compactTick(currency)}
             {...AXIS}
           />
@@ -120,7 +122,7 @@ function Distribution({ data }: { data: DistributionInsight }) {
           {MARKERS.map(([key, label]) => (
             <ReferenceLine
               key={key}
-              x={Number(markers[key])}
+              x={plot(markers[key]) ?? 0}
               stroke={MARKER}
               strokeDasharray="3 3"
               label={{ value: label, position: 'top', fill: MARKER, fontSize: 12 }}

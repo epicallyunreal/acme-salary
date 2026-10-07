@@ -1,10 +1,37 @@
-import { formatMoney } from '../../lib/money';
+import { formatAmount, formatMoney } from '../../lib/money';
 
-/** SPEC section 9 withholds pay for a group under five, so one person's pay never shows. */
-export const WITHHELD = 'fewer than 5 people';
+/** SPEC section 9 and D59: under five people a group shows its headcount alone, and the spread
+ * figures (p10 to p90, the distribution) need twenty. The API withholds the figures; these name
+ * the rule on screen. */
+export const SMALL_GROUP = 5;
+export const SPREAD_GROUP = 20;
+
+export function withheld(need: number = SMALL_GROUP): string {
+  return `fewer than ${need} people`;
+}
 
 /** A figure for a table: the amount, `—` for a group with nobody, or why it is withheld. */
-export function money(value: string | null, currency: string, headcount: number): string {
+export function money(
+  value: string | null,
+  currency: string,
+  headcount: number,
+  need: number = SMALL_GROUP,
+): string {
   if (value !== null) return formatMoney(value, currency);
-  return headcount === 0 ? '—' : WITHHELD;
+  return headcount === 0 ? '—' : withheld(need);
+}
+
+/** A share of total cost: `65.5%`, `—` for nobody, or why it is withheld. */
+export function share(value: string | null, headcount: number): string {
+  if (value !== null) return `${value}%`;
+  return headcount === 0 ? '—' : withheld();
+}
+
+export function people(count: number): string {
+  return `${formatAmount(String(count))} ${count === 1 ? 'person' : 'people'}`;
+}
+
+/** A headcount for a table cell, with thousands separators. */
+export function count(value: number): string {
+  return formatAmount(String(value));
 }

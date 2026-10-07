@@ -11,6 +11,16 @@ from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
 
+# A message repeats at most this much of any value it names (D56): a sheet cell can be
+# 100,000 characters, messages are stored on every staged row, and a 400 names what it refused.
+ECHO_LIMIT = 64
+
+
+def clip(value: object, limit: int = ECHO_LIMIT) -> str:
+    """`value` as text, cut to `limit` characters with an ellipsis when it is longer."""
+    text = str(value)
+    return text if len(text) <= limit else f"{text[: limit - 1]}\u2026"
+
 
 class DomainError(Exception):
     pass

@@ -10,7 +10,7 @@ export function RateMonthLabel({ rateMonth }: { rateMonth: RateMonth }) {
   const rates = useExchangeRates();
   const text = rateMonth.label.charAt(0).toUpperCase() + rateMonth.label.slice(1);
   const label = (
-    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+    <Typography component="span" variant="body2" sx={{ color: 'text.secondary' }}>
       {text}
     </Typography>
   );
@@ -19,6 +19,8 @@ export function RateMonthLabel({ rateMonth }: { rateMonth: RateMonth }) {
   return (
     <Box sx={{ mb: 3, display: 'inline-block' }}>
       <Tooltip
+        // The label stays the name; the rates describe it.
+        describeChild
         title={pairs.map((pair) => (
           <div key={`${pair.from_currency}-${pair.to_currency}`}>
             {pair.from_currency} to {pair.to_currency}: {formatRate(pair.rate)} from{' '}

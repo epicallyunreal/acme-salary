@@ -4,6 +4,7 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import type { SummaryInsight } from '../../api/types';
 import { formatAmount, formatCompactAmount, formatMoney } from '../../lib/money';
 import { ErrorState } from '../layout/ErrorState';
+import { SMALL_GROUP } from './figures';
 import { KpiCard } from './KpiCard';
 
 function counted(count: number, one: string, many: string): string {
@@ -34,9 +35,10 @@ export function KpiRow({ query }: { query: UseQueryResult<SummaryInsight> }) {
 
 function Figures({ summary }: { summary: SummaryInsight }) {
   const { currency, headcount } = summary;
-  const withheld = headcount > 0 && headcount < 5;
+  // The API withholds every money figure for a population under five (D59).
+  const withheld = headcount > 0 && summary.total_cost === null;
   const pay = (value: string | null) => (value === null ? '—' : formatAmount(value));
-  const payCaption = withheld ? 'Shown for 5 people or more' : undefined;
+  const payCaption = withheld ? `Shown for ${SMALL_GROUP} people or more` : undefined;
   return (
     <>
       <KpiCard
@@ -47,9 +49,15 @@ function Figures({ summary }: { summary: SummaryInsight }) {
       <KpiCard
         label="Total cost"
         currency={currency}
-        figure={summary.total_cost === null ? '0' : formatCompactAmount(summary.total_cost)}
+        figure={
+          summary.total_cost !== null
+            ? formatCompactAmount(summary.total_cost)
+            : withheld
+              ? '—'
+              : '0'
+        }
         exact={summary.total_cost === null ? undefined : formatMoney(summary.total_cost, currency)}
-        caption={counted(summary.departments, 'department', 'departments')}
+        caption={payCaption ?? counted(summary.departments, 'department', 'departments')}
       />
       <KpiCard
         label="Mean gross"

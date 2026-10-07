@@ -101,7 +101,14 @@ interface MultiSelectProps<T extends string | number> {
   width?: number;
 }
 
-export function MultiSelect<T extends string | number>({
+function sameItems<T>(a: T[], b: T[]): boolean {
+  return a.length === b.length && a.every((item) => b.includes(item));
+}
+
+/** A multiple select that reports its value when its menu closes, so a selection changed in
+ * several clicks is one filter change: India to Germany never passes through no country or two,
+ * which would reset a local currency (DESIGN section 6). */
+function MultiSelect<T extends string | number>({
   label,
   value,
   options,
@@ -110,6 +117,8 @@ export function MultiSelect<T extends string | number>({
 }: MultiSelectProps<T>) {
   const id = `filter-${label.toLowerCase().replace(/\s+/g, '-')}`;
   const names = new Map(options.map((option) => [option.value, option.label]));
+  const [draft, setDraft] = useState<T[] | null>(null);
+  const shown = draft ?? value;
   return (
     <FormControl sx={{ width }}>
       <InputLabel id={`${id}-label`}>{label}</InputLabel>
@@ -117,10 +126,15 @@ export function MultiSelect<T extends string | number>({
         labelId={`${id}-label`}
         id={id}
         multiple
-        value={value}
+        value={shown}
+        onOpen={() => setDraft(value)}
         onChange={(event: SelectChangeEvent<T[]>) => {
           const next = event.target.value;
-          onChange((typeof next === 'string' ? next.split(',') : next) as T[]);
+          setDraft((typeof next === 'string' ? next.split(',') : next) as T[]);
+        }}
+        onClose={() => {
+          if (draft !== null && !sameItems(draft, value)) onChange(draft);
+          setDraft(null);
         }}
         input={<OutlinedInput label={label} />}
         renderValue={(selected) =>
@@ -129,12 +143,47 @@ export function MultiSelect<T extends string | number>({
       >
         {options.map((option) => (
           <MenuItem key={String(option.value)} value={option.value}>
-            <Checkbox size="small" checked={value.includes(option.value)} />
+            <Checkbox size="small" checked={shown.includes(option.value)} />
             <ListItemText primary={option.label} />
           </MenuItem>
         ))}
       </Select>
     </FormControl>
+  );
+}
+
+interface CodeSelectProps {
+  value: string[];
+  onChange: (value: string[]) => void;
+}
+
+export function CountrySelect({ value, onChange }: CodeSelectProps) {
+  const countries = useCountries();
+  return (
+    <MultiSelect
+      label="Country"
+      value={value}
+      options={(countries.data ?? []).map((country) => ({
+        value: country.code,
+        label: country.name,
+      }))}
+      onChange={onChange}
+    />
+  );
+}
+
+export function DepartmentSelect({ value, onChange }: CodeSelectProps) {
+  const departments = useDepartments();
+  return (
+    <MultiSelect
+      label="Department"
+      value={value}
+      options={(departments.data ?? []).map((department) => ({
+        value: department.code,
+        label: department.name,
+      }))}
+      onChange={onChange}
+    />
   );
 }
 
@@ -146,8 +195,6 @@ const STATUS_LABELS: Record<EmployeeStatus, string> = {
 
 /** The directory's filters (SPEC F4). Every control writes straight to the URL state. */
 export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarProps) {
-  const countries = useCountries();
-  const departments = useDepartments();
   const localAllowed = filters.country.length === 1;
   const grossCurrency = filters.currency === 'local' ? 'local' : filters.currency.toUpperCase();
 
@@ -165,22 +212,9 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         delay={SEARCH_DELAY_MS}
         width={240}
       />
-      <MultiSelect
-        label="Country"
-        value={filters.country}
-        options={(countries.data ?? []).map((country) => ({
-          value: country.code,
-          label: country.name,
-        }))}
-        onChange={(country) => onChange({ country })}
-      />
-      <MultiSelect
-        label="Department"
+      <CountrySelect value={filters.country} onChange={(country) => onChange({ country })} />
+      <DepartmentSelect
         value={filters.department}
-        options={(departments.data ?? []).map((department) => ({
-          value: department.code,
-          label: department.name,
-        }))}
         onChange={(department) => onChange({ department })}
       />
       <CommitField
@@ -303,30 +337,15 @@ export function DashboardFilterBar({
   onReset,
   filtered,
 }: DashboardFilterBarProps) {
-  const countries = useCountries();
-  const departments = useDepartments();
   return (
     <Box
       component="section"
       aria-label="Filters"
       sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center', mb: 3 }}
     >
-      <MultiSelect
-        label="Country"
-        value={filters.country}
-        options={(countries.data ?? []).map((country) => ({
-          value: country.code,
-          label: country.name,
-        }))}
-        onChange={(country) => onChange({ country })}
-      />
-      <MultiSelect
-        label="Department"
+      <CountrySelect value={filters.country} onChange={(country) => onChange({ country })} />
+      <DepartmentSelect
         value={filters.department}
-        options={(departments.data ?? []).map((department) => ({
-          value: department.code,
-          label: department.name,
-        }))}
         onChange={(department) => onChange({ department })}
       />
       <CurrencySelect

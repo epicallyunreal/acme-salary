@@ -59,11 +59,12 @@ export const byCountry: InsightPayloads['by-country'] = {
   ...USD,
   rows: [
     country('US', 'United States', 10, '1595000.00', '145000.00', '65.5'),
-    country('DE', 'Germany', 4, '450000.00', null, '18.5'),
     country('IN', 'India', 12, '319200.00', '23750.00', '13.1'),
-    country('GB', 'United Kingdom', 1, '71250.00', null, '2.9'),
+    // Under five, a country shows its headcount alone (D59), then follows in name order.
+    country('DE', 'Germany', 4, null, null, null),
     country('NL', 'Netherlands', 0, null, null, null),
     country('SG', 'Singapore', 0, null, null, null),
+    country('GB', 'United Kingdom', 1, null, null, null),
   ],
 };
 
@@ -90,7 +91,7 @@ export const byDepartment: InsightPayloads['by-department'] = {
     department('engineering', 'Engineering', 15, '1219200.00', '71500.00', '87500.00'),
     department('sales', 'Sales', 5, '935000.00', '170000.00', '170000.00'),
     department('customer-support', 'Customer Support', 6, '210000.00', '31250.00', '31250.00'),
-    department('finance', 'Finance', 1, '71250.00', null, null),
+    department('finance', 'Finance', 1, null, null, null),
     department('legal', 'Legal', 0, null, null, null),
   ],
 };
@@ -130,17 +131,18 @@ function level(
   headcount: number,
   figures?: [string, string, string, string, string],
 ): LevelRow {
-  const [min, p25, median, p75, max] = figures ?? [null, null, null, null, null];
-  return { level: number, headcount, min, p25, median, p75, max };
+  const [p10, p25, median, p75, p90] = figures ?? [null, null, null, null, null];
+  return { level: number, headcount, p10, p25, median, p75, p90 };
 }
 
+/** Twenty people at level 1, the least D59 shows figures for; every other level is fewer. */
 export const byLevel: InsightPayloads['by-level'] = {
   ...USD,
   rows: [
-    level(1, 4),
-    level(2, 6, ['12500.00', '36250.00', '68750.00', '108750.00', '130000.00']),
-    level(3, 5, ['15000.00', '30000.00', '87500.00', '140000.00', '150000.00']),
-    level(4, 5, ['17500.00', '32500.00', '100000.00', '160000.00', '170000.00']),
+    level(1, 20, ['54750.00', '61875.00', '73750.00', '85625.00', '92750.00']),
+    level(2, 19),
+    level(3, 5),
+    level(4, 5),
     level(5, 4),
     level(6, 3),
   ],

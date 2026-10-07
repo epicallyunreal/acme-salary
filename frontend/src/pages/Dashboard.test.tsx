@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -38,6 +38,28 @@ function recordRequests() {
   return seen;
 }
 
+/** Answers every insight in the currency the request asks for, as the API would. */
+function answerInTheAskedCurrency() {
+  const local: Record<string, string> = { IN: 'INR', DE: 'EUR' };
+  server.use(
+    http.get('/api/v1/insights/:name/', ({ request, params }) => {
+      const query = new URL(request.url).searchParams;
+      const asked = query.get('currency') ?? 'usd';
+      const code = asked === 'local' ? local[query.get('country') ?? ''] : asked.toUpperCase();
+      const payload = insightFor(String(params.name), false) as Record<string, unknown>;
+      const rateMonth =
+        asked === 'local'
+          ? { label: `local currency (${code})`, effective_from: null }
+          : payload.rate_month;
+      return HttpResponse.json({ ...payload, currency: code, rate_month: rateMonth });
+    }),
+  );
+}
+
+async function keyFigures() {
+  return screen.findByRole('region', { name: 'Key figures' });
+}
+
 describe('Dashboard', () => {
   beforeEach(() => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
@@ -47,7 +69,7 @@ describe('Dashboard', () => {
     renderApp('/');
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
-    expect(await screen.findByText('27')).toBeInTheDocument();
+    expect(await within(await keyFigures()).findByText('27')).toBeInTheDocument();
     expect(screen.getByText('October 2026 rates')).toBeInTheDocument();
     for (const question of QUESTIONS) {
       expect(await screen.findByRole('heading', { level: 2, name: question })).toBeInTheDocument();
@@ -59,7 +81,7 @@ describe('Dashboard', () => {
     const seen = recordRequests();
     const user = userEvent.setup();
     renderApp('/');
-    await screen.findByText('27');
+    await within(await keyFigures()).findByText('27');
 
     await user.click(screen.getByLabelText('Country'));
     await user.click(await screen.findByRole('option', { name: 'India' }));
@@ -76,19 +98,20 @@ describe('Dashboard', () => {
   it("the include-exited box adds the filter's exited employees to the headcount", async () => {
     const user = userEvent.setup();
     renderApp('/');
-    expect(await screen.findByText('27')).toBeInTheDocument();
+    const kpis = await keyFigures();
+    expect(await within(kpis).findByText('27')).toBeInTheDocument();
 
     await user.click(screen.getByRole('checkbox', { name: 'Include exited' }));
 
     // The fixture's two exited employees, X1 and X2, now count.
-    expect(await screen.findByText('29')).toBeInTheDocument();
-    expect(screen.queryByText('27')).not.toBeInTheDocument();
+    expect(await within(kpis).findByText('29')).toBeInTheDocument();
+    expect(within(kpis).queryByText('27')).not.toBeInTheDocument();
   });
 
   it('offers the local currency only while one country is selected', async () => {
     const user = userEvent.setup();
     renderApp('/');
-    await screen.findByText('27');
+    await within(await keyFigures()).findByText('27');
 
     await user.click(screen.getByLabelText('Currency'));
     expect(await screen.findByRole('option', { name: 'EUR' })).toBeInTheDocument();
@@ -107,7 +130,7 @@ describe('Dashboard', () => {
     const seen = recordRequests();
     renderApp('/?country=IN&currency=local&include_exited=true');
 
-    expect(await screen.findByText('29')).toBeInTheDocument();
+    expect(await within(await keyFigures()).findByText('29')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Include exited' })).toBeChecked();
     await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
     for (const name of INSIGHTS) {
@@ -118,6 +141,45 @@ describe('Dashboard', () => {
         'true',
       ]);
     }
+  });
+
+  it('keeps local through a switch from India to Germany, and drops it for two countries', async () => {
+    answerInTheAskedCurrency();
+    const user = userEvent.setup();
+    renderApp('/?country=IN&currency=local');
+    const kpis = await keyFigures();
+    expect(await screen.findByText('Local currency (INR)')).toBeInTheDocument();
+    expect(within(kpis).getAllByText('INR')).toHaveLength(3);
+
+    // India to Germany in one visit to the menu: still one country, so local stays.
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(await screen.findByRole('option', { name: 'India' }));
+    await user.click(screen.getByRole('option', { name: 'Germany' }));
+    await user.keyboard('{Escape}');
+
+    expect(await screen.findByText('Local currency (EUR)')).toBeInTheDocument();
+    expect(within(kpis).getAllByText('EUR')).toHaveLength(3);
+
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(await screen.findByRole('option', { name: 'India' }));
+    await user.keyboard('{Escape}');
+
+    expect(await screen.findByText('October 2026 rates')).toBeInTheDocument();
+    expect(within(kpis).getAllByText('USD')).toHaveLength(3);
+  });
+
+  it('drops local when no country is left', async () => {
+    answerInTheAskedCurrency();
+    const user = userEvent.setup();
+    renderApp('/?country=DE&currency=local');
+    expect(await screen.findByText('Local currency (EUR)')).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(await screen.findByRole('option', { name: 'Germany' }));
+    await user.keyboard('{Escape}');
+
+    expect(await screen.findByText('October 2026 rates')).toBeInTheDocument();
+    expect(within(await keyFigures()).getAllByText('USD')).toHaveLength(3);
   });
 
   it('says what to do when no one matches the filters', async () => {

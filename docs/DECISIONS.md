@@ -218,6 +218,8 @@ Decision: the general rule. A level with fewer than five people publishes headco
 
 Consequences: no level can show one person's pay. Owner's answer to DESIGN question 2.
 
+Superseded in part by D59: a level shows its figures only from twenty people, and they run from p10 to p90, never min or max.
+
 ## D26. Import exits write one exit entry, and a first record cannot be cancelled
 
 Context: a row whose `last_date` appears is an identity change in F1's table but runs the exit service, and F3 as written would let a future joiner's only record be cancelled, leaving no record at all.
@@ -501,6 +503,14 @@ Context: the directory filters with an `__in` lookup, so an unknown country code
 Decision: `build_filters` answers 400 with section 7's own words, `Unknown country_code: XX` and `Unknown department: growth`. The insight functions take the lookups as a third argument beside the filters and the rates, and `InsightFilters.local` marks `currency=local`, so the label reads `local currency (USD)` even when the local currency is one the toggle also offers.
 
 Consequences: a typo in a shared link says so instead of drawing an empty chart. Each insight runs six queries at most: the user, the countries, the departments, the rates, one aggregate and one list of gross values. DESIGN 1.6.
+
+## D59. Owner's answers at the step 6 close: small groups, spread figures and the local switch
+
+Context: at exactly five people the five-person rule let by-level publish min, p25, median, p75 and max, which were every salary in the group. A one-person country or department showed its total cost, which is that person's cost read straight off the card or a screenshot with no arithmetic, and share times the company total gives it back. Step 7 exports these cards. Separately, F5 reset `local` whenever the country filter passed through no country or two, so a switch from India to Germany lost it.
+
+Decision: one rule on every card. A group under five people, the summary included, shows its headcount alone, with `null` total cost, share, mean and median. The spread figures need twenty people: by-level's p10, p25, median, p75 and p90, never min or max, and the distribution's p1, p99, bands and markers. `SMALL_GROUP = 5` and `SPREAD_GROUP = 20` are the only spellings of the two thresholds, in `apps/insights/queries.py` and in `components/insights/figures.ts`, and the API and its tests use them. Withheld groups follow the shown ones in name order, so the order never hints at a hidden total. The country and department selects commit when their menu closes, so on the directory and the dashboard a switch from one country to another keeps `local` in the new country's currency, and two countries or none go back to USD.
+
+Consequences: the rule protects what a chart, a screenshot or an export shows. Working one person's pay out by differencing (overall against a department, requests a day apart, with and without exited people) is accepted and out of scope. It takes deliberate work by the one role, which already sees every salary on the employee list. Revisit if a second role is ever added. No level in the DESIGN fixture reaches twenty, so its by-level and `country=US` distribution cases are headcount only, and a small fixture with one level of twenty and one of nineteen tests the spread figures. Step 7's insight export reads the same payload and inherits the rule, and its test uses a level under twenty. SPEC v2.11 section 9 and F5, DESIGN 1.6, 4, 6 and 9, PLAN step 7. Amends D25.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

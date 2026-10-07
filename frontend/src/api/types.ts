@@ -358,14 +358,15 @@ export interface DistributionInsight extends InsightHeader {
   markers: { p10: string; p50: string; p90: string } | null;
 }
 
+/** p10 to p90, never min or max, and only for twenty people or more (D59). */
 export interface LevelRow {
   level: number;
   headcount: number;
-  min: string | null;
+  p10: string | null;
   p25: string | null;
   median: string | null;
   p75: string | null;
-  max: string | null;
+  p90: string | null;
 }
 
 export interface GenderGroup {

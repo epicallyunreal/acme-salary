@@ -17,11 +17,15 @@ export function recordLabel(row: EmployeeRow): string {
   return `from ${formatDate(row.shown.effective_from)}`;
 }
 
-/** Columns of the directory grid (DESIGN section 6). The money columns show whole units. */
-export function directoryColumns(reportingCurrency: string): GridColDef<EmployeeRow>[] {
+/** Columns of the directory grid (DESIGN section 6). The money columns show whole units. With a
+ * local currency the header names it, the one selected country's own. */
+export function directoryColumns(
+  reportingCurrency: string,
+  localCurrency?: string,
+): GridColDef<EmployeeRow>[] {
   const reportingHeader =
     reportingCurrency === 'local'
-      ? 'Gross (local currency)'
+      ? `Gross (${localCurrency ?? 'local currency'})`
       : `Gross (${reportingCurrency.toUpperCase()})`;
   return [
     { field: 'employee_code', headerName: 'Code', width: 110 },
