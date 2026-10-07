@@ -1,4 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import {
   CartesianGrid,
   ComposedChart,
@@ -19,9 +20,20 @@ type ByLevel = InsightPayloads['by-level'];
 
 /** Question 5: per level, the median as a dot on a bar from p25 to p75, with whiskers from p10
  * to p90. Never min or max, each of which is one person's pay (D59). */
-export function ByLevelCard({ query }: { query: UseQueryResult<ByLevel> }) {
+export function ByLevelCard({
+  query,
+  actions,
+}: {
+  query: UseQueryResult<ByLevel>;
+  actions?: ReactNode;
+}) {
   return (
-    <InsightCard question="What does each level pay?" what="the pay by level" query={query}>
+    <InsightCard
+      question="What does each level pay?"
+      what="the pay by level"
+      query={query}
+      actions={actions}
+    >
       {query.data ? <LevelChart data={query.data} /> : null}
     </InsightCard>
   );

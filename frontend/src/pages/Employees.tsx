@@ -1,10 +1,12 @@
 import AddIcon from '@mui/icons-material/Add';
-import { Button, Typography } from '@mui/material';
+import { Button, Stack, Typography } from '@mui/material';
 import { useMemo } from 'react';
 import { Link, useNavigate } from 'react-router';
 
 import { useEmployeeList } from '../api/employees';
+import { exportEmployees } from '../api/exports';
 import { useCountries } from '../api/meta';
+import { ExportMenu } from '../components/ExportMenu';
 import { FilterBar } from '../components/filters/FilterBar';
 import { useUrlFilters } from '../components/filters/useUrlFilters';
 import { DIRECTORY_HIDDEN_COLUMNS, directoryColumns } from '../components/grid/columns';
@@ -47,14 +49,22 @@ export function Employees() {
       <PageHeader
         title="Employees"
         actions={
-          <Button
-            component={Link}
-            to="/employees/new"
-            variant="contained"
-            startIcon={<AddIcon fontSize="small" />}
-          >
-            Add employee
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <ExportMenu
+              variant="button"
+              label="Export employees"
+              what="the employees"
+              onExport={(file) => exportEmployees(params, file)}
+            />
+            <Button
+              component={Link}
+              to="/employees/new"
+              variant="contained"
+              startIcon={<AddIcon fontSize="small" />}
+            >
+              Add employee
+            </Button>
+          </Stack>
         }
         subtitle={
           count === undefined ? undefined : (

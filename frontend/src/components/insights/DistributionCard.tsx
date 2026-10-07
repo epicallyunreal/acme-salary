@@ -1,5 +1,6 @@
 import { Box, Typography } from '@mui/material';
 import type { UseQueryResult } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import {
   Bar,
   BarChart,
@@ -35,12 +36,19 @@ const MARKERS = [
 ] as const;
 
 /** Question 4: gross in twelve equal bands from p1 to p99, with p10, the median and p90 marked. */
-export function DistributionCard({ query }: { query: UseQueryResult<DistributionInsight> }) {
+export function DistributionCard({
+  query,
+  actions,
+}: {
+  query: UseQueryResult<DistributionInsight>;
+  actions?: ReactNode;
+}) {
   return (
     <InsightCard
       question="How are salaries distributed?"
       what="the salary distribution"
       query={query}
+      actions={actions}
     >
       {query.data ? <Distribution data={query.data} /> : null}
     </InsightCard>

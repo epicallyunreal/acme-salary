@@ -1,4 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 import {
   Bar,
   BarChart,
@@ -38,9 +39,21 @@ function gap(row: GapRow): string {
 }
 
 /** Question 6: median gross of women and men per country and overall, the gap above each pair. */
-export function GenderGapCard({ query }: { query: UseQueryResult<GenderGap> }) {
+export function GenderGapCard({
+  query,
+  actions,
+}: {
+  query: UseQueryResult<GenderGap>;
+  actions?: ReactNode;
+}) {
   return (
-    <InsightCard question="Is there a gender pay gap?" what="the gender pay gap" query={query} wide>
+    <InsightCard
+      question="Is there a gender pay gap?"
+      what="the gender pay gap"
+      query={query}
+      actions={actions}
+      wide
+    >
       {query.data ? <GapChart data={query.data} /> : null}
     </InsightCard>
   );

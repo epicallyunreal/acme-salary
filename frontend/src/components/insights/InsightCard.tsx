@@ -27,7 +27,15 @@ export function InsightCard({ question, what, query, actions, wide, children }: 
       aria-labelledby={headingId}
       sx={{ p: 4, minWidth: 0, gridColumn: wide ? { lg: '1 / -1' } : undefined }}
     >
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 3 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 2,
+          mb: 3,
+        }}
+      >
         <Typography
           id={headingId}
           component="h2"

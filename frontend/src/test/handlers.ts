@@ -209,6 +209,22 @@ export const insightHandlers = [
   }),
 ];
 
+/** A named file, as the API stamps it, holding the format it was asked for. */
+function exported(request: Request, what: string) {
+  if (!hasAccessToken(request)) return unauthorized();
+  const file = new URL(request.url).searchParams.get('file') ?? 'csv';
+  return new HttpResponse(new Blob([file]), {
+    headers: { 'Content-Disposition': `attachment; filename="acme-${what}-20261007-0900.${file}"` },
+  });
+}
+
+export const exportHandlers = [
+  http.get('/api/v1/exports/employees/', ({ request }) => exported(request, 'employees')),
+  http.get('/api/v1/exports/insights/:name/', ({ request, params }) =>
+    exported(request, String(params.name)),
+  ),
+];
+
 export const handlers = [
   http.get('/healthz', () => HttpResponse.json({ status: 'ok' })),
   ...authHandlers,
@@ -216,4 +232,5 @@ export const handlers = [
   ...employeeHandlers,
   ...importHandlers,
   ...insightHandlers,
+  ...exportHandlers,
 ];

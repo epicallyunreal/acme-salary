@@ -15,9 +15,9 @@ export function RateMonthLabel({ rateMonth }: { rateMonth: RateMonth }) {
     </Typography>
   );
   const pairs = rates.data?.rates ?? [];
-  if (rateMonth.effective_from === null || !pairs.length) return <Box sx={{ mb: 3 }}>{label}</Box>;
+  if (rateMonth.effective_from === null || !pairs.length) return <Box>{label}</Box>;
   return (
-    <Box sx={{ mb: 3, display: 'inline-block' }}>
+    <Box sx={{ display: 'inline-block' }}>
       <Tooltip
         // The label stays the name; the rates describe it.
         describeChild

@@ -1,0 +1,28 @@
+import { saveFile } from '../lib/download';
+import { apiDownload } from './client';
+import { insightQuery } from './insights';
+import type { InsightName, InsightParams, ListParams } from './types';
+
+export type ExportFile = 'csv' | 'xlsx' | 'json';
+
+/** The formats every export menu offers (SPEC F6). */
+export const EXPORT_FILES: readonly { file: ExportFile; label: string }[] = [
+  { file: 'csv', label: 'CSV' },
+  { file: 'xlsx', label: 'Excel (.xlsx)' },
+  { file: 'json', label: 'JSON' },
+];
+
+/** Every employee the directory's filters, search and sort leave, not just the page on screen
+ * (SPEC F6). The file is fetched with the bearer token and saved from a blob. */
+export async function exportEmployees(params: ListParams, file: ExportFile) {
+  const query = { ...params, page: undefined, page_size: undefined, file };
+  const { blob, fileName } = await apiDownload('/exports/employees/', { query });
+  saveFile(blob, fileName ?? `acme-employees.${file}`);
+}
+
+/** One insight's table for the dashboard's filters, the card's figures in rows (D60). */
+export async function exportInsight(name: InsightName, params: InsightParams, file: ExportFile) {
+  const query = { ...insightQuery(params), file };
+  const { blob, fileName } = await apiDownload(`/exports/insights/${name}/`, { query });
+  saveFile(blob, fileName ?? `acme-${name}.${file}`);
+}

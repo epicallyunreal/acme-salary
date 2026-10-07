@@ -1,4 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 
 import type { InsightPayloads } from '../../api/types';
 import { plot } from './chartTheme';
@@ -9,12 +10,19 @@ import { ChartNote, ChartTable, InsightCard } from './InsightCard';
 type ByCountry = InsightPayloads['by-country'];
 
 /** Question 2: total cost per country, its share labelled on each bar. */
-export function ByCountryCard({ query }: { query: UseQueryResult<ByCountry> }) {
+export function ByCountryCard({
+  query,
+  actions,
+}: {
+  query: UseQueryResult<ByCountry>;
+  actions?: ReactNode;
+}) {
   return (
     <InsightCard
       question="Where does payroll go, by country?"
       what="the payroll by country"
       query={query}
+      actions={actions}
     >
       {query.data ? <CountryChart data={query.data} /> : null}
     </InsightCard>

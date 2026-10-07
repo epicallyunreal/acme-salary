@@ -1,6 +1,9 @@
 import { Box } from '@mui/material';
 
+import { exportInsight } from '../api/exports';
 import { useInsight } from '../api/insights';
+import type { InsightName } from '../api/types';
+import { ExportMenu } from '../components/ExportMenu';
 import { DashboardFilterBar } from '../components/filters/FilterBar';
 import { useDashboardFilters } from '../components/filters/useDashboardFilters';
 import { ByCountryCard } from '../components/insights/ByCountryCard';
@@ -24,12 +27,20 @@ export function Dashboard() {
   const byLevel = useInsight('by-level', filters);
   const genderGap = useInsight('gender-gap', filters);
   const nobody = summary.data?.headcount === 0;
+  // Every insight downloads from where it is shown, with the filters on screen (SPEC F6).
+  const exportMenu = (name: InsightName, label: string, what: string) => (
+    <ExportMenu label={label} what={what} onExport={(file) => exportInsight(name, filters, file)} />
+  );
 
   return (
     <>
       <PageHeader title="Dashboard" />
       <DashboardFilterBar filters={filters} onChange={set} onReset={reset} filtered={filtered} />
-      {summary.data ? <RateMonthLabel rateMonth={summary.data.rate_month} /> : null}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+        {summary.data ? <RateMonthLabel rateMonth={summary.data.rate_month} /> : null}
+        {/* The summary has no card, so its menu sits on the rate month line above it (D60). */}
+        <Box sx={{ ml: 'auto' }}>{exportMenu('summary', 'Export summary', 'the summary')}</Box>
+      </Box>
       <KpiRow query={summary} />
       {nobody ? (
         <EmptyState message="No one matches these filters today. Clear a filter." />
@@ -41,11 +52,38 @@ export function Dashboard() {
             gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'repeat(2, minmax(0, 1fr))' },
           }}
         >
-          <ByCountryCard query={byCountry} />
-          <ByDepartmentCard query={byDepartment} />
-          <DistributionCard query={distribution} />
-          <ByLevelCard query={byLevel} />
-          <GenderGapCard query={genderGap} />
+          <ByCountryCard
+            query={byCountry}
+            actions={exportMenu(
+              'by-country',
+              'Export payroll by country',
+              'the payroll by country',
+            )}
+          />
+          <ByDepartmentCard
+            query={byDepartment}
+            actions={exportMenu(
+              'by-department',
+              'Export payroll by department',
+              'the payroll by department',
+            )}
+          />
+          <DistributionCard
+            query={distribution}
+            actions={exportMenu(
+              'distribution',
+              'Export salary distribution',
+              'the salary distribution',
+            )}
+          />
+          <ByLevelCard
+            query={byLevel}
+            actions={exportMenu('by-level', 'Export pay by level', 'the pay by level')}
+          />
+          <GenderGapCard
+            query={genderGap}
+            actions={exportMenu('gender-gap', 'Export gender pay gap', 'the gender pay gap')}
+          />
         </Box>
       )}
     </>

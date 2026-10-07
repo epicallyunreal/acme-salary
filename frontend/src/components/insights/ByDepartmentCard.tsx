@@ -1,4 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 
 import type { InsightPayloads } from '../../api/types';
 import { formatCompact } from '../../lib/money';
@@ -10,12 +11,19 @@ import { ChartNote, ChartTable, InsightCard } from './InsightCard';
 type ByDepartment = InsightPayloads['by-department'];
 
 /** Question 3: total cost per department, the figure at the tip of each bar. */
-export function ByDepartmentCard({ query }: { query: UseQueryResult<ByDepartment> }) {
+export function ByDepartmentCard({
+  query,
+  actions,
+}: {
+  query: UseQueryResult<ByDepartment>;
+  actions?: ReactNode;
+}) {
   return (
     <InsightCard
       question="Which departments cost most and pay most?"
       what="the payroll by department"
       query={query}
+      actions={actions}
     >
       {query.data ? <DepartmentChart data={query.data} /> : null}
     </InsightCard>
