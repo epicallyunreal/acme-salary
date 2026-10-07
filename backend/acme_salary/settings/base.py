@@ -7,6 +7,8 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from django.utils.csp import CSP
+
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 
@@ -54,6 +56,7 @@ INSTALLED_APPS = [
 # No sessions and no Django auth middleware: the API authenticates with a JWT per request.
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -109,6 +112,20 @@ WHITENOISE_IMMUTABLE_FILE_TEST = immutable_asset
 
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+
+# Content Security Policy (owner's directives at the step 1 close, D38). The refresh token lives
+# in localStorage (D21), so a script injection is the threat this answers. style-src needs
+# 'unsafe-inline' because MUI's Emotion injects styles at runtime.
+SECURE_CSP = {
+    "default-src": [CSP.SELF],
+    "script-src": [CSP.SELF],
+    "connect-src": [CSP.SELF],
+    "img-src": [CSP.SELF, "data:"],
+    "font-src": [CSP.SELF],
+    "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],
+    "frame-ancestors": [CSP.NONE],
+    "object-src": [CSP.NONE],
+}
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

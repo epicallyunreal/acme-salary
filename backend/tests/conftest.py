@@ -1,7 +1,10 @@
 from datetime import date
 
 import pytest
+from django.core.cache import cache
 from freezegun import freeze_time
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from tests.factories import UserFactory
 
@@ -15,9 +18,31 @@ def today():
         yield TODAY
 
 
+@pytest.fixture(autouse=True)
+def clear_throttle_cache():
+    """The login throttle counts in the process cache; every test starts with an empty one."""
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def hr_user(db):
     return UserFactory(email="hr@acme.example")
+
+
+@pytest.fixture
+def anon():
+    return APIClient()
+
+
+@pytest.fixture
+def api(hr_user):
+    """An APIClient carrying the HR Manager's access token."""
+    client = APIClient()
+    token = RefreshToken.for_user(hr_user).access_token
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+    return client
 
 
 @pytest.fixture
