@@ -44,7 +44,10 @@ def next_month_first(day: date) -> date:
 
 
 def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list[dict]:
-    """Every existing employee with the amounts of the record current on the reference date."""
+    """Every existing employee with the amounts the validators compare a row against: the
+    record current on the reference date, else the latest live one (an exited employee's last).
+    The raises go to the first employees still employed on the raise date, so every raise is a
+    revision the rules accept."""
     employees = (
         Employee.objects.select_related("country", "department")
         .filter(legacy_code__isnull=False)
@@ -59,11 +62,12 @@ def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list
         .filter(effective_from__lte=on)
         .filter(Q(effective_to__isnull=True) | Q(effective_to__gt=on))
     )
-    by_employee = {record.employee_id: record for record in current}
+    by_employee: dict[int, CompensationRecord] = {}
     for record in CompensationRecord.objects.filter(
         employee__in=employees, cancelled_at__isnull=True
     ).order_by("effective_from"):
-        by_employee.setdefault(record.employee_id, record)
+        by_employee[record.employee_id] = record
+    by_employee.update({record.employee_id: record for record in current})
     lines: dict[int, dict[str, Decimal]] = {}
     for record_id, code, amount in CompensationLine.objects.filter(
         record__in=by_employee.values()
@@ -71,12 +75,15 @@ def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list
         lines.setdefault(record_id, {})[code] = amount
 
     rows = []
-    for index, employee in enumerate(employees):
+    raised = 0
+    for employee in employees:
         record = by_employee.get(employee.pk)
         amounts = dict(lines.get(record.pk, {})) if record else {}
         bonus = record.bonus_annual if record else Decimal("0")
         effective_from = None
-        if index < raise_count:
+        employed = employee.last_date is None or employee.last_date >= raise_date
+        if raised < raise_count and record is not None and employed:
+            raised += 1
             amounts = {
                 code: (amount * Decimal("1.05")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
                 for code, amount in amounts.items()

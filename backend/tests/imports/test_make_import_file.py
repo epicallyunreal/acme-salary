@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 
 from apps.compensation import services as compensation
 from apps.compensation.services import RecordInput, bulk_apply
+from apps.employees import services as employees
 from apps.employees.models import Employee
 from apps.imports.parser import IDENTITY_COLUMNS
 from seed import profiles
@@ -170,6 +171,23 @@ def test_csv_output_matches_the_template(thirty, tmp_path):
         "2015-08-09",
         "326200.00",
     )
+
+
+def test_an_exited_employee_carries_their_last_record_and_gets_no_raise(thirty, tmp_path):
+    """The rules compare a row with the current record, else the latest live one, and refuse a
+    raise after the exit, so the file writes the latest amounts and raises the next employee."""
+    first, second = Employee.objects.order_by("pk")[:2]
+    assert compensation.live_records(first).count() > 1
+    employees.exit_employee(first, date(2026, 6, 30))
+    path = tmp_path / "raises.xlsx"
+
+    run(path, all=True, raises=1)
+
+    _, rows = rows_of_xlsx(path)
+    latest = compensation.latest_record(first)
+    assert rows[0]["BASE"] == latest.lines.get(component__code="BASE").annual_amount
+    assert (rows[0]["effective_from"], rows[1]["effective_from"]) == (None, datetime(2026, 11, 1))
+    assert rows[1]["legacy_code"] == second.legacy_code
 
 
 def test_raises_alone_writes_only_the_raised_employees(thirty, tmp_path):
