@@ -57,6 +57,7 @@ def test_the_route_list_is_what_the_step_expects():
         "api/v1/imports/<int:pk>/rows/<int:row_pk>/skip/",
         "api/v1/imports/<int:pk>/rows/<int:row_pk>/unskip/",
         "api/v1/imports/template/",
+        "api/v1/insights/<str:name>/",
         "api/v1/meta/components/",
         "api/v1/meta/countries/",
         "api/v1/meta/departments/",

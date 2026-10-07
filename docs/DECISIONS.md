@@ -492,6 +492,14 @@ Decision: approve classifies each accepted row again. A row that has become a no
 
 Consequences: approve applies what was reviewed, or less when a change is already in place, never more. A refused row needs a fresh upload. The reader leans on openpyxl's `read_worksheets` and `wb._sheets`, pinned at 3.1.5, and the parser tests fail if an upgrade changes them. A second sheet is never opened now, so a broken one no longer refuses the file.
 
+## D58. Insight filters refuse a code that names nothing
+
+Context: the directory filters with an `__in` lookup, so an unknown country code finds nobody and answers an empty page. The per-country and per-department insights list every code in the filter, and an unknown code has no name to list. Ignoring it silently was the alternative.
+
+Decision: `build_filters` answers 400 with section 7's own words, `Unknown country_code: XX` and `Unknown department: growth`. The insight functions take the lookups as a third argument beside the filters and the rates, and `InsightFilters.local` marks `currency=local`, so the label reads `local currency (USD)` even when the local currency is one the toggle also offers.
+
+Consequences: a typo in a shared link says so instead of drawing an empty chart. Each insight runs six queries at most: the user, the countries, the departments, the rates, one aggregate and one list of gross values. DESIGN 1.6.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

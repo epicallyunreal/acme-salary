@@ -114,11 +114,19 @@ class RateTable:
             output_field=DecimalField(max_digits=18, decimal_places=8),
         )
 
+    def month_of(self, to_currency: str) -> date | None:
+        """When the reporting currency's rates took effect: the latest `effective_from` among the
+        rates into it, or None when no rate feeds it (D28)."""
+        feeding = [
+            rate.effective_from for pair, rate in self._direct.items() if pair[1] == to_currency
+        ]
+        return max(feeding) if feeding else None
+
     def month_label(self, to_currency: str) -> str:
-        feeding = [rate for pair, rate in self._direct.items() if pair[1] == to_currency]
-        if not feeding:
+        month = self.month_of(to_currency)
+        if month is None:
             return f"local currency ({to_currency})"
-        return f"{label_for_month(max(rate.effective_from for rate in feeding))} rates"
+        return f"{label_for_month(month)} rates"
 
     def rows(self) -> list[dict]:
         return [
