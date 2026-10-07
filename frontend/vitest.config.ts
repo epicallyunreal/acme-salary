@@ -13,6 +13,8 @@ export default mergeConfig(
       setupFiles: ['src/test/setup.ts'],
       include: ['src/**/*.test.{ts,tsx}'],
       css: false,
+      // Room for several 3 s waits in one test on a loaded machine (src/test/setup.ts).
+      testTimeout: 15_000,
     },
   }),
 );
