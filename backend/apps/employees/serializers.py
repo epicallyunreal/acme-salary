@@ -12,7 +12,7 @@ from rest_framework import serializers
 
 from apps.audit.models import AuditLog
 from apps.compensation.models import CompensationLine, CompensationRecord
-from apps.compensation.serializers import RecordInputSerializer
+from apps.compensation.serializers import LOOKUP_MAX, RecordInputSerializer
 from apps.core.money import q8, render
 from apps.employees.models import Employee
 from apps.employees.queries import is_current, pick_shown, shown_label, status_on
@@ -267,11 +267,11 @@ class EmployeeCreateSerializer(RecordInputSerializer):
     legacy_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     full_name = serializers.CharField(max_length=120)
     email = serializers.CharField(max_length=254)
-    department = serializers.CharField()
+    department = serializers.CharField(max_length=LOOKUP_MAX)
     designation = serializers.CharField(max_length=80)
     level = serializers.IntegerField()
-    country_code = serializers.CharField()
-    gender = serializers.CharField()
+    country_code = serializers.CharField(max_length=LOOKUP_MAX)
+    gender = serializers.CharField(max_length=LOOKUP_MAX)
     joining_date = serializers.DateField()
 
     def identity(self) -> dict:
@@ -288,13 +288,13 @@ class EmployeeIdentitySerializer(serializers.Serializer):
 
     employee_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     legacy_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    country_code = serializers.CharField(required=False)
+    country_code = serializers.CharField(max_length=LOOKUP_MAX, required=False)
     full_name = serializers.CharField(max_length=120, required=False)
     email = serializers.CharField(max_length=254, required=False)
-    department = serializers.CharField(required=False)
+    department = serializers.CharField(max_length=LOOKUP_MAX, required=False)
     designation = serializers.CharField(max_length=80, required=False)
     level = serializers.IntegerField(required=False)
-    gender = serializers.CharField(required=False)
+    gender = serializers.CharField(max_length=LOOKUP_MAX, required=False)
     joining_date = serializers.DateField(required=False)
 
 

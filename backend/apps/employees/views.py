@@ -45,6 +45,8 @@ class ReportingMixin:
         raise NotImplementedError
 
     def reporting(self):
+        """Write handlers call this before the service, so a bad `on` or `currency` is a 400
+        before anything is written."""
         if not hasattr(self, "_reporting"):
             params = self.request.query_params
             on = parse_on(params.get("on"))
@@ -101,6 +103,7 @@ class EmployeeListCreateView(ReportingMixin, ListCreateAPIView):
         return queries.directory_queryset(on, currency, rates)
 
     def create(self, request, *args, **kwargs):
+        self.reporting()
         body = EmployeeCreateSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         created = services.create_employee(body.identity(), body.record_input(), actor=request.user)
@@ -117,10 +120,14 @@ class EmployeeDetailView(OneEmployeeMixin, RetrieveUpdateAPIView):
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_queryset(self):
+        # The service re-reads the employee it edits, so only GET needs the records prefetched.
+        if self.request.method == "PATCH":
+            return super().get_queryset()
         return queries.detail_queryset()
 
     def update(self, request, *args, **kwargs):
         employee = self.get_object()
+        self.reporting()
         body = EmployeeIdentitySerializer(data=request.data)
         body.is_valid(raise_exception=True)
         services.update_identity(employee, body.validated_data, actor=request.user)
@@ -132,6 +139,7 @@ class EmployeeExitView(OneEmployeeMixin, GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         employee = self.get_object()
+        self.reporting()
         body = ExitSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         services.exit_employee(employee, body.validated_data["last_date"], actor=request.user)

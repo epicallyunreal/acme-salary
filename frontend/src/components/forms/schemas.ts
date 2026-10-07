@@ -4,6 +4,8 @@
 
 import { z } from 'zod';
 
+import { GENDERS } from '../../lib/constants';
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
 const AMOUNT_HINT = 'Enter an amount like 1450000 or 1450000.50';
@@ -18,6 +20,9 @@ const optionalAmount = z
 /** One amount per component code; a blank amount means the component does not apply. */
 const lineAmounts = z.record(z.string(), optionalAmount);
 
+/** The server's cap (D51), checked here first so the message sits on the field. */
+const note = z.string().max(1000, 'Use 1,000 characters or fewer');
+
 export const exitSchema = z.object({
   last_date: z.string().regex(ISO_DATE, 'Enter the last working day'),
 });
@@ -31,7 +36,8 @@ const identityFields = {
     .min(1, 'Enter the full name')
     .max(120, 'Use 120 characters or fewer'),
   email: z.string().trim().min(1, 'Enter an email address').max(254, 'Use 254 characters or fewer'),
-  gender: z.string().min(1, 'Choose a gender'),
+  // A select starts blank, so the form holds a string and submits one of the genders.
+  gender: z.string().pipe(z.enum(GENDERS, { error: 'Choose a gender' })),
   department: z.string().min(1, 'Choose a department'),
   designation: z
     .string()
@@ -47,20 +53,23 @@ export const employeeCreateSchema = z.object({
   country_code: z.string().min(1, 'Choose a country'),
   effective_from: optionalDate('Enter a date, or leave it blank to use the joining date'),
   bonus_annual: optionalAmount,
-  note: z.string(),
+  note,
   lines: lineAmounts,
 });
 
-export type EmployeeCreateValues = z.infer<typeof employeeCreateSchema>;
+/** What the form holds, and what a valid submit hands over. */
+export type EmployeeCreateFields = z.input<typeof employeeCreateSchema>;
+export type EmployeeCreateValues = z.output<typeof employeeCreateSchema>;
 
 export const identitySchema = z.object(identityFields);
 
-export type IdentityValues = z.infer<typeof identitySchema>;
+export type IdentityFields = z.input<typeof identitySchema>;
+export type IdentityValues = z.output<typeof identitySchema>;
 
 export const revisionSchema = z.object({
   effective_from: z.string().regex(ISO_DATE, 'Enter the date the revision takes effect'),
   bonus_annual: optionalAmount,
-  note: z.string(),
+  note,
   lines: lineAmounts,
 });
 

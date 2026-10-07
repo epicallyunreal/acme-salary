@@ -91,6 +91,12 @@ def test_all_writes_every_employee_with_raises_errors_and_new_rows(thirty, tmp_p
     assert [row["legacy_code"] for row in rows[3:30]] == [e.legacy_code for e in employees[3:30]]
     raised = (current_base(employees[3]) * Decimal("1.05")).quantize(1, rounding=ROUND_HALF_UP)
     assert rows[3]["BASE"] == raised
+    # Seed 42 is fixed, so the raised row is known by name too.
+    assert (rows[3]["legacy_code"], rows[3]["full_name"], rows[3]["BASE"]) == (
+        "HR-90977",
+        "Abdul Hopkins",
+        122955,
+    )
     # New joiners get fresh HR- codes that no employee holds.
     fresh = [row["legacy_code"] for row in rows[30:]]
     assert all(re.fullmatch(r"HR-\d{5}", code) for code in fresh)
@@ -158,6 +164,12 @@ def test_csv_output_matches_the_template(thirty, tmp_path):
     assert first["joining_date"] == earliest.joining_date.isoformat()
     assert first["effective_from"] == ""
     assert Decimal(first["BASE"]) == current_base(earliest)
+    assert (first["legacy_code"], first["full_name"], first["joining_date"], first["BASE"]) == (
+        "HR-62905",
+        "Sian Cox",
+        "2015-08-09",
+        "326200.00",
+    )
 
 
 def test_raises_alone_writes_only_the_raised_employees(thirty, tmp_path):

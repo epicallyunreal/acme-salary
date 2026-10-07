@@ -1,6 +1,6 @@
-# ACME Salary Management: Engineering Spec, v2.7
+# ACME Salary Management: Engineering Spec, v2.8
 
-Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D50). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. v2.4 records the owner's step 3 answers: `currency=local` on a single employee in section 8, and the session lifetime and reuse rules in F8 (D21). v2.5 records the owner's step 4 answers: a cancelled revision releases its date in section 5 (D43), and the taken-code and joining-date rules in section 7 (D44, D45), and the 400 for a component listed twice in section 8 (D46). v2.6 records the owner's identity decision (D48): the employee code is `ACME-<id>` in section 5, `legacy_code` takes `EmployeeID`'s place in F1, F2, section 7 and section 8, search and ordering follow in F4, and the seed numbers employees in joining order in section 11. It also records the amount bounds and the two above-BASE warnings in section 7 (D49). v2.7 records the owner's exit answer (D50): an exit dated before the only record starts, a record never current, cancels that record, in section 4 rule 6 and F3. Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
+Scope lives in `docs/REQUIREMENTS.md`. Reasoning lives in `docs/DECISIONS.md` (D1 to D52). This document says what to build and how. v2 folded in the 6 October spec review, v2.1 folds in the 7 October review (`docs/reviews/`) and the owner's decisions of 7 October, v2.2 applies the owner's answers to the plan-and-design questions (D24 to D30) to the by-level row in section 9 and the DNS and health-check wording in section 14, and, after the step 1 deploy, the health-check grace in section 14 (D31). v2.3 records the owner's step 2 answers (D36): revisions against an exit in F3, section 7 and section 8, the cancel rule in F3, and the import audit entries and count in F2. v2.4 records the owner's step 3 answers: `currency=local` on a single employee in section 8, and the session lifetime and reuse rules in F8 (D21). v2.5 records the owner's step 4 answers: a cancelled revision releases its date in section 5 (D43), and the taken-code and joining-date rules in section 7 (D44, D45), and the 400 for a component listed twice in section 8 (D46). v2.6 records the owner's identity decision (D48): the employee code is `ACME-<id>` in section 5, `legacy_code` takes `EmployeeID`'s place in F1, F2, section 7 and section 8, search and ordering follow in F4, and the seed numbers employees in joining order in section 11. It also records the amount bounds and the two above-BASE warnings in section 7 (D49). v2.7 records the owner's exit answer (D50): an exit dated before the only record starts, a record never current, cancels that record, in section 4 rule 6 and F3. v2.8 records the owner's answers at the step 4 close: `bonus_annual` and `note` are optional in section 8's bodies and the request strings are capped (D51), section 7's exit row reads "before" as F3 does, F2's audit count includes the `cancel` of an exit before pay starts, and section 8 names the API's own amount messages (D52). Items marked P1 are specified but not built until the Ship step is committed. Acceptance criteria are tagged `[test]` (a unit or API test) or `[measured]` (recorded by `/perf-timing` on the 10,000-row seed).
 
 ## 1. System overview
 
@@ -243,7 +243,7 @@ flowchart LR
 Acceptance:
 
 - [ ] `[test]` A batch with 3 error rows is refused on approve with `3 rows have errors`.
-- [ ] `[test]` With those 3 rows skipped, approve sets `approved`, `applied_rows` = total minus skipped minus no-ops, and audit entries equal 2 x created + updated + revised + (revised rows that also changed identity or set `last_date`) + 1 for the batch.
+- [ ] `[test]` With those 3 rows skipped, approve sets `approved`, `applied_rows` = total minus skipped minus no-ops, and audit entries equal 2 x created + updated + revised + (revised rows that also changed identity or set `last_date`) + (exit rows whose only record had not started, which also write `cancel`, D50) + 1 for the batch.
 - [ ] `[test]` A simulated failure mid-apply leaves zero partial employees or records and the batch is `failed`.
 - [ ] `[test]` Approving an approved batch returns `409`.
 
@@ -355,7 +355,7 @@ One validator module, `compensation/validators.py`, called by the services for i
 | A date unparseable (ISO and Excel date cells accepted) | error | `joining_date is not a valid date: 31/02/2024` |
 | `last_date` before `joining_date` | error | `last_date precedes joining_date` |
 | `joining_date` moved after the first record's `effective_from` | error | `joining_date is after the first record (effective 2020-01-01)` |
-| `last_date` not after the open record's `effective_from` | error | `last_date precedes the current record (effective 2026-04-01)` |
+| `last_date` before the open record's `effective_from` | error | `last_date precedes the current record (effective 2026-04-01)` |
 | `last_date` blank for an employee already exited | error | `clearing last_date is not supported by import` |
 | `last_date` set but non-cancelled scheduled revisions follow it | error | `scheduled revision on 2027-04-01 must be cancelled before exit` |
 | `effective_from` before `joining_date` | error | `effective_from precedes joining_date` |
@@ -389,11 +389,11 @@ REST under `/api/v1/`, paths with a trailing slash, JSON, JWT bearer on every ro
 | GET | `/meta/countries/`, `/meta/departments/`, `/meta/components/?country=` | lookups for filters and forms |
 | GET | `/meta/exchange-rates/?on=` | one row per pair with `rate` and `effective_from`, plus `month_label` for the dashboard |
 | POST | `/meta/exchange-rates/` | P1. v1 uses the `set_exchange_rate` management command |
-| GET, POST | `/employees/` | directory with the filters in F4. Create with `{full_name, email, department, designation, level, country_code, gender, joining_date, bonus_annual, effective_from?, note?, lines: [{component, annual_amount}]}` |
+| GET, POST | `/employees/` | directory with the filters in F4. Create with `{full_name, email, department, designation, level, country_code, gender, joining_date, bonus_annual?, effective_from?, note?, lines: [{component, annual_amount}]}` |
 | GET, PATCH | `/employees/{id}/` | detail with the record current on `on`, accepts `currency`. Edit identity fields |
 | POST | `/employees/{id}/exit/` | `{last_date}` |
 | GET | `/employees/{id}/compensation/` | full history newest first, lines included, accepts `currency` and `on` |
-| POST | `/employees/{id}/compensation/` | new revision `{effective_from, bonus_annual, note, lines}` |
+| POST | `/employees/{id}/compensation/` | new revision `{effective_from, bonus_annual?, note?, lines}`. A missing bonus is zero, a missing note empty (D51) |
 | DELETE | `/compensation/{id}/` | cancel a scheduled revision. The verb is DELETE, the service marks the row cancelled and removes nothing |
 | PATCH | `/compensation/{id}/` | P1. In-place correction |
 | GET | `/employees/{id}/audit/` | audit list for one employee |
@@ -408,7 +408,7 @@ REST under `/api/v1/`, paths with a trailing slash, JSON, JWT bearer on every ro
 | GET | `/exports/employees/?file=csv&...filters` | same filters as the directory, `file` is `csv`, `xlsx` or `json` |
 | GET | `/exports/insights/{name}/?file=&...filters` | the insight's table |
 
-Errors: `400` with per-field messages, including a past-dated revision, a component listed twice in `lines` (`{"lines": ["BASE appears twice in lines"]}`), a wrong upload extension or content type, and more than 10,000 data rows (`{"rows": "file has 10,450 data rows, limit 10,000"}`, counted while streaming since the sheet's dimension header cannot be trusted). `401` unauthenticated. `404` for unknown ids, insight names and template countries. `409` for batch state, double exit, cancelling a non-scheduled record, a revision dated after an exit. `413` upload over 10 MB. `429` login throttle. There is no `422`: a date before the first seeded rate uses the earliest rate (section 4 rule 4).
+Errors: `400` with per-field messages, including a past-dated revision, a component listed twice in `lines` (`{"lines": ["BASE appears twice in lines"]}`), a `note` over 1,000 characters, a `department`, `country_code`, `gender` or line `component` over 64, or more than 20 `lines` (D51), a wrong upload extension or content type, and more than 10,000 data rows (`{"rows": "file has 10,450 data rows, limit 10,000"}`, counted while streaming since the sheet's dimension header cannot be trusted). A malformed amount is refused by the serializer before section 7's rules run, so the API answers with DRF's own message keyed by the line's index (`{"lines": {"1": {"annual_amount": ["A valid number is required."]}}}`, D46). `401` unauthenticated. `404` for unknown ids, insight names and template countries. `409` for batch state, double exit, cancelling a non-scheduled record, a revision dated after an exit. `413` upload over 10 MB. `429` login throttle. There is no `422`: a date before the first seeded rate uses the earliest rate (section 4 rule 4).
 
 ## 9. Insights
 

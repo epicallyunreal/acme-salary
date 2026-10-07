@@ -5,12 +5,13 @@ import { formatDate } from '../../lib/dates';
 import { formatMoney } from '../../lib/money';
 import { StatusChip } from '../layout/StatusChip';
 
-/** "from 2027-01-01" and "exited 2026-06-30" from the API, with the date written out. */
+/** Why the record shown is not the one in force, in the API's order (SPEC F3): the employee has
+ * left, else pay starts later. */
 export function recordLabel(row: EmployeeRow): string {
   if (!row.shown) return 'no record';
   if (!row.shown.label) return 'current';
-  const [word, date] = row.shown.label.split(' ');
-  return `${word} ${formatDate(date)}`;
+  if (row.status === 'exited' && row.last_date) return `exited ${formatDate(row.last_date)}`;
+  return `from ${formatDate(row.shown.effective_from)}`;
 }
 
 /** Columns of the directory grid (DESIGN section 6). The money columns show whole units. */

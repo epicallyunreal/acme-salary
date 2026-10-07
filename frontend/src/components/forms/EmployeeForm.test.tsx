@@ -39,6 +39,7 @@ describe('EmployeeForm', () => {
     expect(summary).toHaveTextContent('The employee was not saved');
     expect(within(summary).getByRole('link', { name: 'Enter the full name' })).toBeInTheDocument();
     expect(within(summary).getByRole('link', { name: 'Choose a country' })).toBeInTheDocument();
+    expect(within(summary).getByRole('link', { name: 'Choose a gender' })).toBeInTheDocument();
     expect(summary).toHaveFocus();
     expect(screen.getByLabelText(/Full name/)).toHaveAttribute('aria-invalid', 'true');
   });
@@ -51,7 +52,7 @@ describe('EmployeeForm', () => {
     await screen.findByRole('option', { name: 'United States (USD)' });
     await user.selectOptions(screen.getByLabelText(/Country/), 'US');
 
-    expect(await screen.findByLabelText('Base salary (USD)')).toBeInTheDocument();
+    expect(await screen.findByLabelText(/Base salary \(USD\)/)).toBeInTheDocument();
     expect(screen.getByLabelText('Income tax (USD)')).toBeInTheDocument();
     expect(screen.queryByLabelText(/House rent allowance/)).not.toBeInTheDocument();
 
@@ -60,13 +61,88 @@ describe('EmployeeForm', () => {
     expect(await screen.findByLabelText('House rent allowance (INR)')).toBeInTheDocument();
   });
 
+  it("drops the old country's amounts when the country changes, so they cannot block the save", async () => {
+    const user = userEvent.setup();
+    const sent: { lines: unknown[] }[] = [];
+    server.use(
+      http.post('/api/v1/employees/', async ({ request }) => {
+        sent.push((await request.json()) as { lines: unknown[] });
+        return HttpResponse.json({ id: 5, warnings: [] }, { status: 201 });
+      }),
+    );
+    const { router } = renderWithProviders(<EmployeeForm />, { route: '/employees/new' });
+    await fillIdentity(user);
+    await user.type(await screen.findByLabelText('House rent allowance (INR)'), 'abc');
+
+    await user.selectOptions(screen.getByLabelText(/Country/), 'US');
+    await user.type(await screen.findByLabelText(/Base salary \(USD\)/), '120000');
+    await user.click(screen.getByRole('button', { name: 'Save employee' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/employees/5'));
+    expect(sent.map((body) => body.lines)).toEqual([
+      [{ component: 'BASE', annual_amount: '120000' }],
+    ]);
+  });
+
+  it('says when the countries or departments fail to load, with a retry', async () => {
+    const user = userEvent.setup();
+    let failures = 1;
+    server.use(
+      http.get('/api/v1/meta/countries/', () => {
+        if (failures-- > 0) return HttpResponse.json({}, { status: 500 });
+        return HttpResponse.json([
+          { code: 'IN', name: 'India', currency_code: 'INR', min_gross_annual: '400000.00' },
+        ]);
+      }),
+    );
+    renderWithProviders(<EmployeeForm />, { route: '/employees/new' });
+
+    expect(
+      await screen.findByText(
+        'Could not load the countries and departments. Check your connection and try again.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('option', { name: 'India (INR)' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+
+  it('holds a note over 1,000 characters back, as the server would refuse it (D51)', async () => {
+    const user = userEvent.setup();
+    const sent: { note: string }[] = [];
+    server.use(
+      http.post('/api/v1/employees/', async ({ request }) => {
+        sent.push((await request.json()) as { note: string });
+        return HttpResponse.json({ id: 5, warnings: [] }, { status: 201 });
+      }),
+    );
+    const { router } = renderWithProviders(<EmployeeForm />, { route: '/employees/new' });
+    await fillIdentity(user);
+    await user.type(await screen.findByLabelText(/Base salary \(INR\)/), '900000');
+    const note = screen.getByLabelText(/Note/);
+    fireEvent.change(note, { target: { value: 'n'.repeat(1001) } });
+
+    await user.click(screen.getByRole('button', { name: 'Save employee' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Use 1,000 characters or fewer');
+    expect(note).toHaveAccessibleDescription('Use 1,000 characters or fewer');
+    expect(sent).toEqual([]);
+
+    fireEvent.change(note, { target: { value: 'n'.repeat(1000) } });
+    await user.click(screen.getByRole('button', { name: 'Save employee' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/employees/5'));
+    expect(sent.map((body) => body.note.length)).toEqual([1000]);
+  });
+
   it('previews gross, net and total cost as the amounts are typed', async () => {
     const user = userEvent.setup();
     renderWithProviders(<EmployeeForm />, { route: '/employees/new' });
     await screen.findByRole('option', { name: 'India (INR)' });
     await user.selectOptions(screen.getByLabelText(/Country/), 'IN');
 
-    await user.type(await screen.findByLabelText('Base salary (INR)'), '1000000');
+    await user.type(await screen.findByLabelText(/Base salary \(INR\)/), '1000000');
     await user.type(screen.getByLabelText('House rent allowance (INR)'), '400000');
     await user.type(screen.getByLabelText('Income tax (INR)'), '200000');
     await user.type(screen.getByLabelText('Employer contribution (INR)'), '120000');
@@ -89,7 +165,7 @@ describe('EmployeeForm', () => {
     const { router } = renderWithProviders(<EmployeeForm />, { route: '/employees/new' });
     await fillIdentity(user);
     await user.type(await screen.findByLabelText('Income tax (INR)'), '90000');
-    await user.type(screen.getByLabelText('Base salary (INR)'), '900000');
+    await user.type(screen.getByLabelText(/Base salary \(INR\)/), '900000');
 
     await user.click(screen.getByRole('button', { name: 'Save employee' }));
 
@@ -120,7 +196,7 @@ describe('EmployeeForm', () => {
         HttpResponse.json(
           {
             email: ['email already belongs to ACME-1'],
-            BASE: ['BASE is required'],
+            BASE: ['BASE must be at least 10.00, got 0.00'],
             lines: {
               '1': { annual_amount: ['Ensure that there are no more than 2 decimal places.'] },
             },
@@ -131,20 +207,25 @@ describe('EmployeeForm', () => {
     );
     renderWithProviders(<EmployeeForm />, { route: '/employees/new' });
     await fillIdentity(user);
-    await user.type(await screen.findByLabelText('Base salary (INR)'), '0');
+    await user.type(await screen.findByLabelText(/Base salary \(INR\)/), '0');
     await user.type(screen.getByLabelText('House rent allowance (INR)'), '360000');
 
     await user.click(screen.getByRole('button', { name: 'Save employee' }));
 
     expect(await screen.findAllByText('email already belongs to ACME-1')).not.toHaveLength(0);
     expect(screen.getByLabelText(/Email/)).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByLabelText('Base salary (INR)')).toHaveAccessibleDescription(
-      'BASE is required',
+    expect(screen.getByLabelText(/Email/)).toHaveAccessibleDescription(
+      'email already belongs to ACME-1',
+    );
+    expect(screen.getByLabelText(/Base salary \(INR\)/)).toHaveAccessibleDescription(
+      'BASE must be at least 10.00, got 0.00',
     );
     expect(screen.getByLabelText('House rent allowance (INR)')).toHaveAccessibleDescription(
       'Ensure that there are no more than 2 decimal places.',
     );
     const summary = screen.getByRole('alert');
-    expect(within(summary).getByRole('link', { name: 'BASE is required' })).toBeInTheDocument();
+    expect(
+      within(summary).getByRole('link', { name: 'BASE must be at least 10.00, got 0.00' }),
+    ).toBeInTheDocument();
   });
 });

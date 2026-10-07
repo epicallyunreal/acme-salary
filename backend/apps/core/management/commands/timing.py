@@ -28,6 +28,9 @@ DIRECTORY_CASES = {
     "country filter": "country=IN",
     "department and gross range": "department=engineering&gross_min=50000&gross_max=150000",
     "sort by reporting gross": "ordering=-gross",
+    # Every term is matched against the name, the email, legacy_code and ACME-<id> (D48).
+    "search by name": "search=rao",
+    "search by code": "search=ACME-17",
 }
 
 

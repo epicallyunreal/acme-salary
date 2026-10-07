@@ -15,7 +15,6 @@ from apps.compensation import services as compensation
 from apps.compensation import validators
 from apps.compensation.models import Source
 from apps.core.dates import today_utc
-from apps.core.exceptions import Invalid
 from apps.employees.identity import apply_identity
 from apps.employees.models import Employee
 
@@ -91,9 +90,7 @@ def update_identity(
     """Edit identity fields. Neither code is ever set through the API (D48), and country_code
     cannot change (SPEC F3)."""
     at = at or timezone.now()
-    validators.refuse_codes(changes)
-    if "country_code" in changes and changes["country_code"] != employee.country_id:
-        raise Invalid({"country_code": ["country_code cannot be changed"]})
+    validators.refuse_codes(changes, employee)
     with transaction.atomic():
         # Read and validated under the write lock (D44).
         employee.refresh_from_db()
@@ -102,14 +99,19 @@ def update_identity(
         shown = compensation.shown_record(employee, ctx.today)
         before = audit.snapshot_employee(employee, record=shown)
         apply_identity(employee, changes, ctx)
+        after = audit.snapshot_employee(employee, record=shown)
+        if after == before:
+            # An empty body, or one that repeats what is stored: nothing to save or audit.
+            return Updated(employee, warnings)
         employee.updated_at = at
         employee.save()
+        after["updated_at"] = employee.updated_at
         audit.record(
             "update",
             entity=employee,
             actor=actor,
             before=before,
-            after=audit.snapshot_employee(employee, record=shown),
+            after=after,
             employee=employee,
             at=at,
         )
@@ -156,5 +158,5 @@ def exit_employee(
             at=at,
         )
         if unstarted is not None:
-            compensation.cancel_unstarted(unstarted, employee, actor=actor, at=at)
+            compensation.cancel_unstarted(unstarted, employee, actor=actor, at=at, today=today)
     return employee

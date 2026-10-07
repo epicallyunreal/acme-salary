@@ -17,6 +17,7 @@ from apps.core.money import render
 from apps.employees import queries
 from apps.employees import services as employees
 from apps.employees.serializers import CompensationRecordSerializer, EmployeeDetailSerializer
+from tests.audit.shapes import employee_shape, record_shape
 from tests.conftest import TODAY
 from tests.factories import EmployeeFactory
 
@@ -60,8 +61,6 @@ EMPLOYEE_KEYS = {
     "updated_at",
     "current_record",
 }
-RECORD_REQUEST_KEYS = {"converted", "is_current", "is_scheduled"}
-EMPLOYEE_REQUEST_KEYS = {"status", "shown_label"}
 
 
 @pytest.fixture
@@ -75,17 +74,6 @@ def record(lookups, hr_user):
 @pytest.fixture
 def context(rates):
     return {"on": TODAY, "reporting_currency": "USD", "rates": RateTable.load(TODAY)}
-
-
-def record_shape(data: dict) -> dict:
-    return {key: value for key, value in data.items() if key not in RECORD_REQUEST_KEYS}
-
-
-def employee_shape(data: dict) -> dict:
-    shape = {key: value for key, value in data.items() if key not in EMPLOYEE_REQUEST_KEYS}
-    if shape["current_record"] is not None:
-        shape["current_record"] = record_shape(shape["current_record"])
-    return shape
 
 
 def test_snapshot_record_reads_lines_in_component_order(record, hr_user):

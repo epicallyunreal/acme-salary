@@ -1,5 +1,6 @@
 from datetime import date
 
+import freezegun
 import pytest
 from django.core.cache import cache
 from freezegun import freeze_time
@@ -9,6 +10,9 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from tests.factories import UserFactory
 
 TODAY = date(2026, 10, 7)
+
+# pytest times tests with its own clock; frozen, `--durations` reports nonsense.
+freezegun.configure(extend_ignore_list=["_pytest."])
 
 
 @pytest.fixture(autouse=True)

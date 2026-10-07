@@ -234,7 +234,13 @@ def test_versions_are_never_reused_after_a_cancel(with_first):
 
 
 def test_only_one_open_live_record_per_employee(with_first):
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        pytest.raises(
+            IntegrityError,
+            match=r"UNIQUE constraint failed: compensation_compensationrecord\.employee_id$",
+        ),
+        transaction.atomic(),
+    ):
         CompensationRecord.objects.create(
             employee=with_first,
             version=9,
@@ -249,7 +255,14 @@ def test_only_one_open_live_record_per_employee(with_first):
 
 
 def test_version_is_unique_per_employee(with_first):
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        pytest.raises(
+            IntegrityError,
+            match=r"UNIQUE constraint failed: compensation_compensationrecord\.employee_id, "
+            r"compensation_compensationrecord\.version",
+        ),
+        transaction.atomic(),
+    ):
         CompensationRecord.objects.create(
             employee=with_first,
             version=1,
@@ -270,7 +283,12 @@ def test_close_open_record_without_an_open_record_returns_none(with_first):
 
 
 def test_a_record_cannot_end_where_it_starts(with_first):
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        pytest.raises(
+            IntegrityError, match="CHECK constraint failed: compensation_record_half_open"
+        ),
+        transaction.atomic(),
+    ):
         CompensationRecord.objects.create(
             employee=with_first,
             version=9,
@@ -331,7 +349,14 @@ def test_a_cancelled_revisions_date_can_be_entered_again(with_first):
 
 
 def test_two_live_records_on_one_date_are_refused(with_first):
-    with pytest.raises(IntegrityError), transaction.atomic():
+    with (
+        pytest.raises(
+            IntegrityError,
+            match=r"UNIQUE constraint failed: compensation_compensationrecord\.employee_id, "
+            r"compensation_compensationrecord\.effective_from",
+        ),
+        transaction.atomic(),
+    ):
         CompensationRecord.objects.create(
             employee=with_first,
             version=9,

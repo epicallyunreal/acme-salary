@@ -63,7 +63,7 @@ describe('NewEmployee', () => {
     await user.type(screen.getByLabelText(/Designation/), 'Engineer');
     await user.selectOptions(screen.getByLabelText(/Level/), '2');
     fireEvent.change(screen.getByLabelText(/Joining date/), { target: { value: '2026-11-01' } });
-    await user.type(await screen.findByLabelText('Base salary (INR)'), '300000');
+    await user.type(await screen.findByLabelText(/Base salary \(INR\)/), '300000');
     await user.click(screen.getByRole('button', { name: 'Save employee' }));
 
     expect(

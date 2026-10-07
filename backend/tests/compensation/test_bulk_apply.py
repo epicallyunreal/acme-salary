@@ -80,11 +80,12 @@ def audit_of(employee) -> set[tuple]:
 
 
 @pytest.fixture
-def three(lookups):
-    """Three employees with a first record from 2024-03-01."""
+def three(lookups, hr_user):
+    """Three employees with a first record from 2024-03-01, written by the HR Manager, so the
+    snapshots of their records name an author the query pins must account for."""
     people = [EmployeeFactory(joining_date=date(2024, 3, 1)) for _ in range(3)]
     for employee in people:
-        services.add_first_record(employee, record_input())
+        services.add_first_record(employee, record_input(), actor=hr_user)
     return people
 
 

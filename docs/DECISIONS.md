@@ -356,6 +356,8 @@ Decision: PLAN steps 4 to 9 cite criteria by name and section 8 rows by route pa
 
 Consequences: SPEC edits no longer break the plan's references. The plan's scope and order are unchanged, so its approval stands. Steps 1 to 3 keep their line numbers as the record of what they closed.
 
+Amended 7 Oct: the employee page's audit tab asks for one page of 100 entries, newest first, and says "Showing the latest 100 of N changes" when there are more. Reading further back waits for the P1 global audit page.
+
 ## D43. A cancelled revision releases its date
 
 Context: the unique `(employee, effective_from)` constraint counted cancelled rows while the validators compared live ones only, so cancelling a scheduled 1 April raise and entering it again for 1 April was a 500. Asked whether to accept that or answer 400, the owner chose to accept it. Cancel and re-enter is the only correction path for a scheduled revision in v1, and 1 April is the date most likely to collide.
@@ -390,6 +392,10 @@ Decision: input serializers check shape and types only, so `gender`, `level`, `e
 
 Consequences: an API client reads the same message text an import row would. The frontend's `applyServerErrors` reads both the list and the index-keyed shapes, so a DRF setting change cannot drop a message.
 
+Amended 7 Oct: amounts are the exception. The input `DecimalField` answers with DRF's own `A valid number is required.` and `Ensure that there are no more than 2 decimal places.` before the validators run. The duplicate-component text now lives in `messages.py` with the rest.
+
+Amended 7 Oct: a PATCH that changes nothing is not a write. An empty body, or one that repeats the stored values, is saved nowhere and writes no `update` entry, so section 4 rule 7 never records a change that did not happen.
+
 ## D47. Readings made while building the employee page
 
 Context: the detail wireframe in DESIGN 8 showed a reporting-currency column on every line, but the record serializer converts the totals only and rule 3 keeps conversion in `core/fx.py`. Two smaller points were open: how a period reads, and what follows a successful write.
@@ -406,6 +412,8 @@ Decision: the employee code is `ACME-<id>` with no leading zeros, assigned by th
 
 Consequences: no client or sheet chooses an employee's number, so assignment cannot collide or overflow. An employee created in the app is never reached by a sheet, because the import serves the legacy system's employees only. The golden hash changed, and the live database needs `reset_demo` after the deploy, on the owner's word.
 
+Amended 7 Oct: migration `employees.0002_legacy_code` is one-way. Reversing it on a database with employees fails on the restored NOT NULL `employee_code`, and the `reset_demo` that follows the deploy makes a way back unnecessary.
+
 ## D49. Every amount is bounded, so no total can overflow
 
 Context: the security review found that each line fits `Decimal(14, 2)` but their sum need not. A BASE of 999,999,999,999 with a bonus saved a gross that every later read failed to load, taking down that employee's pages, the directory and the country's medians. Asked for the rule's wording, the owner chose bounds on each amount over a cap on the totals.
@@ -421,6 +429,22 @@ Context: an employee created with `effective_from` after `joining_date` could no
 Decision: when the record after `last_date` is the employee's only live record and has never been current, the exit cancels it instead of closing it, in `exit_employee` and `bulk_apply` alike, and writes `exit` then `cancel`. A first record that has been current keeps the 400. While later revisions are scheduled, the 409 names one of them, not version 1. SPEC section 4 rule 6 and F3.
 
 Consequences: such an employee has no live record. The directory lists them with no record, the detail says they left before pay started, and the history keeps the cancelled row. Step 6's insight population must skip employees with no live record, under `include_exited` too.
+
+## D51. Record bodies: an optional bonus and note, and capped strings
+
+Context: SPEC section 8 listed `bonus_annual` in both bodies and `note` in the revision body without `?`, while DESIGN 1.3 and the serializers treated both as optional. Asked, the owner chose optional. The security review also found `note` unbounded: a 2,000,000-character note was stored, copied into two audit snapshots and sent with every history. Lookup values such as `department` came back in their 400s at any length.
+
+Decision: `bonus_annual` and `note` are optional, a missing bonus is zero and a missing note is empty. The serializers cap `note` at 1,000 characters, `department`, `country_code`, `gender` and a line's `component` at 64, and `lines` at 20 items, with DRF's own message. The forms cap the note too.
+
+Consequences: no request stores or echoes an unbounded string. The caps are shape checks, so the validators are unchanged and `bulk_apply` does not apply them. The step 5 parser must cap the same cells, and `legacy_code` with `check_legacy_code`, before rows reach it.
+
+## D52. Owner's answers at the step 4 close
+
+Context: the second review pass found four places where the documents disagreed with each other or with what step 4 built. The questions were "may the last day fall on the day the current record starts?", "should PLAN name F3's eighth criterion?", "should F2's audit count include the cancel of an exit before pay starts?" and "should SPEC say the API answers a malformed amount in DRF's words?"
+
+Decision: the same day is allowed, so SPEC section 7's exit row reads "before", as F3 and section 4 rule 6 do. PLAN step 4 names F3's eight criteria, and its approval line stands as it did for 338c015. F2's count adds one entry per exit row whose only record had not started (D50). SPEC section 8 names the API's own amount messages (D46).
+
+Consequences: SPEC is v2.8. None of the four needed a code change. Step 5's approve test counts the extra `cancel`.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

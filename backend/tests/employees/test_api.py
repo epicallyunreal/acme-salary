@@ -5,10 +5,14 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from freezegun import freeze_time
 
+from apps.audit.models import AuditLog
 from apps.compensation import services as compensation
+from apps.compensation.models import CompensationRecord
 from apps.compensation.services import RecordInput
 from apps.employees import services
+from apps.employees.models import Employee
 from tests.factories import EmployeeFactory, country, department
 
 pytestmark = pytest.mark.django_db
@@ -605,6 +609,130 @@ def test_patch_cannot_move_joining_date_past_the_first_record(api, cast):
     }
 
 
+def written() -> tuple[int, ...]:
+    """Counts every write moves: it adds a row or marks one, and is audited (rules 6 and 7)."""
+    return (
+        Employee.objects.count(),
+        Employee.objects.exclude(last_date=None).count(),
+        CompensationRecord.objects.count(),
+        CompensationRecord.objects.exclude(cancelled_at=None).count(),
+        AuditLog.objects.count(),
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "errors"),
+    [
+        ("on=yesterday", {"on": ["on must be a date in YYYY-MM-DD form, got yesterday"]}),
+        ("currency=gbp", {"currency": ["currency must be usd, eur or local, got gbp"]}),
+    ],
+)
+@pytest.mark.parametrize("write", ["create", "edit", "exit", "revise", "cancel"])
+def test_a_bad_reporting_parameter_refuses_a_write_before_it_lands(api, cast, write, query, errors):
+    """A write answers 400 only when nothing was written: the response's `on` and `currency`
+    are checked before the service runs."""
+    asha = cast["asha"]
+    scheduled = CompensationRecord.objects.get(employee=cast["farah"], version=2)
+    revision = {
+        "effective_from": "2027-01-01",
+        "lines": [{"component": "BASE", "annual_amount": "1100000.00"}],
+    }
+    method, path, body = {
+        "create": ("post", LIST, new_employee()),
+        "edit": ("patch", f"{LIST}{asha.pk}/", {"designation": "Staff Engineer"}),
+        "exit": ("post", f"{LIST}{asha.pk}/exit/", {"last_date": "2026-10-31"}),
+        "revise": ("post", f"{LIST}{asha.pk}/compensation/", revision),
+        "cancel": ("delete", f"/api/v1/compensation/{scheduled.pk}/", None),
+    }[write]
+    before = written()
+
+    response = getattr(api, method)(f"{path}?{query}", body, format="json")
+
+    assert (response.status_code, response.json()) == (400, errors)
+    assert written() == before
+    asha.refresh_from_db()
+    assert asha.designation == "Senior Engineer"
+
+
+def test_a_patch_that_changes_nothing_writes_nothing(api, cast):
+    asha = cast["asha"]
+    url = f"{LIST}{asha.pk}/"
+    before = written()
+
+    # Ten minutes on, inside the access token's life, so a save would move updated_at.
+    with freeze_time("2026-10-07T09:10:00Z"):
+        empty = api.patch(url, {}, format="json")
+        same = api.patch(
+            url, {"designation": asha.designation, "email": asha.email.upper()}, format="json"
+        )
+
+    assert (empty.status_code, same.status_code) == (200, 200)
+    assert written() == before
+    assert {empty.json()["updated_at"], same.json()["updated_at"]} == {"2026-10-07T09:00:00+00:00"}
+
+
+def test_a_patch_with_a_code_and_a_new_country_refuses_both_at_once(api, cast):
+    response = api.patch(
+        f"{LIST}{cast['asha'].pk}/",
+        {"employee_code": "ACME-1", "country_code": "US", "designation": "Lead"},
+        format="json",
+    )
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {
+            "employee_code": ["employee_code is assigned by the system"],
+            "country_code": ["country_code cannot be changed"],
+        },
+    )
+
+
+def test_a_create_without_bonus_or_note_has_none(api, rates):
+    """D51: both are optional; the totals come from the lines alone."""
+    body = new_employee()
+    del body["bonus_annual"], body["note"]
+
+    response = api.post(LIST, body, format="json")
+
+    record = response.json()["current_record"]
+    assert response.status_code == 201, response.content
+    assert (record["bonus_annual"], record["note"], record["gross_annual"]) == (
+        "0.00",
+        "",
+        "1260000.00",
+    )
+
+
+def test_the_note_and_the_lookup_strings_are_capped(api, cast):
+    """Nothing unbounded is stored or echoed back in a 400 (D51)."""
+    too_long = "Ensure this field has no more than {} characters."
+
+    response = api.post(
+        LIST,
+        new_employee(
+            department="x" * 65,
+            country_code="I" * 65,
+            gender="g" * 65,
+            note="n" * 1001,
+            lines=[{"component": "C" * 65, "annual_amount": "900000.00"}],
+        ),
+        format="json",
+    )
+    edit = api.patch(f"{LIST}{cast['asha'].pk}/", {"department": "x" * 65}, format="json")
+    longest = api.post(LIST, new_employee(note="n" * 1000), format="json")
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "department": [too_long.format(64)],
+        "country_code": [too_long.format(64)],
+        "gender": [too_long.format(64)],
+        "note": [too_long.format(1000)],
+        "lines": {"0": {"component": [too_long.format(64)]}},
+    }
+    assert (edit.status_code, edit.json()) == (400, {"department": [too_long.format(64)]})
+    assert longest.status_code == 201, longest.content
+
+
 def test_put_is_not_offered(api, cast):
     response = api.put(f"/api/v1/employees/{cast['asha'].pk}/", new_employee(), format="json")
 
@@ -662,6 +790,24 @@ def test_an_exit_before_pay_starts_leaves_an_employee_who_still_shows(api, cast,
     assert [entry["action"] for entry in audit] == ["cancel", "exit", "revise"]
 
 
+def test_an_exit_before_a_first_record_that_has_been_current_is_a_400(api, cast, hr_user):
+    """D50 is narrow: pay that has started stays history, so the exit cannot precede it."""
+    hana = person("Hana Sato", joining_date=date(2024, 1, 1))
+    compensation.add_first_record(
+        hana, record_input(date(2024, 3, 1), BASE="900000"), actor=hr_user
+    )
+
+    response = api.post(
+        f"/api/v1/employees/{hana.pk}/exit/", {"last_date": "2024-02-15"}, format="json"
+    )
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"last_date": ["last_date precedes the current record (effective 2024-03-01)"]},
+    )
+    assert not CompensationRecord.objects.filter(employee=hana).exclude(cancelled_at=None).exists()
+
+
 def test_exit_errors_name_the_field_or_the_conflict(api, cast, hr_user):
     chloe = cast["chloe"]
     compensation.revise(chloe, record_input(date(2025, 4, 1), BASE="85000"), actor=hr_user)
@@ -670,7 +816,7 @@ def test_exit_errors_name_the_field_or_the_conflict(api, cast, hr_user):
         return api.post(f"/api/v1/employees/{person.pk}/exit/", {"last_date": day}, format="json")
 
     before_joining = exit_on(cast["ben"], "2018-06-14")
-    before_record = exit_on(chloe, "2025-03-15")
+    before_record = exit_on(chloe, "2025-03-31")
     scheduled = exit_on(cast["farah"], "2026-10-15")
     missing = api.post(f"/api/v1/employees/{chloe.pk}/exit/", {}, format="json")
 

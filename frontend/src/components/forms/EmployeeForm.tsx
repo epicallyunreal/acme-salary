@@ -6,14 +6,19 @@ import { Link, useNavigate } from 'react-router';
 
 import { useCreateEmployee } from '../../api/employees';
 import { useComponents, useCountries, useDepartments } from '../../api/meta';
-import type { EmployeeCreateInput, Gender } from '../../api/types';
+import type { EmployeeCreateInput } from '../../api/types';
+import { GENDER_LABELS, GENDERS, LEVELS } from '../../lib/constants';
 import { ErrorState } from '../layout/ErrorState';
 import { applyServerErrors, type FormMessage } from './applyServerErrors';
 import { ErrorSummary } from './ErrorSummary';
 import { fieldProblems, savedNotice } from './feedback';
 import { linesToSend } from './lines';
 import { RecordLinesFields } from './RecordLinesFields';
-import { employeeCreateSchema, type EmployeeCreateValues } from './schemas';
+import {
+  employeeCreateSchema,
+  type EmployeeCreateFields,
+  type EmployeeCreateValues,
+} from './schemas';
 
 /** The form's fields in the order they appear, with the id the error summary links to. */
 const FIELDS = [
@@ -30,15 +35,7 @@ const FIELDS = [
   ['note', 'employee-note'],
 ] as const;
 
-const GENDERS: [Gender, string][] = [
-  ['female', 'Female'],
-  ['male', 'Male'],
-  ['other', 'Other'],
-  ['undisclosed', 'Undisclosed'],
-];
-const LEVELS = ['1', '2', '3', '4', '5', '6'];
-
-const EMPTY: EmployeeCreateValues = {
+const EMPTY: EmployeeCreateFields = {
   full_name: '',
   email: '',
   gender: '',
@@ -66,7 +63,7 @@ export function EmployeeForm() {
   const create = useCreateEmployee();
   const countries = useCountries();
   const departments = useDepartments();
-  const methods = useForm<EmployeeCreateValues>({
+  const methods = useForm<EmployeeCreateFields, unknown, EmployeeCreateValues>({
     resolver: zodResolver(employeeCreateSchema),
     mode: 'onBlur',
     shouldFocusError: false,
@@ -76,6 +73,8 @@ export function EmployeeForm() {
     register,
     handleSubmit,
     setError,
+    setValue,
+    clearErrors,
     control,
     formState: { errors, submitCount },
   } = methods;
@@ -98,6 +97,14 @@ export function EmployeeForm() {
     };
   };
   const selectProps = { select: { native: true }, inputLabel: { shrink: true } } as const;
+  const countryField = field('country_code', 'Sets the currency and the pay components');
+  const changeCountry = (event: React.ChangeEvent<HTMLInputElement>) => {
+    // Another country has other components, and the amounts typed were in the old currency.
+    setValue('lines', {});
+    clearErrors('lines');
+    return countryField.onChange(event);
+  };
+  const metaFailed = countries.isError || departments.isError;
 
   const submit = handleSubmit(
     (values) => {
@@ -105,7 +112,7 @@ export function EmployeeForm() {
       const body: EmployeeCreateInput = {
         full_name: values.full_name,
         email: values.email,
-        gender: values.gender as Gender,
+        gender: values.gender,
         department: values.department,
         designation: values.designation,
         level: Number(values.level),
@@ -130,7 +137,7 @@ export function EmployeeForm() {
         onError: (error) => {
           setServerMessages(
             applyServerErrors(error, setError, {
-              fields: FIELDS.map(([name]) => name as Path<EmployeeCreateValues>),
+              fields: FIELDS.map(([name]) => name as Path<EmployeeCreateFields>),
               componentCodes: codes,
               sentLineCodes: lines.map((line) => line.component),
             }),
@@ -156,14 +163,25 @@ export function EmployeeForm() {
           <Typography id="identity-heading" variant="h3" component="h2" sx={{ mb: 4 }}>
             Identity
           </Typography>
+          {metaFailed ? (
+            <Box sx={{ mb: 4 }}>
+              <ErrorState
+                what="the countries and departments"
+                onRetry={() => {
+                  if (countries.isError) void countries.refetch();
+                  if (departments.isError) void departments.refetch();
+                }}
+              />
+            </Box>
+          ) : null}
           <Box sx={grid}>
             <TextField label="Full name" required autoComplete="off" {...field('full_name')} />
             <TextField label="Email" type="email" required {...field('email')} />
             <TextField label="Gender" select required slotProps={selectProps} {...field('gender')}>
               <option value="">Choose a gender</option>
-              {GENDERS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
+              {GENDERS.map((gender) => (
+                <option key={gender} value={gender}>
+                  {GENDER_LABELS[gender]}
                 </option>
               ))}
             </TextField>
@@ -172,7 +190,8 @@ export function EmployeeForm() {
               select
               required
               slotProps={selectProps}
-              {...field('country_code', 'Sets the currency and the pay components')}
+              {...countryField}
+              onChange={changeCountry}
             >
               <option value="">Choose a country</option>
               {countries.data?.map((country) => (
@@ -199,7 +218,7 @@ export function EmployeeForm() {
             <TextField label="Level" select required slotProps={selectProps} {...field('level')}>
               <option value="">Choose a level</option>
               {LEVELS.map((level) => (
-                <option key={level} value={level}>
+                <option key={level} value={String(level)}>
                   Level {level}
                 </option>
               ))}

@@ -100,6 +100,29 @@ def test_history_is_every_record_newest_first_with_lines_as_codes(api, asha):
     assert rows[1]["converted"]["currency"] == "USD"
 
 
+def test_history_honours_on_and_currency(api, asha):
+    """Section 8: the history accepts `on` and `currency`, like the detail."""
+    revise(api, asha, "2027-04-01")
+
+    today = history(api, asha)
+    later = api.get(history_url(asha.pk), {"on": "2027-04-01"}).json()
+    local = api.get(history_url(asha.pk), {"currency": "local"}).json()
+
+    assert [(row["version"], row["is_current"]) for row in today] == [(2, False), (1, True)]
+    assert [(row["version"], row["is_current"]) for row in later] == [(2, True), (1, False)]
+    # Gross 2,392,500 INR at 0.012.
+    assert (today[1]["converted"]["currency"], today[1]["converted"]["gross_annual"]) == (
+        "USD",
+        "28710.00",
+    )
+    converted = local[1]["converted"]
+    assert (converted["currency"], converted["rate"], converted["gross_annual"]) == (
+        "INR",
+        "1.00000000",
+        "2392500.00",
+    )
+
+
 def test_a_revision_on_or_before_the_latest_record_is_a_400(api, asha):
     for day in ("2025-04-01", "2025-03-31"):
         response = revise(api, asha, day)
@@ -157,6 +180,21 @@ def test_cancelling_a_current_or_cancelled_record_is_a_409(api, asha):
 
         assert response.status_code == 409
         assert response.json() == {"detail": "only a scheduled revision can be cancelled"}
+
+
+def test_a_revision_effective_today_cannot_be_cancelled_and_tomorrows_can(api, asha):
+    """The edge of `effective_from > today`: effective today is already current."""
+    effective_today = revise(api, asha, "2026-10-07").json()
+    effective_tomorrow = revise(api, asha, "2026-10-08", lines=lines(BASE="1700000.00")).json()
+
+    refused = cancel(api, effective_today["id"])
+    allowed = cancel(api, effective_tomorrow["id"])
+
+    assert (refused.status_code, refused.json()) == (
+        409,
+        {"detail": "only a scheduled revision can be cancelled"},
+    )
+    assert allowed.status_code == 200, allowed.content
 
 
 def test_cancel_and_re_enter_the_same_date_twice(api, asha):
@@ -272,19 +310,63 @@ def test_a_component_listed_twice_is_a_400(api, asha):
     assert response.json() == {"lines": ["BASE appears twice in lines"]}
 
 
-def test_a_malformed_amount_is_keyed_by_its_index_in_lines(api, asha):
-    """DRF 3.18 reports a bad item of a list as an object keyed by the item's index."""
+@pytest.mark.parametrize(
+    ("amount", "message"),
+    [
+        ("1.234", "Ensure that there are no more than 2 decimal places."),
+        ("abc", "A valid number is required."),
+        ("1234567890123.00", "Ensure that there are no more than 14 digits in total."),
+    ],
+)
+def test_a_malformed_amount_is_keyed_by_its_index_in_lines(api, asha, amount, message):
+    """DRF 3.18 reports a bad item of a list as an object keyed by the item's index, with DRF's
+    own text: the serializer refuses these before the validators run (D46)."""
     bad = [
         {"component": "BASE", "annual_amount": "1450000.00"},
-        {"component": "HRA", "annual_amount": "1.234"},
+        {"component": "HRA", "annual_amount": amount},
     ]
 
     response = revise(api, asha, "2026-11-01", lines=bad)
 
     assert response.status_code == 400
-    assert response.json() == {
-        "lines": {"1": {"annual_amount": ["Ensure that there are no more than 2 decimal places."]}}
-    }
+    assert response.json() == {"lines": {"1": {"annual_amount": [message]}}}
+
+
+def test_a_revision_without_bonus_or_note_has_none(api, asha):
+    """D51: both are optional; the totals come from the lines alone."""
+    response = api.post(
+        history_url(asha.pk),
+        {"effective_from": "2027-04-01", "lines": lines(BASE="1600000.00")},
+        format="json",
+    )
+
+    body = response.json()
+    assert response.status_code == 201, response.content
+    assert (body["bonus_annual"], body["note"], body["gross_annual"]) == ("0.00", "", "2542500.00")
+
+
+def test_a_body_with_more_lines_than_any_country_has_is_refused(api, asha):
+    """No country has twenty components, so a longer list is refused before anything is read."""
+    many = [{"component": f"C{n}", "annual_amount": "1.00"} for n in range(21)]
+
+    response = revise(api, asha, "2027-04-01", lines=many)
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"lines": {"non_field_errors": ["Ensure this field has no more than 20 elements."]}},
+    )
+
+
+def test_cancel_answers_in_the_currency_asked_for(api, asha):
+    scheduled = revise(api, asha, "2027-04-01").json()
+
+    response = api.delete(f"/api/v1/compensation/{scheduled['id']}/?currency=local")
+
+    assert response.status_code == 200, response.content
+    assert (response.json()["converted"]["currency"], response.json()["cancelled_at"]) == (
+        "INR",
+        "2026-10-07T09:00:00+00:00",
+    )
 
 
 def test_warnings_come_back_with_the_new_record(api, asha):

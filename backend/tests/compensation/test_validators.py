@@ -545,7 +545,7 @@ def test_last_date_before_a_scheduled_revision(with_scheduled):
 
 def test_last_date_before_the_current_record(existing):
     assert_message(
-        messages(matched_row(existing, last_date=date(2025, 3, 15))),
+        messages(matched_row(existing, last_date=date(2025, 3, 31))),
         "last_date_before_record",
         "last_date",
         "error",
@@ -780,7 +780,7 @@ def test_validate_exit_precedence(existing):
         v.validate_exit(existing, date(2024, 1, 1), ctx)
     assert before_joining.value.errors == {"last_date": ["last_date precedes joining_date"]}
     with pytest.raises(Invalid) as before_record:
-        v.validate_exit(existing, date(2025, 3, 15), ctx)
+        v.validate_exit(existing, date(2025, 3, 31), ctx)
     assert before_record.value.errors == {
         "last_date": ["last_date precedes the current record (effective 2025-04-01)"]
     }
@@ -853,9 +853,29 @@ def test_an_exit_before_pay_starts_hands_back_the_record_to_cancel(before_pay):
     only = ctx.first_by_employee[before_pay.pk]
     row = matched_row(before_pay, last_date=date(2026, 10, 31))
 
-    assert find(messages(row), "last_date_scheduled") is None
+    assert messages(row) == []
     assert v.validate_exit(before_pay, date(2026, 10, 31), ctx) is only
     assert v.validate_exit(before_pay, date(2026, 12, 1), ctx) is None
+
+
+@pytest.mark.parametrize(
+    ("starts", "cancels"), [(date(2026, 10, 8), True), (date(2026, 10, 7), False)]
+)
+def test_validate_exit_draws_the_line_at_today(lookups, starts, cancels):
+    """Pay from tomorrow has not started and is cancelled; pay from today has, and the 400 holds."""
+    employee = EmployeeFactory(joining_date=date(2026, 9, 1))
+    CompensationRecordFactory(employee=employee, effective_from=starts, lines=INDIA_LINES)
+    ctx = build_context(employees=[employee])
+    day_before = date.fromordinal(starts.toordinal() - 1)
+
+    if cancels:
+        assert v.validate_exit(employee, day_before, ctx) is ctx.first_by_employee[employee.pk]
+    else:
+        with pytest.raises(Invalid) as excinfo:
+            v.validate_exit(employee, day_before, ctx)
+        assert excinfo.value.errors == {
+            "last_date": [f"last_date precedes the current record (effective {starts})"]
+        }
 
 
 def test_the_scheduled_conflict_names_a_revision_not_the_first_record(before_pay):

@@ -62,6 +62,7 @@ export function RecordLinesFields({ components, currency }: RecordLinesFieldsPro
                     inputRef={ref}
                     id={`line-${component.code}`}
                     label={`${component.name} (${currency})`}
+                    required={component.code === 'BASE'}
                     error={Boolean(error)}
                     helperText={error?.message ?? (component.code === 'BASE' ? 'Required' : ' ')}
                     slotProps={{ htmlInput: { inputMode: 'decimal', className: 'num' } }}
@@ -74,7 +75,6 @@ export function RecordLinesFields({ components, currency }: RecordLinesFieldsPro
       })}
 
       <Box
-        aria-live="polite"
         sx={{
           display: 'flex',
           flexWrap: 'wrap',

@@ -1,10 +1,12 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { delay } from 'msw';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import type { CompensationRecord } from '../api/types';
 import { setSession } from '../lib/auth';
-import { employeeDetails, histories } from '../test/fixtures/detail';
+import { auditPage, employeeDetails, histories } from '../test/fixtures/detail';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
 
@@ -99,12 +101,18 @@ describe('EmployeeDetail', () => {
     expect(
       within(rows[1]).getByText('Cancelled 5 Oct 2026 by hr@acme.example'),
     ).toBeInTheDocument();
+    expect(within(rows[1]).getByText('EUR 64,000')).toHaveStyle({
+      textDecoration: 'line-through',
+    });
+    expect(within(rows[0]).getByText('EUR 66,000')).not.toHaveStyle({
+      textDecoration: 'line-through',
+    });
     expect(within(rows[2]).getByText('1 Sept 2023 to 31 Oct 2026')).toBeInTheDocument();
     expect(within(table).getAllByRole('button')).toHaveLength(1);
     expect(within(rows[0]).getByRole('button', { name: 'Cancel revision v3' })).toBeInTheDocument();
   });
 
-  it('cancels a scheduled revision after confirming, then says so', async () => {
+  it('cancels a scheduled revision after confirming, says so, and shows it cancelled', async () => {
     const user = userEvent.setup();
     const deleted: string[] = [];
     server.use(
@@ -112,6 +120,20 @@ describe('EmployeeDetail', () => {
         deleted.push(String(params.id));
         return HttpResponse.json({});
       }),
+      http.get('/api/v1/employees/4/compensation/', () =>
+        HttpResponse.json(
+          histories[4].map((record) =>
+            deleted.includes(String(record.id))
+              ? {
+                  ...record,
+                  is_scheduled: false,
+                  cancelled_at: '2026-10-07T09:00:00+00:00',
+                  cancelled_by: 'hr@acme.example',
+                }
+              : record,
+          ),
+        ),
+      ),
     );
     renderApp('/employees/4');
 
@@ -122,6 +144,74 @@ describe('EmployeeDetail', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Revision v3 cancelled.');
     expect(deleted).toEqual(['43']);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const table = screen.getByRole('table', { name: 'Pay history' });
+    await waitFor(() =>
+      expect(within(table).getAllByRole('row')[1]).toHaveAttribute('data-state', 'cancelled'),
+    );
+    expect(within(table).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('keeps the cancel dialog open with the reason when the server refuses', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.delete('/api/v1/compensation/:id/', () =>
+        HttpResponse.json(
+          { detail: 'only a scheduled revision can be cancelled' },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderApp('/employees/4');
+
+    await user.click(await screen.findByRole('button', { name: 'Cancel revision v3' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Cancel revision v3?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel revision' }));
+
+    const summary = await within(dialog).findByRole('alert');
+    expect(summary).toHaveTextContent('Not cancelled');
+    expect(summary).toHaveTextContent('only a scheduled revision can be cancelled');
+    expect(summary).toHaveFocus();
+  });
+
+  it("labels a future joiner's record from its start, with no Cancel on version 1", async () => {
+    const first: CompensationRecord = {
+      ...histories[1][0],
+      effective_from: '2027-01-01',
+      is_current: false,
+      is_scheduled: true,
+    };
+    server.use(
+      http.get('/api/v1/employees/1/', () =>
+        HttpResponse.json({
+          ...employeeDetails[1],
+          status: 'upcoming',
+          joining_date: '2027-01-01',
+          shown_label: 'from 2027-01-01',
+          current_record: first,
+        }),
+      ),
+      http.get('/api/v1/employees/1/compensation/', () => HttpResponse.json([first])),
+    );
+    renderApp('/employees/1');
+
+    const card = await screen.findByRole('region', { name: 'Latest record' });
+    expect(within(card).getByText('from 1 Jan 2027')).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Pay history' });
+    expect(within(table).getAllByRole('row')[1]).toHaveAttribute('data-state', 'scheduled');
+    // Version 1 cannot be cancelled (D26), so the button would only ever answer 409.
+    expect(within(table).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('offers a revision only once the history it starts from has loaded', async () => {
+    server.use(
+      http.get('/api/v1/employees/1/compensation/', async () => {
+        await delay('infinite');
+        return HttpResponse.json([]);
+      }),
+    );
+    renderApp('/employees/1');
+
+    expect(await screen.findByRole('button', { name: 'Add revision' })).toBeDisabled();
   });
 
   it('shows a 409 from the exit inline, and puts a 400 on the date field', async () => {
@@ -169,7 +259,18 @@ describe('EmployeeDetail', () => {
     expect(await within(dialog).findByText('Enter the last working day')).toBeInTheDocument();
   });
 
-  it('marks an employee exited and says so', async () => {
+  it('marks an employee exited, says so, and shows the exit', async () => {
+    let lastDate: string | null = null;
+    const exited = () => ({ ...employeeDetails[1], last_date: lastDate, status: 'exited' });
+    server.use(
+      http.post('/api/v1/employees/1/exit/', async ({ request }) => {
+        lastDate = ((await request.json()) as { last_date: string }).last_date;
+        return HttpResponse.json(exited());
+      }),
+      http.get('/api/v1/employees/1/', () =>
+        HttpResponse.json(lastDate ? exited() : employeeDetails[1]),
+      ),
+    );
     const { user, dialog } = await openExitDialog();
 
     await user.click(within(dialog).getByRole('button', { name: 'Mark exited' }));
@@ -177,6 +278,10 @@ describe('EmployeeDetail', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Asha Rao marked exited, last day 30 Sept 2026.',
     );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Mark exited' })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText('Last day')).toBeInTheDocument();
   });
 
   it('lists who changed what, and when, in the audit tab', async () => {
@@ -188,6 +293,8 @@ describe('EmployeeDetail', () => {
     const table = await screen.findByRole('table', { name: 'Audit list' });
     const [update, create, first] = within(table).getAllByRole('row').slice(1);
     expect(within(update).getByText('hr@acme.example')).toBeInTheDocument();
+    // 09:00 UTC in the tests' America/New_York.
+    expect(within(update).getByText('7 Oct 2026, 05:00')).toBeInTheDocument();
     expect(
       within(update).getByText('Designation: Engineer to Senior Engineer'),
     ).toBeInTheDocument();
@@ -197,6 +304,38 @@ describe('EmployeeDetail', () => {
     expect(
       within(first).getByText('First pay record v1 from 1 Jan 2020, gross INR 1,450,000'),
     ).toBeInTheDocument();
+  });
+
+  it('says when the audit tab shows only the latest 100 changes (D42)', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/employees/1/audit/', ({ request }) => {
+        expect(new URL(request.url).searchParams.get('page_size')).toBe('100');
+        const page = auditPage(1);
+        return HttpResponse.json({ ...page, count: 1250, next: 'next' });
+      }),
+    );
+    renderApp('/employees/1');
+
+    await user.click(await screen.findByRole('tab', { name: 'Audit' }));
+
+    expect(await screen.findByText('Showing the latest 3 of 1,250 changes.')).toBeInTheDocument();
+  });
+
+  it('asks for a first record when an employee has none', async () => {
+    server.use(
+      http.get('/api/v1/employees/2/', () =>
+        HttpResponse.json({ ...employeeDetails[2], current_record: null }),
+      ),
+      http.get('/api/v1/employees/2/compensation/', () => HttpResponse.json([])),
+    );
+    renderApp('/employees/2');
+
+    const card = await screen.findByRole('region', { name: 'Current record' });
+    expect(
+      within(card).getByText('No pay record yet. Add a revision to set one.'),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('No pay records yet.')).toBeInTheDocument();
   });
 
   it('says an unknown employee does not exist', async () => {
@@ -216,23 +355,32 @@ describe('EmployeeDetail', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
-  it('adds a revision that starts from the latest amounts, then says so', async () => {
+  it('adds a revision that starts from the latest amounts, says so, and lists it', async () => {
     const user = userEvent.setup();
     const sent: unknown[] = [];
+    let added: CompensationRecord | null = null;
     server.use(
       http.post('/api/v1/employees/:id/compensation/', async ({ request }) => {
         sent.push(await request.json());
-        return HttpResponse.json(
-          { ...histories[1][0], id: 12, version: 2, warnings: [] },
-          { status: 201 },
-        );
+        added = {
+          ...histories[1][0],
+          id: 12,
+          version: 2,
+          effective_from: '2026-11-01',
+          is_current: false,
+          is_scheduled: true,
+        };
+        return HttpResponse.json({ ...added, warnings: [] }, { status: 201 });
       }),
+      http.get('/api/v1/employees/1/compensation/', () =>
+        HttpResponse.json(added ? [added, ...histories[1]] : histories[1]),
+      ),
     );
     renderApp('/employees/1');
 
     await user.click(await screen.findByRole('button', { name: 'Add revision' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add a revision for Asha Rao' });
-    const base = await within(dialog).findByLabelText('Base salary (INR)');
+    const base = await within(dialog).findByLabelText(/Base salary \(INR\)/);
     expect(base).toHaveValue('1000000.00');
     fireEvent.change(within(dialog).getByLabelText(/Effective from/), {
       target: { value: '2026-11-01' },
@@ -242,6 +390,8 @@ describe('EmployeeDetail', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save revision' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Revision v2 saved.');
+    const table = screen.getByRole('table', { name: 'Pay history' });
+    expect(await within(table).findByText('v2')).toBeInTheDocument();
     expect(sent).toEqual([
       {
         effective_from: '2026-11-01',
@@ -257,6 +407,31 @@ describe('EmployeeDetail', () => {
     ]);
   });
 
+  it('asks for the revision date and a plain amount before sending', async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    server.use(
+      http.post('/api/v1/employees/:id/compensation/', async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({}, { status: 201 });
+      }),
+    );
+    renderApp('/employees/1');
+    await user.click(await screen.findByRole('button', { name: 'Add revision' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Add a revision for Asha Rao' });
+    const base = await within(dialog).findByLabelText(/Base salary \(INR\)/);
+    await user.clear(base);
+    await user.type(base, '12,00,000');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save revision' }));
+
+    expect(await within(dialog).findByLabelText(/Effective from/)).toHaveAccessibleDescription(
+      'Enter the date the revision takes effect',
+    );
+    expect(base).toHaveAccessibleDescription('Enter an amount like 1450000 or 1450000.50');
+    expect(sent).toEqual([]);
+  });
+
   it("puts a revision's date error on the date field", async () => {
     const user = userEvent.setup();
     server.use(
@@ -270,7 +445,7 @@ describe('EmployeeDetail', () => {
     renderApp('/employees/1');
     await user.click(await screen.findByRole('button', { name: 'Add revision' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add a revision for Asha Rao' });
-    await within(dialog).findByLabelText('Base salary (INR)');
+    await within(dialog).findByLabelText(/Base salary \(INR\)/);
     fireEvent.change(within(dialog).getByLabelText(/Effective from/), {
       target: { value: '2020-01-01' },
     });
@@ -282,14 +457,20 @@ describe('EmployeeDetail', () => {
     );
   });
 
-  it('sends only the identity fields that changed, then says so', async () => {
+  it('sends only the identity fields that changed, says so, and shows the change', async () => {
     const user = userEvent.setup();
     const sent: unknown[] = [];
+    let saved = employeeDetails[1].designation;
     server.use(
       http.patch('/api/v1/employees/:id/', async ({ request }) => {
-        sent.push(await request.json());
-        return HttpResponse.json(employeeDetails[1]);
+        const body = (await request.json()) as { designation: string };
+        sent.push(body);
+        saved = body.designation;
+        return HttpResponse.json({ ...employeeDetails[1], designation: saved });
       }),
+      http.get('/api/v1/employees/1/', () =>
+        HttpResponse.json({ ...employeeDetails[1], designation: saved }),
+      ),
     );
     renderApp('/employees/1');
 
@@ -301,10 +482,30 @@ describe('EmployeeDetail', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('Changes saved.');
+    expect(await screen.findByText('Staff Engineer')).toBeInTheDocument();
     expect(sent).toEqual([{ designation: 'Staff Engineer' }]);
     // The codes are never the client's to send (D48).
     expect(sent[0]).not.toHaveProperty('employee_code');
     expect(sent[0]).not.toHaveProperty('legacy_code');
+  });
+
+  it('moves focus to the error summary on a failed save, not on a later field error', async () => {
+    const user = userEvent.setup();
+    renderApp('/employees/1');
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Edit Asha Rao' });
+    const name = within(dialog).getByLabelText(/Full name/);
+    await user.clear(name);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveFocus();
+    await user.type(name, 'Asha Rao');
+    await waitFor(() => expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument());
+    const designation = within(dialog).getByLabelText(/Designation/);
+    await user.clear(designation);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Enter the designation');
+    expect(designation).toHaveFocus();
   });
 
   it('closes the edit without a request when nothing changed', async () => {

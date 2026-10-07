@@ -36,6 +36,7 @@ class CompensationHistoryView(OneEmployeeMixin, ListCreateAPIView):
 
     def create(self, request, *args, **kwargs):
         employee = self.get_object()
+        self.reporting()
         body = RecordInputSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         written = services.revise(employee, body.record_input(), actor=request.user)
@@ -65,7 +66,9 @@ class CompensationRecordView(ReportingMixin, GenericAPIView):
         return [country.code], {country.code: country.currency_code}
 
     def delete(self, request, *args, **kwargs):
-        record = services.cancel(self.get_object(), actor=request.user)
+        record = self.get_object()
+        self.reporting()
+        record = services.cancel(record, actor=request.user)
         fresh = queries.history_queryset(record.employee_id).get(pk=record.pk)
         return Response(
             CompensationRecordSerializer(fresh, context=self.get_serializer_context()).data

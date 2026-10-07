@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -135,6 +135,22 @@ def test_update_identity_refuses_a_new_country_and_accepts_the_same_one(with_fir
     )
 
 
+def test_update_identity_with_nothing_new_saves_and_audits_nothing(with_first):
+    stamp = with_first.updated_at
+    later = datetime(2026, 10, 8, 9, tzinfo=UTC)
+
+    services.update_identity(with_first, {}, at=later)
+    services.update_identity(
+        with_first,
+        {"designation": with_first.designation, "email": with_first.email.upper()},
+        at=later,
+    )
+
+    with_first.refresh_from_db()
+    assert with_first.updated_at == stamp
+    assert not AuditLog.objects.filter(action="update").exists()
+
+
 def test_update_identity_applies_the_change_and_audits(with_first):
     services.update_identity(
         with_first,
@@ -204,18 +220,23 @@ def test_a_last_date_before_joining_is_a_400(with_first):
     assert excinfo.value.errors == {"last_date": ["last_date precedes joining_date"]}
 
 
-def test_a_last_date_before_the_open_record_is_a_400(with_first):
+def test_a_last_date_before_the_open_record_is_a_400_and_its_first_day_is_not(with_first):
+    """The day before the open record starts is the last refused date; its first day closes it
+    after one day, so no off-by-one reaches the half-open CHECK as a 500 (D44)."""
     compensation.revise(
         with_first,
         record_input(effective_from=date(2025, 4, 1), lines={**LINES, "BASE": Decimal("1600000")}),
     )
 
     with pytest.raises(Invalid) as excinfo:
-        services.exit_employee(with_first, date(2025, 3, 15))
+        services.exit_employee(with_first, date(2025, 3, 31))
+    services.exit_employee(with_first, date(2025, 4, 1))
 
     assert excinfo.value.errors == {
         "last_date": ["last_date precedes the current record (effective 2025-04-01)"]
     }
+    second = CompensationRecord.objects.get(employee=with_first, version=2)
+    assert (second.effective_from, second.effective_to) == (date(2025, 4, 1), date(2025, 4, 2))
 
 
 def test_exit_refuses_while_a_scheduled_revision_follows_then_works_after_cancel(with_first):
@@ -336,3 +357,44 @@ def test_a_first_record_that_has_been_current_keeps_the_400(lookups):
         "last_date": ["last_date precedes the current record (effective 2024-03-01)"]
     }
     assert CompensationRecord.objects.get(employee=employee).cancelled_at is None
+
+
+@pytest.mark.parametrize(
+    ("starts", "last_date"),
+    [(date(2026, 10, 8), date(2026, 10, 7)), (date(2026, 12, 1), date(2026, 11, 30))],
+    ids=["pay-starts-tomorrow", "exit-the-day-before-pay"],
+)
+def test_the_edges_of_an_exit_before_pay_starts_cancel(lookups, starts, last_date):
+    """Pay starting tomorrow has not started today; the last day before pay is still before it."""
+    employee = EmployeeFactory(joining_date=date(2026, 9, 1))
+    compensation.add_first_record(employee, record_input(effective_from=starts))
+
+    services.exit_employee(employee, last_date)
+
+    record = CompensationRecord.objects.get(employee=employee)
+    assert (record.cancelled_at is not None, record.effective_to) == (True, None)
+
+
+def test_pay_that_starts_today_has_started(lookups):
+    employee = EmployeeFactory(joining_date=date(2026, 9, 1))
+    compensation.add_first_record(employee, record_input(effective_from=date(2026, 10, 7)))
+
+    with pytest.raises(Invalid) as excinfo:
+        services.exit_employee(employee, date(2026, 10, 6))
+
+    assert excinfo.value.errors == {
+        "last_date": ["last_date precedes the current record (effective 2026-10-07)"]
+    }
+
+
+def test_after_an_exit_before_pay_a_record_up_to_the_exit_is_still_possible(before_pay):
+    """The way back when the employee did work for a while: a record dated on or before the exit
+    ends the day after it, and one after the exit is a 409 like any other (D36)."""
+    services.exit_employee(before_pay, date(2026, 10, 31))
+
+    worked = compensation.revise(before_pay, record_input(effective_from=date(2026, 10, 1)))
+    with pytest.raises(Conflict, match="no revision after the exit on 2026-10-31"):
+        compensation.revise(before_pay, record_input(effective_from=date(2026, 11, 15)))
+
+    assert (worked.record.version, worked.record.effective_to) == (2, date(2026, 11, 1))
+    assert compensation.live_records(before_pay).get() == worked.record

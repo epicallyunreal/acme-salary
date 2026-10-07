@@ -15,7 +15,8 @@ interface ErrorSummaryProps {
   fields?: FieldProblem[];
   /** What the server said that no field could hold, each with the key it came under. */
   messages?: FormMessage[];
-  /** Changes on every failed submit, so focus moves to the summary each time. */
+  /** Changes on every failed submit, and only then does focus move to the summary, so an error
+   * found on blur later never pulls focus off the field being edited. */
   attempt?: number;
 }
 
@@ -32,8 +33,8 @@ export function ErrorSummary({
   const shown = fields.length + messages.length > 0;
 
   useEffect(() => {
-    if (shown) ref.current?.focus();
-  }, [shown, attempt]);
+    if (attempt > 0) ref.current?.focus();
+  }, [attempt]);
 
   if (!shown) return null;
 

@@ -20,6 +20,7 @@ import { formatDate } from '../../lib/dates';
 import { ErrorState } from '../layout/ErrorState';
 import { applyServerErrors, type FormMessage } from './applyServerErrors';
 import { ErrorSummary } from './ErrorSummary';
+import { formPaper } from './formPaper';
 import { fieldProblems, type Notice, savedNotice } from './feedback';
 import { amountsOf, linesToSend } from './lines';
 import { RecordLinesFields } from './RecordLinesFields';
@@ -112,69 +113,73 @@ export function RevisionDialog({ employee, latest, onClose, onDone }: RevisionDi
   );
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md">
-      <FormProvider {...methods}>
-        <form onSubmit={submit} noValidate>
-          <DialogTitle>Add a revision for {employee.full_name}</DialogTitle>
-          <DialogContent>
-            <ErrorSummary
-              title="The revision was not saved"
-              fields={submitCount ? fieldProblems(errors, FIELDS, codes) : []}
-              messages={serverMessages}
-              attempt={attempt}
-            />
-            <DialogContentText sx={{ mb: 4 }}>
-              The amounts start from the latest record. A date after today schedules the revision;
-              it can be cancelled until it takes effect.
-            </DialogContentText>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                gap: 4,
-                mb: 4,
-              }}
-            >
-              <TextField
-                label="Effective from"
-                type="date"
-                required
-                slotProps={{ inputLabel: { shrink: true } }}
-                {...field(
-                  'effective_from',
-                  latest ? `After ${formatDate(latest.effective_from)}` : ' ',
-                )}
-              />
-              <TextField
-                label={`Bonus per year (${currency})`}
-                slotProps={{ htmlInput: { inputMode: 'decimal', className: 'num' } }}
-                {...field('bonus_annual', 'Leave blank for none')}
-              />
-            </Box>
-            {components.isError ? (
-              <ErrorState what="the pay components" onRetry={() => void components.refetch()} />
-            ) : components.isPending ? (
-              <LinearProgress aria-label="Loading the pay components" />
-            ) : (
-              <RecordLinesFields components={components.data} currency={currency} />
-            )}
+    <FormProvider {...methods}>
+      <Dialog
+        open
+        onClose={onClose}
+        fullWidth
+        maxWidth="md"
+        slotProps={{ paper: formPaper(submit) }}
+      >
+        <DialogTitle>Add a revision for {employee.full_name}</DialogTitle>
+        <DialogContent>
+          <ErrorSummary
+            title="The revision was not saved"
+            fields={submitCount ? fieldProblems(errors, FIELDS, codes) : []}
+            messages={serverMessages}
+            attempt={attempt}
+          />
+          <DialogContentText sx={{ mb: 4 }}>
+            The amounts start from the latest record. A date after today schedules the revision; it
+            can be cancelled until it takes effect.
+          </DialogContentText>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+              gap: 4,
+              mb: 4,
+            }}
+          >
             <TextField
-              label="Note"
-              multiline
-              minRows={2}
-              fullWidth
-              sx={{ mt: 4 }}
-              {...field('note', 'The reason, for the history')}
+              label="Effective from"
+              type="date"
+              required
+              slotProps={{ inputLabel: { shrink: true } }}
+              {...field(
+                'effective_from',
+                latest ? `After ${formatDate(latest.effective_from)}` : ' ',
+              )}
             />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={onClose}>Discard revision</Button>
-            <Button type="submit" variant="contained" loading={revise.isPending}>
-              Save revision
-            </Button>
-          </DialogActions>
-        </form>
-      </FormProvider>
-    </Dialog>
+            <TextField
+              label={`Bonus per year (${currency})`}
+              slotProps={{ htmlInput: { inputMode: 'decimal', className: 'num' } }}
+              {...field('bonus_annual', 'Leave blank for none')}
+            />
+          </Box>
+          {components.isError ? (
+            <ErrorState what="the pay components" onRetry={() => void components.refetch()} />
+          ) : components.isPending ? (
+            <LinearProgress aria-label="Loading the pay components" />
+          ) : (
+            <RecordLinesFields components={components.data} currency={currency} />
+          )}
+          <TextField
+            label="Note"
+            multiline
+            minRows={2}
+            fullWidth
+            sx={{ mt: 4 }}
+            {...field('note', 'The reason, for the history')}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Discard revision</Button>
+          <Button type="submit" variant="contained" loading={revise.isPending}>
+            Save revision
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </FormProvider>
   );
 }

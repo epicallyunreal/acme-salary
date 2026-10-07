@@ -277,12 +277,12 @@ def cancel(
     today = today or today_utc()
     at = at or timezone.now()
     with transaction.atomic():
-        # Read fresh under the write lock, so a second cancel of the same row is a 409 (D44).
+        # Read fresh under the write lock, so a second cancel of the same row is a 409 (D44), and
+        # the employee too, for the last_date the re-chain below reads.
         record.refresh_from_db()
         if record.cancelled_at is not None or record.effective_from <= today:
             raise Conflict("only a scheduled revision can be cancelled")
-        employee = record.employee
-        employee.refresh_from_db()
+        employee = Employee.objects.get(pk=record.employee_id)
         previous = (
             live_records(employee)
             .filter(effective_from__lt=record.effective_from)
@@ -323,12 +323,20 @@ def cancel(
 
 
 def cancel_unstarted(
-    record: CompensationRecord, employee: Employee, *, actor=None, at: datetime | None = None
-):
+    record: CompensationRecord,
+    employee: Employee,
+    *,
+    actor=None,
+    at: datetime | None = None,
+    today: date | None = None,
+) -> CompensationRecord:
     """Exit support (D50): an exit dated before the employee's only record starts cancels that
     record, which has never been current. Audited as `cancel`, like any cancellation; the
-    caller's `exit` entry comes first."""
+    caller's `exit` entry comes first. Only `exit_employee` calls it, after `validate_exit` chose
+    the record under the write lock; the guard keeps any other caller off a started record."""
     at = at or timezone.now()
+    if record.cancelled_at is not None or record.effective_from <= (today or today_utc()):
+        raise ValueError("cancel_unstarted needs a live record that has not started")
     before = audit.snapshot_record(record)
     record.cancelled_at = at
     record.cancelled_by = actor
@@ -621,9 +629,9 @@ def bulk_apply(
                 if entry.last_date is not None:
                     open_row = ctx.open_by_employee.get(employee.pk)
                     unstarted = validators.unstarted_only_record(employee, entry.last_date, ctx)
-                    if open_row is not None and open_row is unstarted:
+                    if unstarted is not None:
                         # An exit before pay starts cancels the only record (D50).
-                        cancelled_for_exit[employee.pk] = open_row
+                        cancelled_for_exit[employee.pk] = unstarted
                     elif open_row is not None:
                         original_end[open_row.pk] = open_row.effective_to
                         open_row.effective_to = close_at

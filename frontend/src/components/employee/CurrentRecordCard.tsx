@@ -9,7 +9,12 @@ import {
   Typography,
 } from '@mui/material';
 
-import type { ComponentKind, EmployeeDetail, SalaryComponent } from '../../api/types';
+import type {
+  CompensationRecord,
+  ComponentKind,
+  EmployeeDetail,
+  SalaryComponent,
+} from '../../api/types';
 import { formatDate, formatMonth } from '../../lib/dates';
 import { formatAmount, formatMoney, formatRate, isZero, monthly } from '../../lib/money';
 import { EmptyState } from '../layout/EmptyState';
@@ -63,10 +68,19 @@ function Figure({ label, value, currency, converted, convertedCurrency, note, he
   );
 }
 
-/** "from 2026-11-01" or "exited 2026-06-30" from the API, written out for people. */
-function shownLabel(label: string): { status: string; text: string } {
-  const [word, day] = label.split(' ');
-  return { status: word === 'exited' ? 'exited' : 'scheduled', text: `${word} ${formatDate(day)}` };
+/** Why the record shown is not the one in force, in the API's order (SPEC F3): the employee has
+ * left, else pay starts later. */
+function shownLabel(
+  employee: EmployeeDetail,
+  record: CompensationRecord,
+): { status: string; text: string } | null {
+  if (employee.status === 'exited' && employee.last_date) {
+    return { status: 'exited', text: `exited ${formatDate(employee.last_date)}` };
+  }
+  if (record.is_scheduled) {
+    return { status: 'scheduled', text: `from ${formatDate(record.effective_from)}` };
+  }
+  return null;
 }
 
 interface CurrentRecordCardProps {
@@ -97,7 +111,7 @@ export function CurrentRecordCard({ employee, components }: CurrentRecordCardPro
   const converted = record.converted;
   const other = converted.currency !== local ? converted.currency : undefined;
   const byCode = new Map(components?.map((component) => [component.code, component]));
-  const label = employee.shown_label ? shownLabel(employee.shown_label) : null;
+  const label = employee.shown_label ? shownLabel(employee, record) : null;
 
   return (
     <Paper component="section" aria-labelledby="current-record-title" sx={{ p: 6, mb: 6 }}>

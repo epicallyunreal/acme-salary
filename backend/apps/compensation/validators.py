@@ -231,9 +231,14 @@ def build_context(
 
     ids = list(by_id)
     for start in range(0, len(ids), CHUNK):
-        records = CompensationRecord.objects.filter(
-            employee_id__in=ids[start : start + CHUNK], cancelled_at__isnull=True
-        ).order_by("employee_id", "effective_from")
+        # The author comes along: bulk_apply snapshots these records for its audit entries.
+        records = (
+            CompensationRecord.objects.filter(
+                employee_id__in=ids[start : start + CHUNK], cancelled_at__isnull=True
+            )
+            .select_related("created_by")
+            .order_by("employee_id", "effective_from")
+        )
         for record in records:
             ctx.first_by_employee.setdefault(record.employee_id, record)
             ctx.latest_by_employee[record.employee_id] = record
@@ -899,10 +904,17 @@ def _department_value(identity: Mapping[str, Any], employee: Employee | None) ->
 SYSTEM_CODES = {"employee_code": "code_assigned", "legacy_code": "legacy_import_only"}
 
 
-def refuse_codes(values: Mapping[str, Any]) -> None:
+def refuse_codes(values: Mapping[str, Any], employee: Employee | None = None) -> None:
     """A create or an edit through the API that carries either code is a 400, whatever value it
-    holds, so a client cannot believe it set one."""
+    holds, so a client cannot believe it set one. An edit cannot move the employee to another
+    country either (SPEC F3). Every refusal comes back in the one 400."""
     errors = {name: [msg(key)] for name, key in SYSTEM_CODES.items() if name in values}
+    if (
+        employee is not None
+        and "country_code" in values
+        and values["country_code"] != employee.country_id
+    ):
+        errors["country_code"] = [msg("country_fixed")]
     if errors:
         raise Invalid(errors)
 

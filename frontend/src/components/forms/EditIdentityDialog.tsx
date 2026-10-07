@@ -14,11 +14,13 @@ import { type Path, useForm } from 'react-hook-form';
 
 import { useUpdateEmployee } from '../../api/employees';
 import { useDepartments } from '../../api/meta';
-import type { EmployeeDetail, Gender, IdentityPatch } from '../../api/types';
+import type { EmployeeDetail, IdentityPatch } from '../../api/types';
+import { GENDER_LABELS, GENDERS, LEVELS } from '../../lib/constants';
 import { applyServerErrors, type FormMessage } from './applyServerErrors';
 import { ErrorSummary } from './ErrorSummary';
+import { formPaper } from './formPaper';
 import { fieldProblems, type Notice, savedNotice } from './feedback';
-import { identitySchema, type IdentityValues } from './schemas';
+import { type IdentityFields, identitySchema, type IdentityValues } from './schemas';
 
 const FIELDS = [
   ['full_name', 'edit-full-name'],
@@ -30,14 +32,7 @@ const FIELDS = [
   ['joining_date', 'edit-joining-date'],
 ] as const;
 
-const GENDERS: [Gender, string][] = [
-  ['female', 'Female'],
-  ['male', 'Male'],
-  ['other', 'Other'],
-  ['undisclosed', 'Undisclosed'],
-];
-
-function valuesOf(employee: EmployeeDetail): IdentityValues {
+function valuesOf(employee: EmployeeDetail): IdentityFields {
   return {
     full_name: employee.full_name,
     email: employee.email,
@@ -67,7 +62,7 @@ export function EditIdentityDialog({ employee, onClose, onDone }: EditIdentityDi
     handleSubmit,
     setError,
     formState: { errors, dirtyFields, submitCount },
-  } = useForm<IdentityValues>({
+  } = useForm<IdentityFields, unknown, IdentityValues>({
     resolver: zodResolver(identitySchema),
     mode: 'onBlur',
     shouldFocusError: false,
@@ -92,7 +87,7 @@ export function EditIdentityDialog({ employee, onClose, onDone }: EditIdentityDi
       for (const [name] of FIELDS) {
         if (!dirtyFields[name]) continue;
         if (name === 'level') patch.level = Number(values.level);
-        else if (name === 'gender') patch.gender = values.gender as Gender;
+        else if (name === 'gender') patch.gender = values.gender;
         else patch[name] = values[name];
       }
       if (!Object.keys(patch).length) {
@@ -108,7 +103,7 @@ export function EditIdentityDialog({ employee, onClose, onDone }: EditIdentityDi
         onError: (error) => {
           setServerMessages(
             applyServerErrors(error, setError, {
-              fields: FIELDS.map(([name]) => name as Path<IdentityValues>),
+              fields: FIELDS.map(([name]) => name as Path<IdentityFields>),
             }),
           );
           setAttempt((count) => count + 1);
@@ -119,67 +114,65 @@ export function EditIdentityDialog({ employee, onClose, onDone }: EditIdentityDi
   );
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="sm">
-      <form onSubmit={submit} noValidate>
-        <DialogTitle>Edit {employee.full_name}</DialogTitle>
-        <DialogContent>
-          <ErrorSummary
-            title="The changes were not saved"
-            fields={submitCount ? fieldProblems(errors, FIELDS) : []}
-            messages={serverMessages}
-            attempt={attempt}
+    <Dialog open onClose={onClose} fullWidth maxWidth="sm" slotProps={{ paper: formPaper(submit) }}>
+      <DialogTitle>Edit {employee.full_name}</DialogTitle>
+      <DialogContent>
+        <ErrorSummary
+          title="The changes were not saved"
+          fields={submitCount ? fieldProblems(errors, FIELDS) : []}
+          messages={serverMessages}
+          attempt={attempt}
+        />
+        <DialogContentText sx={{ mb: 4 }}>
+          The employee code ({employee.employee_code}) and the country ({employee.country.name})
+          cannot change.
+        </DialogContentText>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 4 }}>
+          <TextField label="Full name" required {...field('full_name')} />
+          <TextField label="Email" type="email" required {...field('email')} />
+          <TextField label="Gender" select required slotProps={selectProps} {...field('gender')}>
+            {GENDERS.map((gender) => (
+              <option key={gender} value={gender}>
+                {GENDER_LABELS[gender]}
+              </option>
+            ))}
+          </TextField>
+          <TextField
+            label="Department"
+            select
+            required
+            slotProps={selectProps}
+            {...field('department')}
+          >
+            {(departments.data ?? [employee.department]).map((department) => (
+              <option key={department.code} value={department.code}>
+                {department.name}
+              </option>
+            ))}
+          </TextField>
+          <TextField label="Designation" required {...field('designation')} />
+          <TextField label="Level" select required slotProps={selectProps} {...field('level')}>
+            {LEVELS.map((level) => (
+              <option key={level} value={String(level)}>
+                Level {level}
+              </option>
+            ))}
+          </TextField>
+          <TextField
+            label="Joining date"
+            type="date"
+            required
+            slotProps={{ inputLabel: { shrink: true } }}
+            {...field('joining_date')}
           />
-          <DialogContentText sx={{ mb: 4 }}>
-            The employee code ({employee.employee_code}) and the country ({employee.country.name})
-            cannot change.
-          </DialogContentText>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 4 }}>
-            <TextField label="Full name" required {...field('full_name')} />
-            <TextField label="Email" type="email" required {...field('email')} />
-            <TextField label="Gender" select required slotProps={selectProps} {...field('gender')}>
-              {GENDERS.map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </TextField>
-            <TextField
-              label="Department"
-              select
-              required
-              slotProps={selectProps}
-              {...field('department')}
-            >
-              {(departments.data ?? [employee.department]).map((department) => (
-                <option key={department.code} value={department.code}>
-                  {department.name}
-                </option>
-              ))}
-            </TextField>
-            <TextField label="Designation" required {...field('designation')} />
-            <TextField label="Level" select required slotProps={selectProps} {...field('level')}>
-              {['1', '2', '3', '4', '5', '6'].map((level) => (
-                <option key={level} value={level}>
-                  Level {level}
-                </option>
-              ))}
-            </TextField>
-            <TextField
-              label="Joining date"
-              type="date"
-              required
-              slotProps={{ inputLabel: { shrink: true } }}
-              {...field('joining_date')}
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={onClose}>Discard changes</Button>
-          <Button type="submit" variant="contained" loading={update.isPending}>
-            Save changes
-          </Button>
-        </DialogActions>
-      </form>
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Discard changes</Button>
+        <Button type="submit" variant="contained" loading={update.isPending}>
+          Save changes
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }

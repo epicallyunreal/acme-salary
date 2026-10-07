@@ -111,12 +111,7 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
   useEffect(() => {
     if (handedOver) navigate(location.pathname, { replace: true, state: null });
   }, [handedOver, location.pathname, navigate]);
-  const announce = (said: Notice | string) =>
-    setNotice(
-      typeof said === 'string'
-        ? { open: true, text: said, severity: 'success' }
-        : { open: true, ...said },
-    );
+  const announce = (said: Notice) => setNotice({ open: true, ...said });
   const closeDialog = () => setDialog(null);
 
   if (employee.isError) {
@@ -128,7 +123,7 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
   if (employee.isPending) return <LinearProgress aria-label="Loading the employee" />;
 
   const person = employee.data;
-  const latest = history.data?.find((record) => !record.cancelled_at) ?? person.current_record;
+  const latest = history.data?.find((record) => !record.cancelled_at) ?? null;
 
   return (
     <>
@@ -154,7 +149,12 @@ function EmployeePage({ employeeId }: { employeeId: number }) {
             <Button variant="outlined" onClick={() => setDialog('edit')}>
               Edit
             </Button>
-            <Button variant="contained" onClick={() => setDialog('revise')}>
+            {/* The revision starts from the latest live record, which the history holds. */}
+            <Button
+              variant="contained"
+              onClick={() => setDialog('revise')}
+              disabled={!history.data}
+            >
               Add revision
             </Button>
             {person.last_date ? null : (

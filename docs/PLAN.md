@@ -110,7 +110,7 @@ Goal: an employee can be created, edited, revised, scheduled, cancelled and exit
 
 Files to create: `apps/compensation/{serializers,views,urls}.py`; `apps/employees/views.py` additions (create, PATCH, exit, audit list) and serializers; `tests/compensation/test_api.py`, `tests/employees/test_api.py` additions, `tests/audit/test_api.py`. Frontend: `src/api/{compensation,audit}.ts`, `src/components/forms/{schemas.ts,EmployeeForm,RecordLinesFields,RevisionDialog,ExitDialog,EditIdentityDialog,applyServerErrors.ts}`, `src/components/employee/{CurrentRecordCard,HistoryList,AuditList}.tsx`, `src/pages/{EmployeeDetail,NewEmployee}.tsx`, fixtures and handlers; tests `EmployeeForm.test.tsx`, `EmployeeDetail.test.tsx`, `NewEmployee.test.tsx`.
 
-Tests: SPEC F3's seven criteria through `APIClient` (400 and 409 cases assert the field and message), `gross_annual` in a body ignored, `version` unique per employee, F7 one entry per entity per write path, the audit list pinned; frontend: zod message shown, server field error mapped, cancelled row greyed, Cancel only on scheduled rows, exit dialog 409 shown inline.
+Tests: SPEC F3's eight criteria through `APIClient` (the eighth, an exit before pay starts, from D50) (400 and 409 cases assert the field and message), `gross_annual` in a body ignored, `version` unique per employee, F7 one entry per entity per write path, the audit list pinned; frontend: zod message shown, server field error mapped, cancelled row greyed, Cancel only on scheduled rows, exit dialog 409 shown inline.
 
 Commits:
 
@@ -121,7 +121,7 @@ Commits:
 
 Hours: 4.5.
 
-Acceptance closed: SPEC F3's seven criteria through the API, except the insights half of the scheduled-revision and exit criteria, which closes in step 6; F7's one-entry-per-write-path criterion through the API; section 8 rows `POST /employees/`, `PATCH /employees/{id}/`, `POST /employees/{id}/exit/`, `GET` and `POST /employees/{id}/compensation/`, `DELETE /compensation/{id}/` and `GET /employees/{id}/audit/`.
+Acceptance closed: SPEC F3's eight criteria through the API, the eighth from D50, except the insights half of the scheduled-revision and exit criteria, which closes in step 6; F7's one-entry-per-write-path criterion through the API; section 8 rows `POST /employees/`, `PATCH /employees/{id}/`, `POST /employees/{id}/exit/`, `GET` and `POST /employees/{id}/compensation/`, `DELETE /compensation/{id}/` and `GET /employees/{id}/audit/`.
 
 Risks: the first-record form carries up to six amount inputs that depend on the chosen country, so the component list must load before the lines render; zod 4 changed its API from zod 3 and react-hook-form 7's resolver is checked on Context7; the detail page is the densest page and the first real test of the visual direction.
 

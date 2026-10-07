@@ -20,6 +20,7 @@ import { dayBefore, formatDate } from '../../lib/dates';
 import { formatMoney } from '../../lib/money';
 import { applyServerErrors, type FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
+import { type Notice, savedNotice } from '../forms/feedback';
 import { EmptyState } from '../layout/EmptyState';
 import { StatusChip } from '../layout/StatusChip';
 
@@ -46,7 +47,8 @@ interface HistoryListProps {
 }
 
 /** Every record newest first with version and note; cancelled rows stay, greyed and labelled,
- * and only a scheduled revision can be cancelled (SPEC F3, section 10). */
+ * and only a scheduled revision can be cancelled (SPEC F3, section 10). Version 1 never can
+ * (D26), so a future joiner's first record offers no Cancel. */
 export function HistoryList({ records, onCancel }: HistoryListProps) {
   if (!records.length) return <EmptyState message="No pay records yet." />;
 
@@ -94,7 +96,7 @@ export function HistoryList({ records, onCancel }: HistoryListProps) {
                   : record.note}
               </TableCell>
               <TableCell align="right">
-                {state === 'scheduled' ? (
+                {state === 'scheduled' && record.version > 1 ? (
                   <Button
                     size="small"
                     onClick={() => onCancel(record)}
@@ -129,7 +131,7 @@ interface CancelRevisionDialogProps {
   employeeId: number;
   record: CompensationRecord;
   onClose: () => void;
-  onDone: (notice: string) => void;
+  onDone: (notice: Notice) => void;
 }
 
 /** Cancelling is a mark, not a delete, but it stops a raise, so it is confirmed first. */
@@ -141,15 +143,19 @@ export function CancelRevisionDialog({
 }: CancelRevisionDialogProps) {
   const cancel = useCancelRevision(employeeId);
   const [messages, setMessages] = useState<FormMessage[]>([]);
+  const [attempt, setAttempt] = useState(0);
 
   const confirm = () => {
     setMessages([]);
     cancel.mutate(record.id, {
       onSuccess: () => {
         onClose();
-        onDone(`Revision v${record.version} cancelled.`);
+        onDone(savedNotice(`Revision v${record.version} cancelled.`));
       },
-      onError: (error) => setMessages(applyServerErrors(error, () => undefined, { fields: [] })),
+      onError: (error) => {
+        setMessages(applyServerErrors(error, () => undefined, { fields: [] }));
+        setAttempt((count) => count + 1);
+      },
     });
   };
 
@@ -157,7 +163,7 @@ export function CancelRevisionDialog({
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>Cancel revision v{record.version}?</DialogTitle>
       <DialogContent>
-        <ErrorSummary title="Not cancelled" messages={messages} />
+        <ErrorSummary title="Not cancelled" messages={messages} attempt={attempt} />
         <DialogContentText>
           The revision from {formatDate(record.effective_from)} will not take effect. It stays in
           the history, marked cancelled.

@@ -5,7 +5,7 @@ equal what the API showed before and after the write, minus the request-dependen
 employee page's list is newest first, paginated, in a pinned number of queries.
 """
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -13,27 +13,17 @@ import pytest
 from apps.audit.models import AuditLog
 from apps.compensation import services as compensation
 from apps.compensation.services import RecordInput
+from apps.employees import services as employees
+from tests.audit.shapes import employee_shape, record_shape
 from tests.factories import EmployeeFactory
 
 pytestmark = pytest.mark.django_db
 
-RECORD_REQUEST_KEYS = {"converted", "is_current", "is_scheduled"}
-EMPLOYEE_REQUEST_KEYS = {"status", "shown_label"}
+HR = "hr@acme.example"
 LINES = [
     {"component": "BASE", "annual_amount": "1450000.00"},
     {"component": "TAX", "annual_amount": "145000.00"},
 ]
-
-
-def record_shape(data: dict) -> dict:
-    return {key: value for key, value in data.items() if key not in RECORD_REQUEST_KEYS}
-
-
-def employee_shape(data: dict) -> dict:
-    shape = {key: value for key, value in data.items() if key not in EMPLOYEE_REQUEST_KEYS}
-    if shape["current_record"] is not None:
-        shape["current_record"] = record_shape(shape["current_record"])
-    return shape
 
 
 def shown_employee(api, pk: int) -> dict:
@@ -53,6 +43,18 @@ def entries_after(last_id: int) -> list[AuditLog]:
 
 def last_entry_id() -> int:
     return AuditLog.objects.order_by("-id").values_list("id", flat=True).first() or 0
+
+
+def by_action(entries: list[AuditLog]) -> dict[str, AuditLog]:
+    """F7 names the entries a write makes, not the order it makes them in."""
+    keyed = {entry.action: entry for entry in entries}
+    assert len(keyed) == len(entries), [entry.action for entry in entries]
+    return keyed
+
+
+def who(entry: AuditLog) -> tuple[int | None, str | None]:
+    """The employee the entry is filed under, which the employee page reads, and its actor."""
+    return entry.employee_id, entry.actor.email if entry.actor else None
 
 
 @pytest.fixture
@@ -88,7 +90,9 @@ def test_create_writes_one_entry_per_entity_matching_the_api(api, rates):
     employee_id = response.json()["id"]
     record_id = response.json()["current_record"]["id"]
 
-    revise_entry, create_entry = entries_after(mark)
+    entries = by_action(entries_after(mark))
+    assert set(entries) == {"create", "revise"}
+    create_entry, revise_entry = entries["create"], entries["revise"]
 
     assert (create_entry.action, create_entry.entity_type, create_entry.entity_id) == (
         "create",
@@ -104,17 +108,21 @@ def test_create_writes_one_entry_per_entity_matching_the_api(api, rates):
     )
     assert revise_entry.before is None
     assert revise_entry.after == shown_record(api, employee_id, record_id)
-    assert {create_entry.actor.email, revise_entry.actor.email} == {"hr@acme.example"}
+    assert who(create_entry) == who(revise_entry) == (employee_id, HR)
 
 
 def test_an_identity_edit_writes_one_update_entry(api, person):
     before = shown_employee(api, person.pk)
     mark = last_entry_id()
 
-    api.patch(f"/api/v1/employees/{person.pk}/", {"designation": "Lead Engineer"}, format="json")
+    response = api.patch(
+        f"/api/v1/employees/{person.pk}/", {"designation": "Lead Engineer"}, format="json"
+    )
+
+    assert response.status_code == 200, response.content
 
     (entry,) = entries_after(mark)
-    assert (entry.action, entry.entity_type, entry.employee_id) == ("update", "employee", person.pk)
+    assert (entry.action, entry.entity_type, who(entry)) == ("update", "employee", (person.pk, HR))
     assert entry.before == before
     assert entry.after == shown_employee(api, person.pk)
     assert entry.after["designation"] == "Lead Engineer"
@@ -124,10 +132,14 @@ def test_an_exit_writes_one_exit_entry(api, person):
     before = shown_employee(api, person.pk)
     mark = last_entry_id()
 
-    api.post(f"/api/v1/employees/{person.pk}/exit/", {"last_date": "2026-09-30"}, format="json")
+    response = api.post(
+        f"/api/v1/employees/{person.pk}/exit/", {"last_date": "2026-09-30"}, format="json"
+    )
+
+    assert response.status_code == 200, response.content
 
     (entry,) = entries_after(mark)
-    assert (entry.action, entry.entity_type) == ("exit", "employee")
+    assert (entry.action, entry.entity_type, who(entry)) == ("exit", "employee", (person.pk, HR))
     assert entry.before == before
     assert entry.after == shown_employee(api, person.pk)
     assert entry.after["current_record"]["effective_to"] == "2026-10-01"
@@ -150,6 +162,7 @@ def test_a_revision_writes_one_revise_entry_with_the_previous_record_before(api,
         "compensation_record",
         response.json()["id"],
     )
+    assert who(entry) == (person.pk, HR)
     assert entry.before == previous
     assert entry.after == shown_record(api, person.pk, response.json()["id"])
 
@@ -172,21 +185,58 @@ def test_a_cancel_writes_one_cancel_entry(api, person):
         scheduled["id"],
     )
     assert entry.before == before
+    assert who(entry) == (person.pk, HR)
     assert entry.after == shown_record(api, person.pk, scheduled["id"])
-    assert entry.after["cancelled_by"] == "hr@acme.example"
+    assert entry.after["cancelled_by"] == HR
+
+
+def test_an_exit_before_pay_starts_writes_exit_then_cancel_matching_the_api(api, rates, hr_user):
+    """D50: the exit entry shows the employee left with no record, then the cancel entry shows
+    the record as the history does, before and after."""
+    employee = EmployeeFactory(joining_date=date(2026, 9, 1))
+    record = compensation.add_first_record(
+        employee,
+        RecordInput(date(2026, 12, 1), Decimal("0"), "offer", {"BASE": Decimal("1450000")}),
+        actor=hr_user,
+    ).record
+    employee_before = shown_employee(api, employee.pk)
+    record_before = shown_record(api, employee.pk, record.pk)
+    mark = last_entry_id()
+
+    response = api.post(
+        f"/api/v1/employees/{employee.pk}/exit/", {"last_date": "2026-10-31"}, format="json"
+    )
+
+    assert response.status_code == 200, response.content
+    entries = by_action(entries_after(mark))
+    assert set(entries) == {"exit", "cancel"}
+    exit_entry, cancel_entry = entries["exit"], entries["cancel"]
+    assert exit_entry.pk < cancel_entry.pk
+    assert exit_entry.before == employee_before
+    assert exit_entry.after == shown_employee(api, employee.pk)
+    assert exit_entry.after["current_record"] is None
+    assert (cancel_entry.entity_type, cancel_entry.entity_id) == ("compensation_record", record.pk)
+    assert cancel_entry.before == record_before
+    assert cancel_entry.after == shown_record(api, employee.pk, record.pk)
+    assert who(exit_entry) == who(cancel_entry) == (employee.pk, HR)
 
 
 def test_the_audit_list_is_newest_first_and_paginated(api, person):
+    """Newest by timestamp, then by id: the last entry written carries the earliest time."""
+    first = AuditLog.objects.get(employee=person)
     api.patch(f"/api/v1/employees/{person.pk}/", {"level": 4}, format="json")
+    employees.update_identity(person, {"level": 5}, at=datetime(2026, 10, 6, 9, tzinfo=UTC))
+    patched, backdated = AuditLog.objects.filter(employee=person, action="update").order_by("id")
 
     response = api.get(f"/api/v1/employees/{person.pk}/audit/")
 
     body = response.json()
     assert response.status_code == 200
-    assert (body["count"], body["next"], body["previous"]) == (2, None, None)
-    newest, oldest = body["results"]
-    assert (newest["action"], oldest["action"]) == ("update", "revise")
-    assert newest["actor"] == "hr@acme.example"
+    assert (body["count"], body["next"], body["previous"]) == (3, None, None)
+    assert [entry["id"] for entry in body["results"]] == [patched.pk, first.pk, backdated.pk]
+    newest = body["results"][0]
+    assert newest["action"] == "update"
+    assert newest["actor"] == HR
     assert newest["timestamp"] == "2026-10-07T09:00:00+00:00"
     assert newest["after"]["level"] == 4
     assert set(newest) == {
