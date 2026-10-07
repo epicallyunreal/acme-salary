@@ -1,4 +1,5 @@
 import PeopleOutlinedIcon from '@mui/icons-material/PeopleOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import {
   Box,
   Button,
@@ -14,9 +15,10 @@ import { useLogout, useMe } from '../../api/auth';
 
 const NAV_WIDTH = 208;
 
-// Dashboard and Imports join this list in the steps that build them.
+// The dashboard joins this list in step 6.
 const NAV_ITEMS = [
   { label: 'Employees', to: '/employees', pattern: '/employees/*', Icon: PeopleOutlinedIcon },
+  { label: 'Imports', to: '/imports', pattern: '/imports/*', Icon: UploadFileOutlinedIcon },
 ];
 
 function NavItem({ label, to, pattern, Icon }: (typeof NAV_ITEMS)[number]) {

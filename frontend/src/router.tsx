@@ -4,6 +4,7 @@ import { AppShell } from './components/layout/AppShell';
 import { RequireAuth } from './components/layout/RequireAuth';
 import { EmployeeDetail } from './pages/EmployeeDetail';
 import { Employees } from './pages/Employees';
+import { Imports } from './pages/Imports';
 import { Login } from './pages/Login';
 import { NewEmployee } from './pages/NewEmployee';
 import { NotFound } from './pages/NotFound';
@@ -21,6 +22,7 @@ export const routes: RouteObject[] = [
           { path: '/employees', element: <Employees /> },
           { path: '/employees/new', element: <NewEmployee /> },
           { path: '/employees/:id', element: <EmployeeDetail /> },
+          { path: '/imports', element: <Imports /> },
           { path: '*', element: <NotFound /> },
         ],
       },

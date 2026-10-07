@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw/http';
 
 import { auditPage, employeeDetails, histories } from './fixtures/detail';
 import { employeePage } from './fixtures/employees';
+import { batches, batchPage, reviewBatch } from './fixtures/imports';
 import { componentsFor, countries, departments } from './fixtures/meta';
 
 // One handler per API route the app calls. Each step adds its routes with realistic fixtures.
@@ -141,9 +142,41 @@ export const employeeHandlers = [
   }),
 ];
 
+export const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+export const importHandlers = [
+  http.get('/api/v1/imports/', ({ request }) => authenticated(request, batchPage())),
+  // The multipart body is not read: under Node's fetch a jsdom File does not survive the trip.
+  http.post('/api/v1/imports/', ({ request }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    return HttpResponse.json(
+      { ...reviewBatch, id: 7, file_name: 'november.xlsx', warnings: [] },
+      { status: 201 },
+    );
+  }),
+  // Before `:id`, which would otherwise take "template" as an id.
+  http.get('/api/v1/imports/template/', ({ request }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const country = new URL(request.url).searchParams.get('country');
+    const name = country ? `acme-import-template-${country}.xlsx` : 'acme-import-template.xlsx';
+    return new HttpResponse(new Blob(['xlsx']), {
+      headers: {
+        'Content-Type': XLSX_TYPE,
+        'Content-Disposition': `attachment; filename="${name}"`,
+      },
+    });
+  }),
+  http.get('/api/v1/imports/:id/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const batch = batches.find((candidate) => candidate.id === Number(params.id));
+    return batch ? HttpResponse.json(batch) : notFound('ImportBatch');
+  }),
+];
+
 export const handlers = [
   http.get('/healthz', () => HttpResponse.json({ status: 'ok' })),
   ...authHandlers,
   ...metaHandlers,
   ...employeeHandlers,
+  ...importHandlers,
 ];

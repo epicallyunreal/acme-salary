@@ -1,6 +1,6 @@
 // TanStack Query keys (DESIGN section 6). Every parameter object is part of its key.
 
-import type { HistoryParams, ListParams } from './types';
+import type { HistoryParams, ImportRowParams, ListParams } from './types';
 
 export const keys = {
   me: ['auth', 'me'] as const,
@@ -22,6 +22,13 @@ export const keys = {
   },
   insights: {
     all: ['insights'] as const,
+  },
+  imports: {
+    all: ['imports'] as const,
+    list: (page: number) => ['imports', 'list', page] as const,
+    /** The batch and its rows share this prefix, so a skip refreshes the summary and the grid. */
+    detail: (id: number) => ['imports', id] as const,
+    rows: (id: number, params: ImportRowParams) => ['imports', id, 'rows', params] as const,
   },
 };
 

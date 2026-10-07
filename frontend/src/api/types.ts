@@ -232,3 +232,66 @@ export type IdentityPatch = Partial<
     'full_name' | 'email' | 'gender' | 'department' | 'designation' | 'level' | 'joining_date'
   >
 >;
+
+// Imports (SPEC section 5 "ImportBatch and ImportRow", section 8)
+
+export type BatchStatus = 'review' | 'approved' | 'discarded' | 'failed';
+export type RowStatus = 'valid' | 'warning' | 'error' | 'skipped';
+export type RowAction = 'create' | 'update' | 'revise' | 'noop';
+
+export interface ImportBatch {
+  id: number;
+  file_name: string;
+  file_size: number;
+  uploaded_by: string | null;
+  uploaded_at: string;
+  status: BatchStatus;
+  /** Batch-level warnings, such as `Ignored unknown column: Remarks`. */
+  warnings: string[];
+  total_rows: number;
+  /** No-op rows count as valid too; a skipped row counts only as skipped. */
+  valid_rows: number;
+  warning_rows: number;
+  error_rows: number;
+  skipped_rows: number;
+  noop_rows: number;
+  created_rows: number;
+  updated_rows: number;
+  revised_rows: number;
+  applied_rows: number;
+  approved_at: string | null;
+  error_summary: string;
+}
+
+export interface RowMessage {
+  /** A template column (`BASE`, `email`) or `row` for the row as a whole. */
+  field: string;
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+}
+
+export type CellValue = string | number | boolean | null;
+
+export interface ImportRow {
+  id: number;
+  row_number: number;
+  legacy_code: string;
+  full_name: string;
+  status: RowStatus;
+  validation_status: Exclude<RowStatus, 'skipped'>;
+  /** Null when the row names no usable employee code. */
+  action: RowAction | null;
+  messages: RowMessage[];
+  matched_employee: { id: number; employee_code: string } | null;
+  /** The cells as the sheet had them, by template column. */
+  raw: Record<string, CellValue>;
+  normalized: Record<string, unknown>;
+}
+
+export interface ImportRowParams {
+  page: number;
+  page_size: number;
+  /** Comma-separated row statuses. */
+  status?: string;
+  search?: string;
+}

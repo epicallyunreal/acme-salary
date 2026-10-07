@@ -112,7 +112,7 @@ async function parse(response: Response): Promise<unknown> {
 }
 
 /** A request made without a session, such as login, gets no retry; everything else does. */
-export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function sendWithRefresh(path: string, options: RequestOptions): Promise<Response> {
   let response = await send(path, options);
   if (response.status === 401 && getAccessToken()) {
     const refreshed = await refreshOnce();
@@ -124,7 +124,30 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       onUnauthenticated();
     }
   }
+  return response;
+}
+
+export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const response = await sendWithRefresh(path, options);
   const data = await parse(response);
   if (!response.ok) throw new ApiError(response.status, data);
   return data as T;
+}
+
+export interface DownloadedFile {
+  blob: Blob;
+  /** From `Content-Disposition`, when the server named the file. */
+  fileName: string | null;
+}
+
+/** A file the API serves, such as the import template. A plain link cannot carry the bearer
+ * token, so the file is fetched like any other request and handed back as a blob. */
+export async function apiDownload(
+  path: string,
+  options: RequestOptions = {},
+): Promise<DownloadedFile> {
+  const response = await sendWithRefresh(path, options);
+  if (!response.ok) throw new ApiError(response.status, await parse(response));
+  const named = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '');
+  return { blob: await response.blob(), fileName: named ? named[1] : null };
 }
