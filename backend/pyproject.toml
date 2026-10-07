@@ -1,0 +1,48 @@
+[project]
+name = "acme-salary-backend"
+version = "0.1.0"
+description = "ACME salary management: Django REST API that also serves the built React app"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "django>=6.1,<6.2",
+    "djangorestframework>=3.18,<3.19",
+    "djangorestframework-simplejwt>=5.5,<5.6",
+    "django-filter>=26.2",
+    "django-cors-headers>=4.9",
+    "whitenoise>=6.12",
+    "gunicorn>=26,<27",
+    "openpyxl==3.1.5",
+    "defusedxml>=0.7.1",
+    "faker==40.41.0",
+]
+
+[dependency-groups]
+dev = [
+    "factory-boy>=3.3.3",
+    "freezegun>=1.5.5",
+    "pytest>=9.1",
+    "pytest-django>=4.14",
+    "pytest-cov>=7.1",
+    "ruff>=0.16",
+    "pre-commit>=4.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/migrations/*" = ["E501", "I"]
+"acme_salary/settings/*" = ["F403", "F405"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "acme_salary.settings.test"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "slow: builds a seed of hundreds of employees, skipped by -m 'not slow'",
+]

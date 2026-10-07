@@ -1,0 +1,140 @@
+"""Settings shared by every environment. dev, prod and test override a few names.
+
+Everything secret or host-specific comes from the environment (CLAUDE.md rule 10).
+"""
+
+import os
+from datetime import timedelta
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+def env(name: str, default: str | None = None) -> str | None:
+    value = os.environ.get(name)
+    return default if value in (None, "") else value
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = env(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_list(name: str, default: list[str] | None = None) -> list[str]:
+    raw = env(name)
+    if raw is None:
+        return list(default or [])
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+SECRET_KEY = env("SECRET_KEY")
+DEBUG = env_bool("DEBUG", False)
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS")
+
+INSTALLED_APPS = [
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
+    "django_filters",
+    "corsheaders",
+    "apps.accounts",
+    "apps.core",
+]
+
+# No sessions and no Django auth middleware: the API authenticates with a JWT per request.
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "acme_salary.urls"
+WSGI_APPLICATION = "acme_salary.wsgi.application"
+TEMPLATES: list[dict] = []
+
+# SQLite on a volume. Writers wait rather than fail during a long import approve (SPEC section 13).
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": env("DATABASE_PATH", str(BASE_DIR / "db.sqlite3")),
+        "OPTIONS": {
+            "transaction_mode": "IMMEDIATE",
+            "init_command": "PRAGMA journal_mode=WAL;",
+            "timeout": 20,
+        },
+    }
+}
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+AUTH_USER_MODEL = "accounts.User"
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+]
+
+LANGUAGE_CODE = "en-gb"
+TIME_ZONE = "UTC"
+USE_I18N = False
+USE_TZ = True
+
+# WhiteNoise serves the built SPA from SPA_DIR at the site root. Django has no static files of
+# its own, so there is no collectstatic and STATIC_URL only satisfies the middleware.
+STATIC_URL = "/static/"
+SPA_DIR = env("SPA_DIR")
+WHITENOISE_ROOT = SPA_DIR
+WHITENOISE_MAX_AGE = 60
+
+
+def immutable_asset(path: str, url: str) -> bool:
+    """Vite hashes every file under /assets/, so those get the one-year cache."""
+    return url.startswith("/assets/")
+
+
+WHITENOISE_IMMUTABLE_FILE_TEST = immutable_asset
+
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+        "rest_framework.parsers.MultiPartParser",
+    ],
+    "DEFAULT_THROTTLE_RATES": {"login": "5/min"},
+    # Fly's proxy is the one trusted hop, so a client cannot mint throttle buckets.
+    "NUM_PROXIES": 1,
+    "COERCE_DECIMAL_TO_STRING": True,
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(hours=12),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": False,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+# One gunicorn worker, so the in-process cache is shared by every thread and the login
+# throttle counts correctly.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
+SEED_ADMIN_PASSWORD = env("SEED_ADMIN_PASSWORD")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {"django.request": {"level": "WARNING"}},
+}
