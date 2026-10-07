@@ -446,6 +446,14 @@ Decision: the same day is allowed, so SPEC section 7's exit row reads "before", 
 
 Consequences: SPEC is v2.8. None of the four needed a code change. Step 5's approve test counts the extra `cancel`.
 
+## D53. Every date is on or before 2100-12-31
+
+Context: the step 4 security review found that an exit on 9999-12-31 overflowed `last_date + 1` into a 500. Nothing was written, but the API answered with a server error. Step 4 deferred it to the step 5 parser. The owner pulled it forward into the shared validators, so the API and the seed are covered as well as the import (CLAUDE.md rule 4).
+
+Decision: `check_dates_in_range` refuses a `joining_date`, `last_date` or `effective_from` after 2100-12-31 in every scope (import, identity, record, exit): `last_date must be on or before 2100-12-31, got 9999-12-31`. It runs with the structure rules, so an exit answers 400 before any date arithmetic. SPEC section 7 has the row, v2.9.
+
+Consequences: no stored date is near the end of the calendar, so every `+ 1 day` in the services exists. A real date past 2100 would need this ceiling raised in one constant, `validators.DATE_MAX`.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

@@ -48,6 +48,9 @@ TEN = Decimal("10")
 # impossible values; the warnings below are for unusual ones.
 MAX_AMOUNT = Decimal("9999999999.99")
 MIN_BASE = Decimal("10")
+# The last date any date field may hold, so last_date + 1 day always exists (D53).
+DATE_MAX = date(2100, 12, 31)
+DATE_FIELDS = ("joining_date", "last_date", "effective_from")
 CHUNK = 500
 
 Severity = Literal["error", "warning", "info"]
@@ -328,6 +331,18 @@ def check_gender_enum(row: NormalizedRow, ctx: ValidationContext) -> list[Messag
 
 def check_parse_messages(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     return list(row.parse_messages)
+
+
+def check_dates_in_range(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """Every date on or before 2100-12-31, in every scope (D53). An exit closes the record at
+    last_date + 1, which the last representable date would overflow."""
+    return [
+        error(
+            name, "date_too_late", field=name, limit=DATE_MAX.isoformat(), value=value.isoformat()
+        )
+        for name in DATE_FIELDS
+        if (value := getattr(row, name)) is not None and value > DATE_MAX
+    ]
 
 
 def check_base_required(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
@@ -785,6 +800,7 @@ RULES: list[RuleSpec] = [
     rule(check_level_range, "structure", "import", "identity"),
     rule(check_gender_enum, "structure", "import", "identity"),
     rule(check_parse_messages, "structure", "import"),
+    rule(check_dates_in_range, "structure", "import", "identity", "record", "exit"),
     rule(check_base_required, "structure", "import", "record"),
     rule(check_bonus_non_negative, "structure", "import", "record"),
     rule(check_amounts_non_negative, "structure", "import", "record"),

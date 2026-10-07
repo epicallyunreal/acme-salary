@@ -671,6 +671,45 @@ def test_a_patch_that_changes_nothing_writes_nothing(api, cast):
     assert {empty.json()["updated_at"], same.json()["updated_at"]} == {"2026-10-07T09:00:00+00:00"}
 
 
+def test_a_date_after_2100_is_a_400_on_every_write_and_writes_nothing(api, cast):
+    """D53: an exit on the last representable date used to overflow last_date + 1 into a 500."""
+    asha = cast["asha"]
+    before = written()
+    late = "on or before 2100-12-31, got"
+    revision = {
+        "effective_from": "2101-01-01",
+        "lines": [{"component": "BASE", "annual_amount": "1100000.00"}],
+    }
+
+    exit_ = api.post(f"{LIST}{asha.pk}/exit/", {"last_date": "9999-12-31"}, format="json")
+    revise = api.post(f"{LIST}{asha.pk}/compensation/", revision, format="json")
+    create = api.post(LIST, new_employee(joining_date="2101-01-01"), format="json")
+    edit = api.patch(f"{LIST}{asha.pk}/", {"joining_date": "2101-01-01"}, format="json")
+
+    assert (exit_.status_code, exit_.json()) == (
+        400,
+        {"last_date": [f"last_date must be {late} 9999-12-31"]},
+    )
+    assert (revise.status_code, revise.json()) == (
+        400,
+        {"effective_from": [f"effective_from must be {late} 2101-01-01"]},
+    )
+    assert (create.status_code, create.json()) == (
+        400,
+        {"joining_date": [f"joining_date must be {late} 2101-01-01"]},
+    )
+    assert (edit.status_code, edit.json()) == (
+        400,
+        {
+            "joining_date": [
+                f"joining_date must be {late} 2101-01-01",
+                "joining_date is after the first record (effective 2020-01-01)",
+            ]
+        },
+    )
+    assert written() == before
+
+
 def test_a_patch_with_a_code_and_a_new_country_refuses_both_at_once(api, cast):
     response = api.patch(
         f"{LIST}{cast['asha'].pk}/",

@@ -42,6 +42,7 @@ MESSAGES = {
     "base_required": "BASE is required",
     "base_too_small": "BASE must be at least {minimum}, got {value}",
     "amount_too_large": "{field} must be at most {limit}, got {value}",
+    "date_too_late": "{field} must be on or before {limit}, got {value}",
     "bonus_above_base": "bonus_annual {bonus} is above BASE {base}",
     "deduction_above_base": "{code} {amount} is above BASE {base}",
     "bonus_invalid": "bonus_annual must be a non-negative number, got {value}",

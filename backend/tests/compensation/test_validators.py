@@ -521,6 +521,32 @@ def test_a_changed_bonus_counts_as_changed_amounts(existing):
     assert row.amounts_changed is True
 
 
+@pytest.mark.parametrize("field_name", ["joining_date", "last_date", "effective_from"])
+def test_a_date_after_2100_is_an_error_and_the_last_day_of_2100_is_not(lookups, field_name):
+    """D53: every date is on or before 2100-12-31, so last_date + 1 day always exists."""
+    assert_message(
+        messages(new_row(**{field_name: date(2101, 1, 1)})),
+        "date_too_late",
+        field_name,
+        "error",
+        f"{field_name} must be on or before 2100-12-31, got 2101-01-01",
+    )
+    edge = messages(new_row(**{field_name: date(2100, 12, 31)}))
+    assert find(edge, "date_too_late") is None
+
+
+def test_validate_exit_refuses_the_last_representable_date(existing):
+    """The exit used to overflow last_date + 1 into a 500 (D53)."""
+    ctx = build_context(employees=[existing])
+
+    with pytest.raises(Invalid) as excinfo:
+        v.validate_exit(existing, date(9999, 12, 31), ctx)
+
+    assert excinfo.value.errors == {
+        "last_date": ["last_date must be on or before 2100-12-31, got 9999-12-31"]
+    }
+
+
 def test_last_date_before_joining(lookups):
     assert_message(
         messages(new_row(last_date=date(2023, 1, 1))),
