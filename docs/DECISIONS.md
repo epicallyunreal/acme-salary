@@ -198,6 +198,62 @@ Decision: build in the order of PLAN.md with no cuts planned. The owner takes th
 
 Consequences: the risk is accepted knowingly and the record shows it. If the submission slips past the morning, it slips with a working deployed core, not an unfinished one.
 
+## D24. A refused approve is always a 409, and the batch stays usable
+
+Context: SPEC F2 re-runs the date and duplicate rules inside the approve transaction but does not say what happens when a row fails them, nor which status an exception during apply returns. The design proposed 409 for the first case and 500 for the second.
+
+Decision: a re-validation failure rolls back, re-marks those rows as errors with the new messages, leaves the batch in review and returns 409 with the rows. Any other exception marks the batch failed with `error_summary`, keeps the rows as F2 says, and also returns 409 with `detail` and `error_summary`. DESIGN sections 1.0, 1.5 and 2.
+
+Consequences: the client handles every refused approve one way, refetch the batch and show the detail. No deliberate 500 leaves the API. Owner's answers to DESIGN questions 1 and 13.
+
+## D25. The small-group rule covers every figure in by-level
+
+Context: SPEC section 9's general rule nulls mean, median and percentiles for any group under five people, while the by-level row said only min and max. The design asked which one holds.
+
+Decision: the general rule. A level with fewer than five people publishes headcount only. SPEC section 9 by-level row corrected in v2.2.
+
+Consequences: no level can show one person's pay. Owner's answer to DESIGN question 2.
+
+## D26. Import exits write one exit entry, and a first record cannot be cancelled
+
+Context: a row whose `last_date` appears is an identity change in F1's table but runs the exit service, and F3 as written would let a future joiner's only record be cancelled, leaving no record at all.
+
+Decision: such a row writes one `exit` entry on the employee carrying any identity changes in the same before and after, and counts in `updated_rows`. Cancelling version 1 returns 409 `the first record cannot be cancelled`. DESIGN sections 1.4 and 1.5.
+
+Consequences: one entry per entity holds for imports too. A future joiner's wrong pay is fixed by exit and re-create in v1, or by the P1 in-place correction. Owner's answers to DESIGN questions 3 and 4.
+
+## D27. API conventions the spec left open
+
+Context: DESIGN questions 5, 6, 7, 10 and 11 proposed defaults for the JSON export shape, money encoding, warnings on writes, percentage precision and upload content types.
+
+Decision: the JSON export is `{generated_at, filters, rows: [{snake_case key: value}]}` and file names carry a UTC stamp. Money is a two-decimal string everywhere in the API. Create and revise responses carry `warnings`. `share_pct` and `gap_pct` have one decimal. `application/octet-stream` is accepted when the extension is `.xlsx` or `.csv`.
+
+Consequences: frontend money types are strings and convert to numbers only for chart geometry. The spec-checker has a source here for each shape.
+
+## D28. Rate month label, light theme, sample data
+
+Context: DESIGN questions 9, 12 and 14.
+
+Decision: the dashboard's rate month is the most recent `effective_from` among the rates feeding the reporting currency, and `/meta/exchange-rates/` lists each pair's own date. The UI ships a light theme only. `sample-data/` holds `acme-sample-50.xlsx` and the same rows as CSV, from `make_import_file --new 20 --raises 24 --errors 6`.
+
+Consequences: one palette to validate. The sample files are regenerated whenever the seed or the planted error list changes, in the same commit.
+
+## D29. The health check sends the custom domain as Host, and DNS is a CNAME only
+
+Context: Fly's checker sends the machine's internal address as `Host`, which `ALLOWED_HOSTS` rejects with 400, so the check would never pass. SPEC section 14 also asked for a CNAME and an AAAA on one name, which DNS does not allow.
+
+Decision: `fly.toml` carries `[http_service.checks.headers] Host = "acme.nutanprabhat.dev"` from step 1. The Cloudflare record is a CNAME to `acme-salary.fly.dev` with the proxy off. SPEC section 14 corrected in v2.2.
+
+Consequences: the check exercises the same host rule as real traffic. The volume, secrets and certificate (verified on IPv4 and IPv6) were in place on 7 October before step 1. Owner's answer to DESIGN question 8.
+
+## D30. Deploy at every page step, step 1 closes on the domain, the slow test stays out of the hook
+
+Context: PLAN questions 1 to 3, and the plan's clock re-anchored to a 12:30 IST start on 7 October.
+
+Decision: `fly deploy` runs at the close of every step that adds a page (1, 3, 4, 5, 6, 7 and 9). Step 1 closes with the custom domain live. The 500-employee determinism test stays marked `slow` and runs in `/finish-step` and CI, not in the commit hook.
+
+Consequences: the live URL always shows the latest page at about five minutes per deploy. Commits stay fast. At the plan's estimates steps 1 to 4 close by 06:00 on 8 October and the rest by 20:30, which D23 accepts knowingly.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.
