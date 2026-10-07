@@ -8,7 +8,9 @@ transaction. Nothing here touches Employee or CompensationRecord: the live table
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
@@ -17,7 +19,7 @@ from django.db import transaction
 from django.db.models import Count, Q
 
 from apps.compensation import validators
-from apps.compensation.messages import msg
+from apps.compensation.messages import clip, msg
 from apps.compensation.validators import NormalizedRow, ValidationContext
 from apps.core import queries as core_queries
 from apps.core.exceptions import Conflict, Invalid, PayloadTooLarge
@@ -26,9 +28,13 @@ from apps.imports import parser
 from apps.imports.models import ImportBatch, ImportRow
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-BATCH = 1000
+CHUNK_SIZE = 1000
+# A staged row keeps at most this much of a cell (D56). A longer value is an error of its own,
+# so approve, which reads only accepted rows, never reads a capped one.
+STORED_CELL_LIMIT = 256
 FULL_NAME_MAX = ImportRow._meta.get_field("full_name").max_length
 FILE_NAME_MAX = ImportBatch._meta.get_field("file_name").max_length
+_reading = threading.Lock()
 
 
 # Rows
@@ -37,7 +43,7 @@ FILE_NAME_MAX = ImportBatch._meta.get_field("file_name").max_length
 def classify(row: NormalizedRow, ctx: ValidationContext) -> str | None:
     """SPEC F1's decision table, read after the rules have set the row's flags. None when the
     row has no usable code; the rules carry the table's error messages themselves."""
-    if not row.legacy_code or len(row.legacy_code) > LEGACY_CODE_MAX:
+    if not validators.usable_legacy_code(row):
         return None
     if ctx.employee_for(row) is None:
         return ImportRow.Action.CREATE
@@ -48,12 +54,23 @@ def classify(row: NormalizedRow, ctx: ValidationContext) -> str | None:
     return ImportRow.Action.UPDATE
 
 
+def _capped(text: str | None) -> str | None:
+    return None if text is None else clip(text, STORED_CELL_LIMIT)
+
+
 def json_cell(value: Any) -> Any:
-    """A cell as the review grid shows it: what the user typed, dates as ISO text."""
-    if value is None or isinstance(value, str | bool | int):
+    """A cell as the review grid shows it: what the user typed, up to 256 characters, dates as
+    ISO text, and numbers as plain decimal text, never a JSON float, since money stays text."""
+    if value is None or isinstance(value, bool):
         return value
+    return _capped(_cell_text(value))
+
+
+def _cell_text(value: Any) -> str:
     if isinstance(value, float):
-        return value if math.isfinite(value) else str(value)
+        if not math.isfinite(value):
+            return str(value)
+        return format(Decimal(str(value)).normalize(), "f")
     if isinstance(value, datetime):
         return value.date().isoformat() if value.time() == time() else value.isoformat()
     if isinstance(value, date | time):
@@ -73,20 +90,20 @@ def _iso(value: date | None) -> str | None:
 
 
 def _text(value: Decimal | None) -> str | None:
-    return str(value) if value is not None else None
+    return _capped(str(value)) if value is not None else None
 
 
 def normalized_json(row: NormalizedRow) -> dict[str, Any]:
-    """The parsed row, kept for the grid and read back at approve by `row_from_json`."""
+    """The parsed row, read back at approve by `row_from_json`. The rows API leaves it out."""
     return {
-        "legacy_code": row.legacy_code,
-        "full_name": row.full_name,
-        "email": row.email,
-        "department": row.department,
-        "designation": row.designation,
+        "legacy_code": _capped(row.legacy_code),
+        "full_name": _capped(row.full_name),
+        "email": _capped(row.email),
+        "department": _capped(row.department),
+        "designation": _capped(row.designation),
         "level": row.level,
-        "country_code": row.country_code,
-        "gender": row.gender,
+        "country_code": _capped(row.country_code),
+        "gender": _capped(row.gender),
         "joining_date": _iso(row.joining_date),
         "last_date": _iso(row.last_date),
         "effective_from": _iso(row.effective_from),
@@ -154,18 +171,37 @@ def recount(batch: ImportBatch) -> ImportBatch:
     return batch
 
 
+@contextmanager
+def _one_upload_at_a_time():
+    """One upload is read at a time (D56). The worst file the limits allow peaks near 400 MB,
+    and gunicorn runs one worker with eight threads on a 1 GB machine. More workers would need a
+    lock across processes."""
+    if not _reading.acquire(blocking=False):
+        raise Conflict(msg("upload_busy"))
+    try:
+        yield
+    finally:
+        _reading.release()
+
+
 def stage_upload(upload, *, actor, today: date | None = None) -> ImportBatch:
     """Read, validate and classify every row of an upload, then write the batch and its rows.
 
-    The size is checked before anything is read. A header that cannot be mapped refuses the
-    upload with no batch (SPEC F1). The reading and the rules run outside any transaction, so
-    the write lock is held only for the inserts.
+    The size is checked before anything is read, and a second upload while one is being read
+    is refused. A header that cannot be mapped refuses the upload with no batch (SPEC F1). The
+    reading and the rules run outside any transaction, so the write lock is held only for the
+    inserts.
     """
     if upload.size > MAX_UPLOAD_BYTES:
         raise PayloadTooLarge()
+    with _one_upload_at_a_time():
+        return _stage(upload, actor=actor, today=today)
+
+
+def _stage(upload, *, actor, today: date | None) -> ImportBatch:
     parsed = parser.read(upload, upload.name, getattr(upload, "content_type", None))
     component_codes = [component.code for component in core_queries.active_components()]
-    header = parser.check_header(parsed.header, component_codes)
+    header = validators.check_header(parsed.header, component_codes)
     if header.rejected:
         raise Invalid(header.errors())
     warnings = header.warnings + [
@@ -201,7 +237,7 @@ def stage_upload(upload, *, actor, today: date | None = None) -> ImportBatch:
         )
         for item in staged:
             item.batch = batch
-        ImportRow.objects.bulk_create(staged, batch_size=BATCH)
+        ImportRow.objects.bulk_create(staged, batch_size=CHUNK_SIZE)
         recount(batch)
     return batch
 

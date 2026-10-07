@@ -57,6 +57,12 @@ export function RowMessagesCell({ row }: { row: ImportRow }) {
                 : theme.tokens.status[message.severity].text,
           })}
         >
+          {message.severity === 'info' ? null : (
+            // The colour is not the only cue: the severity is said in words too.
+            <Box component="span" sx={{ fontWeight: 600 }}>
+              {message.severity === 'error' ? 'Error: ' : 'Warning: '}
+            </Box>
+          )}
           {message.message}
         </Box>
       ))}

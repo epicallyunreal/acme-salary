@@ -24,6 +24,7 @@ describe('Imports', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('lists every batch newest first with its status, counts and ignored columns', async () => {
@@ -82,7 +83,7 @@ describe('Imports', () => {
 
   it('takes a file dropped on the zone as well', async () => {
     const { router } = renderApp('/imports');
-    const zone = (await screen.findByText(/Drop a .xlsx or .csv here/)).parentElement!;
+    const zone = await screen.findByRole('group', { name: 'Drop a spreadsheet here' });
 
     fireEvent.drop(zone, {
       dataTransfer: { files: [sheet('dropped.csv', 'text/csv')] },
@@ -153,7 +154,13 @@ describe('Imports', () => {
       }),
     );
     // jsdom has no object URLs and does not follow links.
-    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:template'), revokeObjectURL: vi.fn() });
+    vi.stubGlobal(
+      'URL',
+      Object.assign(class extends URL {}, {
+        createObjectURL: vi.fn(() => 'blob:template'),
+        revokeObjectURL: vi.fn(),
+      }),
+    );
     const saved: string[] = [];
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
       this: HTMLAnchorElement,
@@ -169,13 +176,58 @@ describe('Imports', () => {
     expect(asked).toEqual(['IN Bearer access-1']);
   });
 
-  it('offers a retry when the imports do not load', async () => {
-    server.use(http.get('/api/v1/imports/', () => HttpResponse.json({}, { status: 500 })));
+  it('offers a retry when the imports do not load, and the retry loads them', async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    server.use(
+      http.get('/api/v1/imports/', () =>
+        failing ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json(batchPage()),
+      ),
+    );
     renderApp('/imports');
 
     expect(
       await screen.findByText('Could not load the imports. Check your connection and try again.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('table', { name: 'Imports' })).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'the server refuses the size',
+      () => HttpResponse.json({ detail: 'upload is larger than the 10 MB limit' }, { status: 413 }),
+      'upload is larger than the 10 MB limit',
+    ],
+    [
+      'the file has too many rows',
+      () =>
+        HttpResponse.json({ rows: ['file has 10,450 data rows, limit 10,000'] }, { status: 400 }),
+      'file has 10,450 data rows, limit 10,000',
+    ],
+    [
+      'another file is being read',
+      () =>
+        HttpResponse.json(
+          { detail: 'another file is being read; try again in a moment' },
+          { status: 409 },
+        ),
+      'another file is being read; try again in a moment',
+    ],
+    [
+      'the network fails',
+      () => HttpResponse.error(),
+      'The file was not sent. Check your connection and try again.',
+    ],
+  ])('says so when %s', async (_case, answer, message) => {
+    server.use(http.post('/api/v1/imports/', answer));
+    renderApp('/imports');
+    await screen.findByRole('table', { name: 'Imports' });
+
+    chooseFile(sheet('october.csv', 'text/csv'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
   });
 });

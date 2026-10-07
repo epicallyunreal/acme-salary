@@ -25,6 +25,7 @@ export const keys = {
   },
   imports: {
     all: ['imports'] as const,
+    lists: ['imports', 'list'] as const,
     list: (page: number) => ['imports', 'list', page] as const,
     /** The batch and its rows share this prefix, so a skip refreshes the summary and the grid. */
     detail: (id: number) => ['imports', id] as const,

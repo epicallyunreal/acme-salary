@@ -43,6 +43,9 @@ describe('ImportReview', () => {
     expect(
       within(ravi).getByText('BASE must be a non-negative number, got -5000'),
     ).toBeInTheDocument();
+    // The severity is said in words, not by colour alone.
+    expect(within(ravi).getByText('Error:')).toBeInTheDocument();
+    expect(within(rowOf('Mohan Khan')).getByText('Warning:')).toBeInTheDocument();
     const base = within(ravi).getByText('-5000');
     expect(base).toHaveAttribute('data-severity', 'error');
     await user.hover(base);
@@ -94,7 +97,8 @@ describe('ImportReview', () => {
 
     await waitFor(() => expect(screen.queryByText('Ravi Iyer')).not.toBeInTheDocument());
     expect(screen.getByText('Mohan Khan')).toBeInTheDocument();
-    expect(asked.at(-1)).toBe('HR-41');
+    // Only the finished term was sent: the pause swallowed every keystroke before it.
+    expect(asked.filter(Boolean)).toEqual(['HR-41']);
   });
 
   it('says what to do when no row has the status chosen', async () => {
@@ -165,7 +169,7 @@ describe('ImportReview', () => {
     renderApp('/imports/3');
 
     await user.click(await screen.findByRole('button', { name: 'Approve' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Apply 2 rows?' });
+    const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
     await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent(
@@ -190,7 +194,7 @@ describe('ImportReview', () => {
     renderApp('/imports/3');
 
     await user.click(await screen.findByRole('button', { name: 'Approve' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Apply 2 rows?' });
+    const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
     await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
 
     const problems = await within(dialog).findByRole('alert');
@@ -257,13 +261,160 @@ describe('ImportReview', () => {
     ).toBeInTheDocument();
   });
 
-  it('offers a retry when the import does not load', async () => {
-    server.use(http.get('/api/v1/imports/3/', () => HttpResponse.json({}, { status: 500 })));
+  it('offers a retry when the import does not load, and the retry loads it', async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    server.use(
+      http.get('/api/v1/imports/3/', () =>
+        failing ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json(reviewBatch),
+      ),
+    );
     renderApp('/imports/3');
 
     expect(
       await screen.findByText('Could not load this import. Check your connection and try again.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'october-raises.xlsx' }),
+    ).toBeInTheDocument();
+  });
+
+  it('says how many rows block the approve when there are several', async () => {
+    server.use(
+      http.get('/api/v1/imports/3/', () =>
+        HttpResponse.json({ ...reviewBatch, valid_rows: 1, error_rows: 2 }),
+      ),
+    );
+    renderApp('/imports/3');
+
+    expect(
+      await screen.findByText(
+        '2 rows have errors. Skip them or fix the spreadsheet and upload again.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('unskipping an error row turns Approve off again', async () => {
+    const user = userEvent.setup();
+    let unskipped = false;
+    const skippedError = { ...reviewRows[2], status: 'skipped' as const };
+    server.use(
+      http.get('/api/v1/imports/3/', () => HttpResponse.json(unskipped ? reviewBatch : READY)),
+      http.get('/api/v1/imports/3/rows/', ({ request }) =>
+        HttpResponse.json(
+          rowsPage(
+            new URL(request.url),
+            reviewRows.map((row) => (row.id === 33 && !unskipped ? skippedError : row)),
+          ),
+        ),
+      ),
+      http.post('/api/v1/imports/3/rows/33/unskip/', () => {
+        unskipped = true;
+        return HttpResponse.json(reviewRows[2]);
+      }),
+    );
+    renderApp('/imports/3');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled());
+
+    await user.click(await screen.findByRole('button', { name: 'Unskip row 4' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled());
+    expect(await screen.findByRole('button', { name: 'Skip row 4' })).toBeInTheDocument();
+  });
+
+  it('refreshes the rows and the summary after the re-check refuses an approve', async () => {
+    const user = userEvent.setup();
+    let refused = false;
+    const marked = {
+      ...reviewRows[1],
+      status: 'error' as const,
+      validation_status: 'error' as const,
+      messages: [
+        {
+          field: 'effective_from',
+          severity: 'error' as const,
+          message: 'effective_from must be after 2026-12-01 (latest record)',
+        },
+      ],
+    };
+    server.use(
+      http.get('/api/v1/imports/3/', () =>
+        HttpResponse.json(refused ? { ...READY, warning_rows: 0, error_rows: 1 } : READY),
+      ),
+      http.get('/api/v1/imports/3/rows/', ({ request }) =>
+        HttpResponse.json(
+          rowsPage(
+            new URL(request.url),
+            reviewRows.map((row) => (refused && row.id === 32 ? marked : row)),
+          ),
+        ),
+      ),
+      http.post('/api/v1/imports/3/approve/', () => {
+        refused = true;
+        return HttpResponse.json(
+          { detail: '1 row failed re-validation against current data', rows: [3] },
+          { status: 409 },
+        );
+      }),
+    );
+    renderApp('/imports/3');
+
+    await user.click(await screen.findByRole('button', { name: 'Approve' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Keep reviewing' }));
+
+    expect(
+      await screen.findByText(/effective_from must be after 2026-12-01 \(latest record\)/),
+    ).toBeInTheDocument();
+    expect(summary()).toHaveTextContent('Error1');
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  });
+
+  it("shows a failed approve's summary in the dialog", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/imports/3/', () => HttpResponse.json(READY)),
+      http.post('/api/v1/imports/3/approve/', () =>
+        HttpResponse.json(
+          {
+            detail: 'approve failed, the batch is marked failed',
+            error_summary: 'OSError: disk full',
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderApp('/imports/3');
+
+    await user.click(await screen.findByRole('button', { name: 'Approve' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
+
+    const problems = await within(dialog).findByRole('alert');
+    expect(problems).toHaveTextContent('approve failed, the batch is marked failed');
+    expect(problems).toHaveTextContent('OSError: disk full');
+  });
+
+  it('says why a skip did not take, as an error', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post('/api/v1/imports/3/rows/33/skip/', () =>
+        HttpResponse.json({ detail: 'the batch is approved, not in review' }, { status: 409 }),
+      ),
+    );
+    renderApp('/imports/3');
+
+    await user.click(await screen.findByRole('button', { name: 'Skip row 4' }));
+
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent(
+      'The row did not change: the batch is approved, not in review.',
+    );
+    expect(notice.className).toMatch(/Error/);
   });
 });

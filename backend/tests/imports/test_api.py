@@ -6,9 +6,11 @@ import io
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from openpyxl import Workbook
+from rest_framework.parsers import MultiPartParser
 
 from apps.audit import services as audit_services
 from apps.audit.models import AuditLog
+from apps.imports import services
 from apps.imports.models import ImportBatch
 from apps.imports.services import stage_upload
 from tests.imports.sheets import HEADER, RAISED, new_row, sheet_row, upload_of
@@ -88,6 +90,20 @@ def test_an_unmappable_header_is_a_400_and_no_batch_exists(api, lookups):
             {"file": ["file is not UTF-8"]},
         ),
         (None, {"file": ["No file was submitted."]}),
+        (
+            SimpleUploadedFile("a.xlsx", b"not a zip", "application/octet-stream"),
+            {
+                "file": [
+                    "file is not a readable .xlsx workbook; save it again from Excel and upload it"
+                ]
+            },
+        ),
+        (
+            SimpleUploadedFile(
+                "wide.csv", ("legacy_code\n" + "x," * 200 + "x").encode(), "text/csv"
+            ),
+            {"file": ["row 2 has more than 200 cells"]},
+        ),
     ],
 )
 def test_a_file_that_cannot_be_read_is_a_400(api, lookups, upload, errors):
@@ -97,7 +113,22 @@ def test_a_file_that_cannot_be_read_is_a_400(api, lookups, upload, errors):
     assert ImportBatch.objects.count() == 0
 
 
-def test_an_upload_over_ten_megabytes_is_a_413_before_it_is_read(api, lookups):
+def test_a_second_upload_while_one_is_being_read_is_a_409(api, lookups):
+    with services._one_upload_at_a_time():
+        response = post_file(api, upload_of(new_row()))
+
+    assert (response.status_code, response.json()) == (
+        409,
+        {"detail": "another file is being read; try again in a moment"},
+    )
+    assert ImportBatch.objects.count() == 0
+
+
+def test_an_upload_over_ten_megabytes_is_a_413_before_it_is_read(api, lookups, monkeypatch):
+    def never(*args, **kwargs):
+        raise AssertionError("the multipart body was parsed")
+
+    monkeypatch.setattr(MultiPartParser, "parse", never)
     big = SimpleUploadedFile("big.csv", b"x" * (10 * 1024 * 1024 + 70 * 1024), "text/csv")
 
     response = post_file(api, big)
@@ -172,12 +203,11 @@ def test_rows_filter_by_status_and_search_by_code_or_name(api, staff):
         "messages",
         "matched_employee",
         "raw",
-        "normalized",
     }
     asha = staff["asha"]
     assert rows[1]["matched_employee"] == {"id": asha.pk, "employee_code": asha.employee_code}
     assert rows[0]["matched_employee"] is None
-    assert (rows[2]["raw"]["BASE"], rows[2]["normalized"]["amounts"]["BASE"]) == ("-5000", "-5000")
+    assert rows[2]["raw"]["BASE"] == "-5000"
     assert numbers(api.get(url, {"status": "error"})) == [4]
     assert numbers(api.get(url, {"status": "error,valid"})) == [2, 3, 4]
     assert numbers(api.get(url, {"search": "HR-10001"})) == [3]
@@ -194,10 +224,12 @@ def test_the_rows_of_an_unknown_batch_are_a_404(api, lookups):
     assert api.get(f"{LIST}999999/rows/").status_code == 404
 
 
-def test_list_detail_and_rows_query_counts(api, staff, django_assert_num_queries):
+def test_list_detail_and_rows_query_counts(api, staff, hr_user, django_assert_num_queries):
     """User from the JWT, then the count and the page with the uploader for the list, the
-    batch for the detail, and the batch, the count and the page for the rows."""
-    batch = stage_upload(upload_of(new_row(), sheet_row(staff["asha"])), actor=None)
+    batch with the uploader for the detail, and the batch, the count and the page for the
+    rows. The batches carry an uploader, so the pins cover loading one."""
+    batch = stage_upload(upload_of(new_row(), sheet_row(staff["asha"])), actor=hr_user)
+    stage_upload(upload_of(new_row(legacy_code="HR-20009")), actor=hr_user)
 
     with django_assert_num_queries(3):
         api.get(LIST)
@@ -278,8 +310,48 @@ def test_discard_sets_a_batch_aside_once(api, lookups):
     batch = stage_upload(upload_of(new_row()), actor=None)
 
     response = api.post(f"{LIST}{batch.pk}/discard/")
+    again = api.post(f"{LIST}{batch.pk}/discard/")
 
     assert (response.status_code, response.json()["status"]) == (200, "discarded")
-    assert api.post(f"{LIST}{batch.pk}/discard/").json() == {
-        "detail": "the batch is discarded, not in review"
-    }
+    assert (again.status_code, again.json()) == (
+        409,
+        {"detail": "the batch is discarded, not in review"},
+    )
+
+
+@pytest.mark.parametrize(
+    ("header", "errors"),
+    [
+        (
+            ["EmployeeID", "Emp ID", *HEADER[1:]],
+            {
+                "missing_columns": [],
+                "unknown_columns": [],
+                "ambiguous_columns": [
+                    "EmployeeID and Emp ID could both be the legacy code; "
+                    "rename the right one to legacy_code"
+                ],
+            },
+        ),
+        (
+            [*HEADER, "Email"],
+            {
+                "missing_columns": [],
+                "unknown_columns": [],
+                "repeated_columns": ["email appears twice in the header; remove one"],
+            },
+        ),
+    ],
+)
+def test_a_header_d54_refuses_is_a_400_and_no_batch_exists(api, lookups, header, errors):
+    response = post_file(api, upload_of(new_row(), header=header))
+
+    assert (response.status_code, response.json()) == (400, errors)
+    assert ImportBatch.objects.count() == 0
+
+
+def test_an_upload_answers_with_the_columns_it_ignored(api, lookups):
+    response = post_file(api, upload_of(new_row(), header=[*HEADER, "Remarks"]))
+
+    assert response.status_code == 201, response.content
+    assert response.json()["warnings"] == ["Ignored unknown column: Remarks"]

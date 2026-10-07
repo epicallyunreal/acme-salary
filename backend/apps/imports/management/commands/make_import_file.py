@@ -21,9 +21,9 @@ from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
 
 from apps.compensation.models import CompensationLine, CompensationRecord
+from apps.compensation.validators import IDENTITY_COLUMNS, template_columns
 from apps.core.models import SalaryComponent
 from apps.employees.models import Employee
-from apps.imports.parser import IDENTITY_COLUMNS, template_columns
 from seed import profiles
 from seed.generator import generate, legacy_codes
 

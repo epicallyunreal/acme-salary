@@ -10,7 +10,16 @@ MESSAGES = {
     "not_utf8": "file is not UTF-8",
     "file_extension": "file must end in .xlsx or .csv, got {name}",
     "file_content_type": "file content type {content_type} does not match {extension}",
-    "file_unreadable": "file is not a readable .xlsx workbook",
+    "file_unreadable": (
+        "file is not a readable .xlsx workbook; save it again from Excel and upload it"
+    ),
+    "csv_unreadable": "file is not a readable .csv; save it again from Excel and upload it",
+    "file_unpacks_large": "file unpacks to more than {limit}",
+    "file_too_big": "file is too big to read",
+    "upload_busy": "another file is being read; try again in a moment",
+    "row_too_wide": "row {row} has more than {limit} cells",
+    "row_past_limit": "row {row} is past row {limit}",
+    "cell_required": "{field} is required",
     "file_no_header": "file has no header row",
     "row_limit": "file has {count} data rows, limit {limit}",
     "column_twice": "{column} appears twice in the header; remove one",
@@ -21,6 +30,7 @@ MESSAGES = {
     "legacy_too_long": "legacy_code is longer than {limit} characters",
     "text_too_long": "{field} is longer than {limit} characters",
     "legacy_duplicate": "Duplicate legacy_code in rows {first} and {second}",
+    "action_changed": "{employee} changed since this sheet was uploaded; upload the sheet again",
     "legacy_taken": "legacy_code {code} now belongs to {employee}; upload the sheet again",
     "code_assigned": "employee_code is assigned by the system",
     "legacy_import_only": "legacy_code is set only by an import",
@@ -66,5 +76,16 @@ MESSAGES = {
 }
 
 
+# A message repeats at most this much of any value it names (D56): a sheet cell can be
+# 100,000 characters, and messages are stored on every staged row.
+ECHO_LIMIT = 64
+
+
+def clip(value: object, limit: int = ECHO_LIMIT) -> str:
+    """`value` as text, cut to `limit` characters with an ellipsis when it is longer."""
+    text = str(value)
+    return text if len(text) <= limit else f"{text[: limit - 1]}\u2026"
+
+
 def msg(key: str, **values) -> str:
-    return MESSAGES[key].format(**values)
+    return MESSAGES[key].format(**{name: clip(value) for name, value in values.items()})

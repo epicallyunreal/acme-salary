@@ -12,7 +12,8 @@ from rest_framework import serializers
 
 from apps.audit.models import AuditLog
 from apps.compensation.models import CompensationLine, CompensationRecord
-from apps.compensation.serializers import LOOKUP_MAX, RecordInputSerializer
+from apps.compensation.serializers import RecordInputSerializer
+from apps.compensation.validators import LOOKUP_MAX
 from apps.core.money import q8, render
 from apps.employees.models import Employee
 from apps.employees.queries import is_current, pick_shown, shown_label, status_on

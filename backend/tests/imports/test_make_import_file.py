@@ -12,9 +12,9 @@ from openpyxl import load_workbook
 
 from apps.compensation import services as compensation
 from apps.compensation.services import RecordInput, bulk_apply
+from apps.compensation.validators import IDENTITY_COLUMNS
 from apps.employees import services as employees
 from apps.employees.models import Employee
-from apps.imports.parser import IDENTITY_COLUMNS
 from seed import profiles
 from seed.generator import ordered_entries
 from seed.lookups import ensure_lookups

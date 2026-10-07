@@ -234,6 +234,8 @@ Decision: the JSON export is `{generated_at, filters, rows: [{snake_case key: va
 
 Consequences: frontend money types are strings and convert to numbers only for chart geometry. The spec-checker has a source here for each shape.
 
+Amended 8 Oct: a `.csv` is also taken as `text/csv`, `application/csv`, `text/plain` and `application/vnd.ms-excel`, which Windows browsers send for it when Excel is installed. A request with no content type is read as `application/octet-stream`.
+
 ## D28. Rate month label, light theme, sample data
 
 Context: DESIGN questions 9, 12 and 14.
@@ -241,6 +243,8 @@ Context: DESIGN questions 9, 12 and 14.
 Decision: the dashboard's rate month is the most recent `effective_from` among the rates feeding the reporting currency, and `/meta/exchange-rates/` lists each pair's own date. The UI ships a light theme only. `sample-data/` holds `acme-sample-50.xlsx` and the same rows as CSV, from `make_import_file --new 20 --raises 24 --errors 6`.
 
 Consequences: one palette to validate. The sample files are regenerated whenever the seed or the planted error list changes, in the same commit.
+
+Amended 8 Oct: the command is `make_import_file --raises 30 --new 20 --errors 6`. The errors are planted in rows already counted, so the old one wrote 44 rows, not 50. See D56.
 
 ## D29. The health check sends the custom domain as Host, and DNS is a CNAME only
 
@@ -469,6 +473,24 @@ Context: D51 capped the API's strings, but `bulk_apply` applies no caps and SQLi
 Decision: `check_text_lengths` refuses a `full_name`, `email`, `designation`, `department`, `country_code` or `gender` longer than 120, 254, 80, 64, 64 and 64 characters (`full_name is longer than 120 characters`), in the import and identity scopes. The country and department rules skip a value the length rule has refused, so no message repeats it back. SPEC section 7.
 
 Consequences: no import stores or echoes an unbounded string. An API body still meets DRF's caps first (D51), so in practice only sheets show these messages. The staged row's search columns are cut to their length, and `raw` keeps the cell as typed.
+
+Amended 8 Oct: `raw` keeps the cell as typed up to 256 characters, and a message repeats at most 64 characters of a value. See D56.
+
+## D56. After the step 5 review: blank cells, long cells and what an upload may cost
+
+Context: the step 5 reviewers found three gaps. A blank `full_name`, `designation` or `joining_date` staged as valid, then failed the whole approve on a NOT NULL constraint. A 168 KB sheet could store 606 MB of cell text. A crafted .xlsx of a few KB could hang a request thread, or take openpyxl past the 1 GB VM. Asked after the review, the owner chose each limit below and its words. Cutting cells silently and leaving the gaps open were the alternatives. A later probe showed that the elements openpyxl builds into objects cost far more than the rest, and the owner added a second count and one upload at a time.
+
+Decision: a blank `full_name`, `email`, `department`, `designation`, `level`, `country_code`, `gender` or `joining_date` is `{field} is required`, and the other rules on that cell run only when it holds a value (SPEC section 7). A staged row keeps at most 256 characters of a cell in `raw` and `normalized`, and `msg()` repeats at most 64 characters of a value, each cut ending in `…`. Before openpyxl opens an .xlsx, `preflight_xlsx` refuses one whose parts unpack past 50 MB. It then streams every part through expat, building no tree, and refuses a row numbered past 1,048,576, a cell past column 200, more than 2,000,000 elements in all, and more than 300,000 that are not cell contents or shared strings (`row`, `c`, `v`, `f`, `is`, `t`, `r`, `si`), which openpyxl builds into objects. The last two say `file is too big to read`, with no word of XML, at the owner's request. One upload is read at a time, and a second one meanwhile answers 409 `another file is being read; try again in a moment`. A .csv row is held to the same 200 cells, which also keeps every column letter within ZZZ. Each is a 400 with no batch (SPEC section 8). The sample is `make_import_file --raises 30 --new 20 --errors 6`, D28's mix in 50 rows. SPEC section 8's row-limit example is a list, as the API answers.
+
+Consequences: a full 10,000-row template has 377,122 elements, 339 of them outside cell contents, and reads in 1.4 s at 78 MB. The reviewers' far-row, wide-row and 5-million-cell files, and two of 12 million elements, are refused in under a second at 67 MB. Files under the first limits still took openpyxl past the 1 GB machine: 1.9 million style formats in an 18 KB file peaked at 1,223 MB, 1.9 million merged ranges at 1,128 MB and 1.2 million defined names at 883 MB, at 560 to 680 bytes an element. The second count refuses all three in under 0.2 s. The worst file both counts allow peaks at 412 MB, so with one upload read at a time the machine holds it. Every part is scanned, whatever its name, so the scan never depends on finding the sheet openpyxl reads. A workbook with a second sheet wider than 200 cells is refused as well. A cut value in `normalized` always belongs to a row in error, and approve reads `normalized` of accepted rows alone, so nothing applied is ever cut. `normalized` left the rows API, since only approve reads it.
+
+## D57. After the re-review: changed rows, unreadable files, one sheet read
+
+Context: the four reviewers ran again over the D56 fixes. The spec checker showed approve's second classification applying a row reviewed as an update as a revise, which wrote a sheet's old amounts over a raise that had become current. The security reviewer found openpyxl reading an external link once per reference to it (a 4.7 KB file reached 1,027 MB) and sizing every sheet a workbook lists once per entry (40 entries took 16.8 s). The code reviewer found a workbook with no worksheet answering 500. Asked, the owner chose to refuse a changed row as D24 does, and plain words with a next step for an unreadable file, over passing Python's reason through.
+
+Decision: approve classifies each accepted row again. A row that has become a no-op is left out. A row that would apply as another action than the one reviewed is re-marked `ACME-2 changed since this sheet was uploaded; upload the sheet again`, and approve answers 409 as the re-check does (SPEC F2 and section 7). An unreadable file says `file is not a readable .xlsx workbook; save it again from Excel and upload it`, or the same words for a .csv (SPEC section 8). openpyxl's `ExcelReader` reads the workbook with `keep_links=False`, its `read_worksheets` overridden to open the first worksheet alone and no chart sheet, so no part is read more than twice.
+
+Consequences: approve applies what was reviewed, or less when a change is already in place, never more. A refused row needs a fresh upload. The reader leans on openpyxl's `read_worksheets` and `wb._sheets`, pinned at 3.1.5, and the parser tests fail if an upgrade changes them. A second sheet is never opened now, so a broken one no longer refuses the file.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

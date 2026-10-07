@@ -37,7 +37,7 @@ export function useUploadImport() {
     mutationFn: uploadImport,
     onSuccess: (batch) => {
       client.setQueryData(keys.imports.detail(batch.id), batch);
-      return client.invalidateQueries({ queryKey: [...keys.imports.all, 'list'] });
+      return client.invalidateQueries({ queryKey: keys.imports.lists });
     },
   });
 }
@@ -80,7 +80,7 @@ export function useImportRows(id: number, params: ImportRowParams) {
 function refreshBatch(client: QueryClient, id: number) {
   return Promise.all([
     client.invalidateQueries({ queryKey: keys.imports.detail(id) }),
-    client.invalidateQueries({ queryKey: [...keys.imports.all, 'list'] }),
+    client.invalidateQueries({ queryKey: keys.imports.lists }),
   ]);
 }
 

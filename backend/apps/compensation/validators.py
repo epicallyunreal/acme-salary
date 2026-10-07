@@ -50,13 +50,14 @@ MAX_AMOUNT = Decimal("9999999999.99")
 MIN_BASE = Decimal("10")
 # A sheet cell may be no longer than its column (D55). SQLite does not enforce VARCHAR lengths,
 # and the lookup rules repeat a value they do not know in their message.
+LOOKUP_MAX = 64  # a code or name matched against a lookup, which a message repeats back (D51)
 TEXT_LIMITS = {
     "full_name": Employee._meta.get_field("full_name").max_length,
     "email": Employee._meta.get_field("email").max_length,
     "designation": Employee._meta.get_field("designation").max_length,
-    "department": 64,
-    "country_code": 64,
-    "gender": 64,
+    "department": LOOKUP_MAX,
+    "country_code": LOOKUP_MAX,
+    "gender": LOOKUP_MAX,
 }
 # The last date any date field may hold, so last_date + 1 day always exists (D53).
 DATE_MAX = date(2100, 12, 31)
@@ -115,6 +116,9 @@ class NormalizedRow:
     # set while validating
     is_new: bool = True
     identity_changed: bool = False
+    # The identity fields a matched row changes, as an API edit would send them; last_date is
+    # an exit, applied apart.
+    identity_changes: dict[str, Any] = field(default_factory=dict)
     amounts_changed: bool = False
     noop: bool = False
 
@@ -293,7 +297,139 @@ def build_context(
     return ctx
 
 
+# The template and its header (SPEC F1, section 7's header rows, D48, D54). The first column is
+# legacy_code, the code the legacy system gave the employee.
+
+IDENTITY_COLUMNS = (
+    "legacy_code",
+    "full_name",
+    "email",
+    "department",
+    "designation",
+    "level",
+    "country_code",
+    "gender",
+    "joining_date",
+    "last_date",
+    "effective_from",
+    "bonus_annual",
+)
+REQUIRED_COLUMNS = (
+    "legacy_code",
+    "full_name",
+    "email",
+    "department",
+    "designation",
+    "level",
+    "country_code",
+    "gender",
+    "joining_date",
+    "BASE",
+)
+# The old code headers, read as legacy_code when the sheet has no legacy_code column of its own.
+# "employeecode" covers both employee_code and Employee Code (D54).
+ALIASES = {
+    "employeecode": "legacy_code",
+    "employeeid": "legacy_code",
+    "empid": "legacy_code",
+}
+
+
+def normalize_header(name: Any) -> str:
+    """Case-, space-, underscore- and hyphen-insensitive header key."""
+    return "".join(ch for ch in str(name).strip().lower() if ch not in " _-")
+
+
+def template_columns(component_codes: Iterable[str]) -> list[str]:
+    return [*IDENTITY_COLUMNS, *component_codes]
+
+
+@dataclass
+class HeaderResult:
+    """Which sheet column feeds which template column, and what is wrong with the header."""
+
+    mapping: dict[int, str] = field(default_factory=dict)
+    missing: list[str] = field(default_factory=list)
+    unknown: list[str] = field(default_factory=list)
+    repeated: list[str] = field(default_factory=list)
+    ambiguous: list[str] = field(default_factory=list)
+
+    @property
+    def rejected(self) -> bool:
+        return bool(self.missing or self.repeated or self.ambiguous)
+
+    @property
+    def warnings(self) -> list[str]:
+        return [msg("unknown_column", column=name) for name in self.unknown]
+
+    def errors(self) -> dict[str, list[str]]:
+        """The 400 body of a refused upload, every problem with the header at once (SPEC F1)."""
+        body = {
+            "missing_columns": [msg("missing_column", column=name) for name in self.missing],
+            "unknown_columns": self.warnings,
+        }
+        if self.repeated:
+            body["repeated_columns"] = [msg("column_twice", column=name) for name in self.repeated]
+        if self.ambiguous:
+            body["ambiguous_columns"] = [ambiguous_message(self.ambiguous)]
+        return body
+
+
+def ambiguous_message(names: Sequence[str]) -> str:
+    """ "EmployeeID and Emp ID could both be ..."; three or more "could all be" (D54)."""
+    listed = f"{', '.join(names[:-1])} and {names[-1]}"
+    return msg("legacy_ambiguous", columns=listed, quantity="both" if len(names) == 2 else "all")
+
+
+def check_header(header: Sequence[Any], component_codes: Iterable[str]) -> HeaderResult:
+    """Map the sheet's header onto the template (SPEC F1, D48, D54).
+
+    Matching ignores case, spaces, underscores and hyphens. The old code headers stand in for
+    legacy_code only when the sheet has no legacy_code column. Two or more of them leave no way
+    to tell which is meant, and neither does a template column given twice, so both refuse the
+    upload. A column without a header is left to `read`, which reports it if it holds data.
+    """
+    targets = {normalize_header(name): name for name in IDENTITY_COLUMNS}
+    targets.update({normalize_header(code): code for code in component_codes})
+    names = ["" if cell is None else str(cell).strip() for cell in header]
+    keys = [normalize_header(name) for name in names]
+    has_legacy = normalize_header("legacy_code") in keys
+    result = HeaderResult()
+    taken: set[str] = set()
+    aliases: list[tuple[int, str]] = []
+    for index, (name, key) in enumerate(zip(names, keys, strict=True)):
+        if not key:
+            continue
+        column = targets.get(key)
+        if column is None and not has_legacy and key in ALIASES:
+            aliases.append((index, name))
+        elif column is None:
+            result.unknown.append(name)
+        elif column in taken:
+            if column not in result.repeated:
+                result.repeated.append(column)
+        else:
+            taken.add(column)
+            result.mapping[index] = column
+    if len(aliases) == 1:
+        result.mapping[aliases[0][0]] = "legacy_code"
+        taken.add("legacy_code")
+    elif aliases:
+        result.ambiguous = [name for _, name in aliases]
+    result.missing = [
+        column
+        for column in REQUIRED_COLUMNS
+        if column not in taken and not (column == "legacy_code" and result.ambiguous)
+    ]
+    return result
+
+
 # Rules. Each takes (row, ctx) and returns messages. Groups follow SPEC F1's order.
+
+
+def usable_legacy_code(row: NormalizedRow) -> bool:
+    """A code an employee can be found or created by: given, and short enough to store."""
+    return bool(row.legacy_code) and len(row.legacy_code) <= LEGACY_CODE_MAX
 
 
 def check_legacy_code(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
@@ -320,9 +456,32 @@ def check_text_lengths(row: NormalizedRow, ctx: ValidationContext) -> list[Messa
     ]
 
 
+REQUIRED_CELLS = (
+    "full_name",
+    "email",
+    "department",
+    "designation",
+    "level",
+    "country_code",
+    "gender",
+    "joining_date",
+)
+
+
+def check_required_cells(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A required cell left blank (D56). The rules about a cell's content run only on cells
+    that hold a value, so a blank one has this message alone. A new employee needs every one;
+    an edit through the API needs only the fields it names."""
+    return [
+        error(name, "cell_required", field=name)
+        for name in REQUIRED_CELLS
+        if name not in row.present and (row.is_new or name in row.columns)
+    ]
+
+
 def check_email_format(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
     if not row.email:
-        return [error("email", "email_invalid")]
+        return []
     try:
         django_validate_email(row.email)
     except DjangoValidationError:
@@ -331,28 +490,32 @@ def check_email_format(row: NormalizedRow, ctx: ValidationContext) -> list[Messa
 
 
 def check_country_exists(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
-    if _too_long(row, "country_code"):
-        return []  # reported by length, and not repeated back at any length
+    if not row.country_code or _too_long(row, "country_code"):
+        return []  # blank or too long: reported by its own rule, never repeated back
     if row.country_code not in ctx.countries:
         return [error("country_code", "country_unknown", value=row.country_code or "")]
     return []
 
 
 def check_department_exists(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
-    if _too_long(row, "department"):
-        return []  # reported by length, and not repeated back at any length
+    if not row.department or _too_long(row, "department"):
+        return []  # blank or too long: reported by its own rule, never repeated back
     if ctx.department_for(row.department) is None:
         return [error("department", "department_unknown", value=row.department or "")]
     return []
 
 
 def check_level_range(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    if row.level is None and "level" not in row.present:
+        return []  # blank: the required-cell rule says so
     if row.level is None or not 1 <= row.level <= 6:
         return [error("level", "level_range")]
     return []
 
 
 def check_gender_enum(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    if not row.gender:
+        return []  # blank: the required-cell rule says so
     if row.gender not in GENDERS:
         return [error("gender", "gender_enum")]
     return []
@@ -502,35 +665,50 @@ def check_duplicate_email(row: NormalizedRow, ctx: ValidationContext) -> list[Me
 
 
 def check_identity_changed(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """Which identity fields a matched row changes, recorded on the row for the applier, so the
+    classification and the write come from one comparison. A different country is a change too,
+    refused by its own rule, so such a row is never a no-op."""
     employee = ctx.employee_for(row)
     if employee is None:
         row.identity_changed = True
         return []
     department = ctx.department_for(row.department)
-    current = {
-        "full_name": employee.full_name,
-        "email": employee.email,
-        "department": employee.department_id,
-        "designation": employee.designation,
-        "level": employee.level,
-        "gender": employee.gender,
-        "joining_date": employee.joining_date,
-        "last_date": employee.last_date,
-    }
     proposed = {
         "full_name": row.full_name,
         "email": (row.email or "").lower(),
-        "department": department.pk if department else None,
         "designation": row.designation,
         "level": row.level,
         "gender": row.gender,
         "joining_date": row.joining_date,
         "last_date": row.last_date,
     }
-    row.identity_changed = any(
-        proposed[name] != current[name] for name in IDENTITY_FIELDS if name in row.columns
-    )
+    changed = False
+    changes: dict[str, Any] = {}
+    for name in IDENTITY_FIELDS:
+        if name not in row.columns:
+            continue
+        if name == "department":
+            if department is None or department.pk != employee.department_id:
+                changed = True
+                if department is not None:
+                    changes[name] = department.code
+        elif proposed[name] != getattr(employee, name):
+            changed = True
+            if name != "last_date":
+                changes[name] = proposed[name]
+    if "country_code" in row.columns and row.country_code != employee.country_id:
+        changed = True
+    row.identity_changed = changed
+    row.identity_changes = changes
     return []
+
+
+def _comparable(value: Decimal | None) -> Decimal | None:
+    """Two decimals compared as stored. A value no column could hold is never quantised (that
+    raises past 28 digits); it differs from every stored one, and its own rule reports it."""
+    if value is None or abs(value) > MAX_AMOUNT:
+        return value
+    return q2(value)
 
 
 def check_amounts_changed(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
@@ -542,11 +720,9 @@ def check_amounts_changed(row: NormalizedRow, ctx: ValidationContext) -> list[Me
     current_bonus = ctx.current_bonus_by_employee.get(employee.pk, ZERO)
     codes = set(current_lines) | {code for code, value in row.amounts.items() if value is not None}
     changed = any(
-        q2(row.amounts.get(code) if row.amounts.get(code) is not None else Decimal("-1"))
-        != q2(current_lines.get(code, Decimal("-1")))
-        for code in codes
+        _comparable(row.amounts.get(code)) != _comparable(current_lines.get(code)) for code in codes
     )
-    changed = changed or q2(row.bonus_annual or ZERO) != q2(current_bonus)
+    changed = changed or _comparable(row.bonus_annual or ZERO) != _comparable(current_bonus)
     row.amounts_changed = changed
     return []
 
@@ -720,6 +896,11 @@ def _gross_and_deductions(
     components = ctx.components_for(row.country_code)
     if not components:
         return None
+    given = [value for value in row.amounts.values() if value is not None]
+    if row.bonus_annual is not None:
+        given.append(row.bonus_annual)
+    if any(not ZERO <= value <= MAX_AMOUNT for value in given):
+        return None  # an amount out of range is an error of its own; no total is meaningful
     gross = row.bonus_annual or ZERO
     deductions = ZERO
     for code, value in row.amounts.items():
@@ -733,10 +914,19 @@ def _gross_and_deductions(
     return q2(gross), q2(deductions)
 
 
-def check_bonus_above_base(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+def _valid_base(row: NormalizedRow) -> Decimal | None:
+    """BASE when it passes its own rules, else None: a warning measured against a BASE that is
+    itself an error would only repeat that error."""
     base = row.amounts.get("BASE")
+    if base is None or not MIN_BASE <= base <= MAX_AMOUNT:
+        return None
+    return base
+
+
+def check_bonus_above_base(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    base = _valid_base(row)
     bonus = row.bonus_annual
-    if base is None or bonus is None or bonus <= base:
+    if base is None or bonus is None or bonus <= base or bonus > MAX_AMOUNT:
         return []
     return [
         warning(
@@ -746,7 +936,7 @@ def check_bonus_above_base(row: NormalizedRow, ctx: ValidationContext) -> list[M
 
 
 def check_deductions_above_base(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
-    base = row.amounts.get("BASE")
+    base = _valid_base(row)
     if base is None:
         return []
     components = ctx.components_for(row.country_code)
@@ -760,7 +950,7 @@ def check_deductions_above_base(row: NormalizedRow, ctx: ValidationContext) -> l
         )
         for code, value in row.amounts.items()
         if value is not None
-        and value > base
+        and base < value <= MAX_AMOUNT
         and code in components
         and components[code].kind == SalaryComponent.Kind.DEDUCTION
     ]
@@ -825,6 +1015,7 @@ def rule(fn: Rule, group: str, *scopes: str) -> RuleSpec:
 
 RULES: list[RuleSpec] = [
     rule(check_legacy_code, "structure", "import"),
+    rule(check_required_cells, "structure", "import", "identity"),
     rule(check_text_lengths, "structure", "import", "identity"),
     rule(check_email_format, "structure", "import", "identity"),
     rule(check_country_exists, "structure", "import", "identity"),
@@ -866,7 +1057,9 @@ RULES: list[RuleSpec] = [
 CONFLICT_CODES = {"already_exited", "last_date_scheduled", "revision_after_exit"}
 
 
-def run_rules(row: NormalizedRow, ctx: ValidationContext, scope: str) -> list[Message]:
+def run_rules(
+    row: NormalizedRow, ctx: ValidationContext, scope: str, *, include_warnings: bool = True
+) -> list[Message]:
     row.is_new = ctx.employee_for(row) is None
     messages: list[Message] = []
     for spec in RULES:
@@ -874,7 +1067,9 @@ def run_rules(row: NormalizedRow, ctx: ValidationContext, scope: str) -> list[Me
             continue
         if row.noop and spec.group == "dates":
             continue
-        if spec.group == "warnings" and not row.is_new and not row.amounts_changed:
+        if spec.group == "warnings" and (
+            not include_warnings or (not row.is_new and not row.amounts_changed)
+        ):
             continue
         messages.extend(spec.fn(row, ctx))
     return messages
@@ -888,7 +1083,7 @@ def validate_row(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
 def recheck_for_apply(row: NormalizedRow, ctx: ValidationContext, action: str) -> list[Message]:
     """A staged row again, at approve, against the live tables (DESIGN 1.5). A row staged as new
     whose legacy_code an employee holds now is refused, never matched to them (D24). Every rule
-    runs again, so a revision or an edit made since staging is seen; only errors count."""
+    but the warnings runs again, so a revision or an edit made since staging is seen."""
     employee = ctx.employee_for(row)
     if action == "create" and employee is not None:
         return [
@@ -896,7 +1091,10 @@ def recheck_for_apply(row: NormalizedRow, ctx: ValidationContext, action: str) -
                 "legacy_code", "legacy_taken", code=row.legacy_code, employee=employee.employee_code
             )
         ]
-    return [message for message in validate_row(row, ctx) if message.severity == "error"]
+    # Warnings are left out: approve applies them, and the medians they read cost a full scan
+    # while the write lock is held.
+    found = run_rules(row, ctx, "import", include_warnings=False)
+    return [message for message in found if message.severity == "error"]
 
 
 def worst_severity(messages: Iterable[Message]) -> str:

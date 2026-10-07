@@ -13,7 +13,7 @@ import { PageHeader } from '../components/layout/PageHeader';
  * file opens its review page. */
 export function Imports() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const page = Math.max(1, Number(searchParams.get('page')) || 1);
+  const page = Math.max(1, Math.floor(Number(searchParams.get('page'))) || 1);
   const imports = useImportList(page);
   const navigate = useNavigate();
 

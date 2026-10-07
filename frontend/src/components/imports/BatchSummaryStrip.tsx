@@ -1,8 +1,12 @@
 import { Box, Typography } from '@mui/material';
 
 import type { ImportBatch } from '../../api/types';
+import { formatCount } from './counts';
 
-const COUNTS: [string, keyof ImportBatch][] = [
+type CountField =
+  'total_rows' | 'valid_rows' | 'warning_rows' | 'error_rows' | 'skipped_rows' | 'noop_rows';
+
+const COUNTS: [string, CountField][] = [
   ['Total', 'total_rows'],
   ['Valid', 'valid_rows'],
   ['Warning', 'warning_rows'],
@@ -29,7 +33,7 @@ export function BatchSummaryStrip({ batch }: { batch: ImportBatch }) {
             className="num"
             sx={{ m: 0, fontSize: '1.375rem', fontWeight: 600, lineHeight: 1.3 }}
           >
-            {(batch[key] as number).toLocaleString('en-US')}
+            {formatCount(batch[key])}
           </Typography>
         </Box>
       ))}

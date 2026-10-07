@@ -5,8 +5,8 @@ import io
 import pytest
 from openpyxl import load_workbook
 
+from apps.compensation.validators import IDENTITY_COLUMNS, check_header
 from apps.core.queries import active_components
-from apps.imports.parser import IDENTITY_COLUMNS, check_header
 
 pytestmark = pytest.mark.django_db
 

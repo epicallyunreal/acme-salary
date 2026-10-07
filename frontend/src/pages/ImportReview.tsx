@@ -20,7 +20,7 @@ import { importRowColumns } from '../components/grid/columns';
 import { ServerGrid } from '../components/grid/ServerGrid';
 import { ApproveDialog, DiscardDialog } from '../components/imports/BatchDialogs';
 import { BatchSummaryStrip } from '../components/imports/BatchSummaryStrip';
-import { applicableRows, rowsWord } from '../components/imports/counts';
+import { rowsWord } from '../components/imports/counts';
 import { TemplateMenu } from '../components/imports/TemplateMenu';
 import { EmptyState } from '../components/layout/EmptyState';
 import { ErrorState } from '../components/layout/ErrorState';
@@ -44,7 +44,7 @@ function useReviewParams() {
   const pageSize = Number(params.get('page_size'));
   const status = params.get('status') ?? '';
   const state = {
-    page: Math.max(1, Number(params.get('page')) || 1),
+    page: Math.max(1, Math.floor(Number(params.get('page'))) || 1),
     pageSize: (PAGE_SIZES as readonly number[]).includes(pageSize) ? pageSize : DEFAULT_PAGE_SIZE,
     status: (STATUSES.some(([value]) => value === status) ? status : '') as StatusFilter,
     search: params.get('search') ?? '',
@@ -70,7 +70,6 @@ function approveBlocker(batch: ImportBatch): string | null {
     const them = batch.error_rows === 1 ? 'it' : 'them';
     return `${rowsWord(batch.error_rows)} ${batch.error_rows === 1 ? 'has' : 'have'} errors. Skip ${them} or fix the spreadsheet and upload again.`;
   }
-  if (!applicableRows(batch)) return 'Nothing to apply: every row is skipped or unchanged.';
   return null;
 }
 
@@ -129,7 +128,10 @@ function ReviewPage({ batchId }: { batchId: number }) {
   const rows = useImportRows(batchId, params);
   const { mutate: toggleSkip } = useSkipRow(batchId);
   const [dialog, setDialog] = useState<'approve' | 'discard' | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ text: string; severity: 'success' | 'error' } | null>(
+    null,
+  );
+  const announce = (text: string) => setNotice({ text, severity: 'success' });
   const paginationModel = useMemo(
     () => ({ page: view.page - 1, pageSize: view.pageSize }),
     [view.page, view.pageSize],
@@ -146,8 +148,14 @@ function ReviewPage({ batchId }: { batchId: number }) {
           toggleSkip(
             { rowId: row.id, skip: row.status !== 'skipped' },
             {
-              onError: () =>
-                setNotice('The row did not change. Check your connection and try again.'),
+              onError: (error) =>
+                setNotice({
+                  severity: 'error',
+                  text:
+                    error instanceof ApiError && error.detail()
+                      ? `The row did not change: ${error.detail()}.`
+                      : 'The row did not change. Check your connection and try again.',
+                }),
             },
           ),
       }),
@@ -198,7 +206,7 @@ function ReviewPage({ batchId }: { batchId: number }) {
                 <Button
                   variant="contained"
                   disabled={Boolean(blocker)}
-                  aria-describedby={blocker ? 'approve-blocker' : undefined}
+                  aria-describedby={inReview && blocker ? 'approve-blocker' : undefined}
                   onClick={() => setDialog('approve')}
                 >
                   Approve
@@ -275,14 +283,18 @@ function ReviewPage({ batchId }: { batchId: number }) {
         />
       )}
       {dialog === 'approve' ? (
-        <ApproveDialog batch={current} onClose={() => setDialog(null)} onDone={setNotice} />
+        <ApproveDialog batch={current} onClose={() => setDialog(null)} onDone={announce} />
       ) : null}
       {dialog === 'discard' ? (
-        <DiscardDialog batch={current} onClose={() => setDialog(null)} onDone={setNotice} />
+        <DiscardDialog batch={current} onClose={() => setDialog(null)} onDone={announce} />
       ) : null}
       <Snackbar open={Boolean(notice)} autoHideDuration={6000} onClose={() => setNotice(null)}>
-        <Alert severity="success" role="status" onClose={() => setNotice(null)}>
-          {notice}
+        <Alert
+          severity={notice?.severity ?? 'success'}
+          role="status"
+          onClose={() => setNotice(null)}
+        >
+          {notice?.text}
         </Alert>
       </Snackbar>
     </>

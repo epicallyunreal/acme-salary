@@ -52,6 +52,8 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
     <Box component="section" aria-labelledby="upload-title" sx={{ mb: 6 }}>
       <ErrorSummary title="The file was not staged" messages={problems} attempt={attempt} />
       <Box
+        role="group"
+        aria-label="Drop a spreadsheet here"
         onDragOver={(event) => {
           event.preventDefault();
           setDragging(true);

@@ -111,19 +111,18 @@ function row({ id, row_number, status, action, cells, messages, matched }: RowFi
     messages,
     matched_employee: matched ? { id: matched, employee_code: `ACME-${matched}` } : null,
     raw: raw(cells),
-    normalized: {},
   };
 }
 
 const INDIA = {
   department: 'engineering',
   designation: 'Engineer',
-  level: 2,
+  level: '2',
   country_code: 'IN',
   gender: 'female',
   joining_date: '2024-03-01',
-  HRA: 360000,
-  TAX: 90000,
+  HRA: '360000',
+  TAX: '90000',
 };
 
 /** reviewBatch's rows in sheet order: valid, warning, error, skipped and no-op. */
@@ -139,7 +138,7 @@ export const reviewRows: ImportRow[] = [
       full_name: 'Meera Iyer',
       email: 'meera@acme.example',
       joining_date: '2026-11-01',
-      BASE: 900000,
+      BASE: '900000',
     },
     messages: [
       {
@@ -161,7 +160,7 @@ export const reviewRows: ImportRow[] = [
       full_name: 'Mohan Khan',
       email: 'mohan@acme.example',
       effective_from: '2026-11-01',
-      BASE: 250000,
+      BASE: '250000',
     },
     messages: [
       {
@@ -198,7 +197,7 @@ export const reviewRows: ImportRow[] = [
     row_number: 5,
     status: 'skipped',
     action: null,
-    cells: { ...INDIA, full_name: 'No Code', email: 'nocode@acme.example', BASE: 500000 },
+    cells: { ...INDIA, full_name: 'No Code', email: 'nocode@acme.example', BASE: '500000' },
     messages: [{ field: 'legacy_code', severity: 'error', message: 'legacy_code is required' }],
   }),
   row({
@@ -212,7 +211,7 @@ export const reviewRows: ImportRow[] = [
       legacy_code: 'HR-77310',
       full_name: 'Lata Rao',
       email: 'lata@acme.example',
-      BASE: 700000,
+      BASE: '700000',
     },
     messages: [
       { field: 'row', severity: 'info', message: 'No changes, row will be skipped on apply' },

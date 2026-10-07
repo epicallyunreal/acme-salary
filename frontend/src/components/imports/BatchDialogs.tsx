@@ -13,11 +13,11 @@ import { useApproveImport, useDiscardImport } from '../../api/imports';
 import type { ImportBatch } from '../../api/types';
 import type { FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
-import { applicableRows, rowsWord } from './counts';
+import { rowsWord } from './counts';
 
-/** A refused approve says why: the error count, the rows the re-check re-marked, or the failure
- * that left the batch failed (SPEC F2). */
-function approveProblems(error: unknown): FormMessage[] {
+/** Why an approve or a discard was refused: the error count, the rows the re-check re-marked,
+ * the failure that left the batch failed (SPEC F2), or the batch no longer in review. */
+function batchActionProblems(error: unknown): FormMessage[] {
   if (!(error instanceof ApiError)) {
     return [{ key: null, message: 'Nothing was sent. Check your connection and try again.' }];
   }
@@ -46,7 +46,6 @@ export function ApproveDialog({ batch, onClose, onDone }: DialogProps) {
   const approve = useApproveImport(batch.id);
   const [problems, setProblems] = useState<FormMessage[]>([]);
   const [attempt, setAttempt] = useState(0);
-  const count = applicableRows(batch);
 
   const confirm = () => {
     setProblems([]);
@@ -59,7 +58,7 @@ export function ApproveDialog({ batch, onClose, onDone }: DialogProps) {
         );
       },
       onError: (error) => {
-        setProblems(approveProblems(error));
+        setProblems(batchActionProblems(error));
         setAttempt((n) => n + 1);
       },
     });
@@ -67,12 +66,12 @@ export function ApproveDialog({ batch, onClose, onDone }: DialogProps) {
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
-      <DialogTitle>Apply {rowsWord(count)}?</DialogTitle>
+      <DialogTitle>Approve {batch.file_name}?</DialogTitle>
       <DialogContent>
         <ErrorSummary title="Nothing was applied" messages={problems} attempt={attempt} />
         <DialogContentText>
-          The rows change the live records in one step, each change audited under this file. Skipped
-          and unchanged rows are left out.
+          Its valid and warning rows change the live records in one step, each change audited under
+          this file. Skipped and unchanged rows are left out.
         </DialogContentText>
       </DialogContent>
       <DialogActions>
@@ -100,7 +99,7 @@ export function DiscardDialog({ batch, onClose, onDone }: DialogProps) {
         onDone(`${batch.file_name} discarded. Nothing in it was applied.`);
       },
       onError: (error) => {
-        setProblems(approveProblems(error));
+        setProblems(batchActionProblems(error));
         setAttempt((n) => n + 1);
       },
     });

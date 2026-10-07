@@ -1,8 +1,8 @@
-"""Reading an uploaded sheet (SPEC F1, DESIGN 1.5).
+"""Reading an uploaded sheet (SPEC F1, DESIGN 1.5): the file reader and the cell parsers.
 
-The template's shape, the header check, the file reader and the cell parsers. Every message text
-comes from compensation/messages.py, so a sheet reads the same words as the API. The first column
-is legacy_code, the code the legacy system gave the employee (D48).
+The template's shape and the header rules live with every other rule in compensation/validators.py
+(SPEC section 7, CLAUDE.md rule 4). Every message text comes from compensation/messages.py, so a
+sheet reads the same words as the API.
 """
 
 from __future__ import annotations
@@ -13,56 +13,39 @@ import math
 import re
 import unicodedata
 import zipfile
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import PurePath
 from typing import Any
+from xml.parsers import expat
 
-from openpyxl import load_workbook
+from openpyxl.reader.excel import ExcelReader
 from openpyxl.utils import get_column_letter
-from openpyxl.utils.exceptions import InvalidFileException
+from openpyxl.utils.cell import coordinate_to_tuple
+from openpyxl.worksheet._read_only import ReadOnlyWorksheet
 
 from apps.compensation.messages import msg
-from apps.compensation.validators import Message, NormalizedRow, error
+from apps.compensation.validators import IDENTITY_COLUMNS, Message, NormalizedRow, error
 from apps.core.exceptions import Invalid
 
-IDENTITY_COLUMNS = (
-    "legacy_code",
-    "full_name",
-    "email",
-    "department",
-    "designation",
-    "level",
-    "country_code",
-    "gender",
-    "joining_date",
-    "last_date",
-    "effective_from",
-    "bonus_annual",
-)
-REQUIRED_COLUMNS = (
-    "legacy_code",
-    "full_name",
-    "email",
-    "department",
-    "designation",
-    "level",
-    "country_code",
-    "gender",
-    "joining_date",
-    "BASE",
-)
-# The old code headers, read as legacy_code when the sheet has no legacy_code column of its own.
-# "employeecode" covers both employee_code and Employee Code (D54).
-ALIASES = {
-    "employeecode": "legacy_code",
-    "employeeid": "legacy_code",
-    "empid": "legacy_code",
-}
 DATE_COLUMNS = ("joining_date", "last_date", "effective_from")
 ROW_LIMIT = 10_000
+# What a sheet may cost before openpyxl reads it (D56). A full 10,000-row template unpacks to
+# about 15 MB and is 22 columns wide.
+MAX_UNPACKED_BYTES = 50 * 1024 * 1024
+MAX_ROW_CELLS = 200
+EXCEL_MAX_ROW = 1_048_576
+# openpyxl builds some parts as a whole tree, at about 100 bytes an element; a full 10,000-row
+# template has under 400,000 of them.
+MAX_ELEMENTS = 2_000_000
+# Cell contents and shared strings openpyxl streams. Anything else, style formats, merged ranges
+# and defined names among them, it builds into objects at 560 to 680 bytes each; a full template
+# has 339 of those (D56).
+CELL_TAGS = frozenset({"row", "c", "v", "f", "is", "t", "r", "si"})
+MAX_OBJECT_ELEMENTS = 300_000
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # A browser sends what the operating system calls the file. Windows with Excel installed calls a
 # .csv application/vnd.ms-excel, so that type is accepted for .csv too.
@@ -82,98 +65,7 @@ LAKHS = re.compile(r"\d{1,2}(?:,\d{2})*,\d{3}")  # 12,00,000
 PLAIN_NUMBER = re.compile(r"\d+(?:\.\d*)?|\.\d+")
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 WHOLE = re.compile(r"\d+(?:\.0+)?")
-
-
-def normalize_header(name: Any) -> str:
-    """Case-, space-, underscore- and hyphen-insensitive header key."""
-    return "".join(ch for ch in str(name).strip().lower() if ch not in " _-")
-
-
-def template_columns(component_codes: Iterable[str]) -> list[str]:
-    return [*IDENTITY_COLUMNS, *component_codes]
-
-
-# Header
-
-
-@dataclass
-class HeaderResult:
-    """Which sheet column feeds which template column, and what is wrong with the header."""
-
-    mapping: dict[int, str] = field(default_factory=dict)
-    missing: list[str] = field(default_factory=list)
-    unknown: list[str] = field(default_factory=list)
-    repeated: list[str] = field(default_factory=list)
-    ambiguous: list[str] = field(default_factory=list)
-
-    @property
-    def rejected(self) -> bool:
-        return bool(self.missing or self.repeated or self.ambiguous)
-
-    @property
-    def warnings(self) -> list[str]:
-        return [msg("unknown_column", column=name) for name in self.unknown]
-
-    def errors(self) -> dict[str, list[str]]:
-        """The 400 body of a refused upload, every problem with the header at once (SPEC F1)."""
-        body = {
-            "missing_columns": [msg("missing_column", column=name) for name in self.missing],
-            "unknown_columns": self.warnings,
-        }
-        if self.repeated:
-            body["repeated_columns"] = [msg("column_twice", column=name) for name in self.repeated]
-        if self.ambiguous:
-            body["ambiguous_columns"] = [ambiguous_message(self.ambiguous)]
-        return body
-
-
-def ambiguous_message(names: Sequence[str]) -> str:
-    """ "EmployeeID and Emp ID could both be ..."; three or more "could all be" (D54)."""
-    listed = f"{', '.join(names[:-1])} and {names[-1]}"
-    return msg("legacy_ambiguous", columns=listed, quantity="both" if len(names) == 2 else "all")
-
-
-def check_header(header: Sequence[Any], component_codes: Iterable[str]) -> HeaderResult:
-    """Map the sheet's header onto the template (SPEC F1, D48, D54).
-
-    Matching ignores case, spaces, underscores and hyphens. The old code headers stand in for
-    legacy_code only when the sheet has no legacy_code column. Two or more of them leave no way
-    to tell which is meant, and neither does a template column given twice, so both refuse the
-    upload. A column without a header is left to `read`, which reports it if it holds data.
-    """
-    targets = {normalize_header(name): name for name in IDENTITY_COLUMNS}
-    targets.update({normalize_header(code): code for code in component_codes})
-    names = ["" if cell is None else str(cell).strip() for cell in header]
-    keys = [normalize_header(name) for name in names]
-    has_legacy = normalize_header("legacy_code") in keys
-    result = HeaderResult()
-    taken: set[str] = set()
-    aliases: list[tuple[int, str]] = []
-    for index, (name, key) in enumerate(zip(names, keys, strict=True)):
-        if not key:
-            continue
-        column = targets.get(key)
-        if column is None and not has_legacy and key in ALIASES:
-            aliases.append((index, name))
-        elif column is None:
-            result.unknown.append(name)
-        elif column in taken:
-            if column not in result.repeated:
-                result.repeated.append(column)
-        else:
-            taken.add(column)
-            result.mapping[index] = column
-    if len(aliases) == 1:
-        result.mapping[aliases[0][0]] = "legacy_code"
-        taken.add("legacy_code")
-    elif aliases:
-        result.ambiguous = [name for _, name in aliases]
-    result.missing = [
-        column
-        for column in REQUIRED_COLUMNS
-        if column not in taken and not (column == "legacy_code" and result.ambiguous)
-    ]
-    return result
+LEVEL_KEPT_MAX = 999_999  # past this a cell is no level, and parse_level keeps no int of it
 
 
 # File
@@ -212,17 +104,144 @@ def _binary(upload):
     return stream
 
 
-def _xlsx_rows(upload) -> Iterator[list[Any]]:
+def _refused(key: str, number: int, limit: int) -> Invalid:
+    return Invalid({"file": [msg(key, row=f"{number:,}", limit=f"{limit:,}")]})
+
+
+def _too_wide(number: int) -> Invalid:
+    return _refused("row_too_wide", number, MAX_ROW_CELLS)
+
+
+def _forbidden(*_args) -> None:
+    # The refusals defusedxml makes: no entity declarations and no external entities, so no
+    # entity expansion and no fetching.
+    raise Invalid({"file": [msg("file_unreadable")]})
+
+
+def _row_number(given: str) -> int:
+    """A row's `r` as openpyxl reads it: whole, or a float with nothing after the point."""
     try:
-        workbook = load_workbook(_binary(upload), read_only=True, data_only=True)
-    except (InvalidFileException, zipfile.BadZipFile, KeyError, OSError, ValueError) as exc:
+        return int(given)
+    except ValueError:
+        number = float(given)
+        if not number.is_integer():
+            raise
+        return int(number)
+
+
+class _Scan:
+    """Counts the elements of the whole file, and those openpyxl would build into objects. In
+    each part it follows the row number and the column of the last cell as openpyxl counts
+    them, keeping nothing: a row's `r` or one past the last row, a cell's `r` or one past the
+    last cell."""
+
+    def __init__(self) -> None:
+        self.elements = 0
+        self.objects = 0
+        self.row = 0
+        self.column = 0
+
+    def start(self, name: str, attributes: dict[str, str]) -> None:
+        tag = name.rpartition("}")[2]
+        self.elements += 1
+        if tag not in CELL_TAGS:
+            self.objects += 1
+        if self.elements > MAX_ELEMENTS or self.objects > MAX_OBJECT_ELEMENTS:
+            raise Invalid({"file": [msg("file_too_big")]})
+        if tag == "row":
+            given = attributes.get("r")
+            self.row, self.column = _row_number(given) if given else self.row + 1, 0
+            if self.row > EXCEL_MAX_ROW:
+                raise _refused("row_past_limit", self.row, EXCEL_MAX_ROW)
+        elif tag == "c":
+            reference = attributes.get("r")
+            self.column = coordinate_to_tuple(reference)[1] if reference else self.column + 1
+            if self.column > MAX_ROW_CELLS:
+                raise _too_wide(self.row)
+
+
+def _scan_part(part, scan: _Scan) -> None:
+    scan.row = scan.column = 0
+    parser = expat.ParserCreate(namespace_separator="}")
+    parser.StartElementHandler = scan.start
+    parser.EntityDeclHandler = _forbidden
+    parser.UnparsedEntityDeclHandler = _forbidden
+    parser.ExternalEntityRefHandler = _forbidden
+    try:
+        parser.ParseFile(part)
+    except expat.ExpatError:
+        pass  # not XML, or broken: openpyxl stops at the same byte, after the same rows
+
+
+def preflight_xlsx(stream) -> None:
+    """Refuse a workbook that would cost more to open than the machine has (D56), before
+    openpyxl, which reads some parts whole and builds every cell of a row out to the last one:
+
+    - the parts the zip declares, together, over 50 MB unpacked. zipfile stops a part at its
+      declared size and fails its checksum, so the declaration holds;
+    - a row numbered past Excel's last row, or with a cell past column 200, where openpyxl would
+      build every filler row or cell in between;
+    - more than 2,000,000 elements in all, which openpyxl would build at 100 bytes each, or
+      more than 300,000 that it would build into objects at up to 680 bytes each.
+
+    Every part is scanned, by name or not: openpyxl opens each worksheet at load, and a sheet
+    can live under any name. The scan is expat with no tree, so it keeps nothing.
+    """
+    with zipfile.ZipFile(stream) as archive:
+        parts = archive.infolist()
+        if sum(part.file_size for part in parts) > MAX_UNPACKED_BYTES:
+            raise Invalid({"file": [msg("file_unpacks_large", limit="50 MB")]})
+        scan = _Scan()
+        for part in parts:
+            with archive.open(part) as source:
+                _scan_part(source, scan)
+
+
+class _FirstSheetReader(ExcelReader):
+    """openpyxl's own reader, opening the first worksheet only. Its `read_worksheets` sizes every
+    sheet the workbook lists and reads every chart sheet's charts, once per entry, so a workbook
+    that lists one large part many times would have it read as many times (D57)."""
+
+    def read_worksheets(self) -> None:
+        parts = set(self.valid_files)  # a list in openpyxl, searched once per sheet entry
+        for sheet, rel in self.parser.find_sheets():
+            if rel.target in parts and "chartsheet" not in rel.Type:
+                self.wb._sheets.append(
+                    ReadOnlyWorksheet(self.wb, sheet.name, rel.target, self.shared_strings)
+                )
+                return
+
+
+def open_workbook(stream):
+    """The workbook as openpyxl reads it, read-only and values only, with its first worksheet
+    alone. External links are never followed: openpyxl reads a linked part once per reference
+    to it (D57)."""
+    reader = _FirstSheetReader(stream, read_only=True, data_only=True, keep_links=False)
+    reader.read()
+    return reader.wb
+
+
+def _xlsx_rows(upload) -> Iterator[list[Any]]:
+    stream = _binary(upload)
+    # A crafted file makes openpyxl raise a wide range of errors (IndexError on a shared
+    # string, ValueError on a cell, ParseError on the XML, among others); each means unreadable.
+    try:
+        preflight_xlsx(stream)
+        stream.seek(0)
+        workbook = open_workbook(stream)
+    except Invalid:
+        raise
+    except Exception as exc:
         raise Invalid({"file": [msg("file_unreadable")]}) from exc
     try:
-        sheet = workbook.worksheets[0]
-        # The dimension the file declares cannot be trusted, so every row is streamed.
+        sheet = workbook.worksheets[0]  # a workbook of chart sheets alone has none
+        # The dimension the file declares cannot be trusted, so every row is streamed, up to
+        # Excel's own last row.
         sheet.reset_dimensions()
-        for values in sheet.iter_rows(values_only=True):
+        for values in sheet.iter_rows(max_row=EXCEL_MAX_ROW, values_only=True):
             yield list(values)
+    except Exception as exc:
+        raise Invalid({"file": [msg("file_unreadable")]}) from exc
     finally:
         workbook.close()
 
@@ -233,6 +252,9 @@ def _csv_rows(upload) -> Iterator[list[Any]]:
         yield from csv.reader(text)
     except UnicodeDecodeError as exc:
         raise Invalid({"file": [msg("not_utf8")]}) from exc
+    except csv.Error as exc:
+        # A cell longer than csv.field_size_limit(), 131,072 characters, among others.
+        raise Invalid({"file": [msg("csv_unreadable")]}) from exc
     finally:
         # Hand the stream back open: Django closes and removes the upload after the request.
         text.detach()
@@ -247,28 +269,34 @@ def open_rows(upload, file_name: str, content_type: str | None) -> Iterator[list
 def read(upload, file_name: str, content_type: str | None) -> ParsedFile:
     """The header and every data row, all-blank rows skipped. Rows are counted while streaming,
     past the limit too, because the sheet's own row count cannot be trusted (SPEC section 8)."""
-    rows = open_rows(upload, file_name, content_type)
-    header = next(rows, None)
-    if header is None or all(is_blank(cell) for cell in header):
-        raise Invalid({"file": [msg("file_no_header")]})
-    width = len(header)
-    headless = {index for index, cell in enumerate(header) if is_blank(cell)}
-    kept: list[tuple[int, list[Any]]] = []
-    unnamed: set[int] = set()
-    count = 0
-    for number, cells in enumerate(rows, start=2):
-        if all(is_blank(cell) for cell in cells):
-            continue
-        count += 1
-        if count <= ROW_LIMIT:
-            kept.append((number, list(cells)))
-        for index, cell in enumerate(cells):
-            if (index in headless or index >= width) and not is_blank(cell):
-                unnamed.add(index)
-    if count > ROW_LIMIT:
-        raise Invalid({"rows": [msg("row_limit", count=f"{count:,}", limit=f"{ROW_LIMIT:,}")]})
-    letters = [get_column_letter(index + 1) for index in sorted(unnamed)]
-    return ParsedFile(header=header, rows=kept, row_count=count, unnamed=letters)
+    # Closed on every way out, so the reader releases the file while it is still open.
+    with closing(open_rows(upload, file_name, content_type)) as rows:
+        header = next(rows, None)
+        if header is None or all(is_blank(cell) for cell in header):
+            raise Invalid({"file": [msg("file_no_header")]})
+        width = len(header)
+        if width > MAX_ROW_CELLS:
+            raise _too_wide(1)
+        headless = {index for index, cell in enumerate(header) if is_blank(cell)}
+        kept: list[tuple[int, list[Any]]] = []
+        unnamed: set[int] = set()
+        count = 0
+        for number, cells in enumerate(rows, start=2):
+            # The .xlsx pre-scan has refused wide rows already; a .csv row is checked here.
+            if len(cells) > MAX_ROW_CELLS:
+                raise _too_wide(number)
+            if all(is_blank(cell) for cell in cells):
+                continue
+            count += 1
+            if count <= ROW_LIMIT:
+                kept.append((number, list(cells)))
+            for index, cell in enumerate(cells):
+                if (index in headless or index >= width) and not is_blank(cell):
+                    unnamed.add(index)
+        if count > ROW_LIMIT:
+            raise Invalid({"rows": [msg("row_limit", count=f"{count:,}", limit=f"{ROW_LIMIT:,}")]})
+        letters = [get_column_letter(index + 1) for index in sorted(unnamed)]
+        return ParsedFile(header=header, rows=kept, row_count=count, unnamed=letters)
 
 
 # Cells
@@ -335,15 +363,19 @@ def parse_code(value: Any) -> str | None:
 
 
 def parse_level(value: Any) -> int | None:
-    """A whole number, else None, which the level rule reports."""
+    """A whole number, else None, which the level rule reports. So is a number past 999,999:
+    it is no level either, and an int of thousands of digits cannot be written back as text."""
     if is_blank(value) or isinstance(value, bool):
         return None
     if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value) if value.is_integer() else None
-    given = str(value).strip()
-    return int(float(given)) if WHOLE.fullmatch(given) else None
+        level = value
+    elif isinstance(value, float):
+        level = int(value) if value.is_integer() else None
+    else:
+        given = str(value).strip()
+        # Through Decimal: a float of a few hundred digits is inf, and int(inf) raises.
+        level = int(Decimal(given)) if WHOLE.fullmatch(given) else None
+    return level if level is not None and level <= LEVEL_KEPT_MAX else None
 
 
 def parse_text(value: Any) -> str | None:

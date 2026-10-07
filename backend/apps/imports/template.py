@@ -7,9 +7,9 @@ import io
 from django.http import Http404
 from openpyxl import Workbook
 
+from apps.compensation.validators import template_columns
 from apps.core import queries as core_queries
 from apps.core.models import Country
-from apps.imports.parser import template_columns
 
 
 def template_country(country_code: str | None) -> str | None:

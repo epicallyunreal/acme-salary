@@ -188,11 +188,13 @@ export function importRowColumns(
       headerName: 'Skip',
       width: 100,
       sortable: false,
-      renderCell: ({ row }) => {
+      renderCell: ({ row, tabIndex }) => {
         const skipped = row.status === 'skipped';
         return (
           <Button
             size="small"
+            // The grid moves focus cell by cell; the button takes it only with its cell.
+            tabIndex={tabIndex}
             disabled={!canSkip}
             aria-label={`${skipped ? 'Unskip' : 'Skip'} row ${row.row_number}`}
             onClick={() => onToggleSkip(row)}

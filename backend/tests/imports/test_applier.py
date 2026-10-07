@@ -12,6 +12,7 @@ from apps.compensation import services as compensation
 from apps.compensation.models import CompensationRecord
 from apps.compensation.services import RecordInput
 from apps.core.exceptions import ApplyFailed, Conflict
+from apps.employees import services as employees_services
 from apps.employees.models import Employee
 from apps.imports.applier import approve
 from apps.imports.models import ImportBatch
@@ -31,8 +32,8 @@ def row_at(batch: ImportBatch, number: int):
 
 
 def test_errors_refuse_the_approve_then_skipped_it_applies_with_f2s_count(staff, hr_user):
-    """SPEC F2 acceptance 1 and 2, over the decision table with a promotion row and an exit with
-    a raise, so every term of the audit count is exercised."""
+    """SPEC F2 acceptance 1 and 2, over the decision table with a promotion row, an exit with a
+    raise and a warning row, so every term of the audit count is exercised."""
     s = staff
     batch = stage_upload(
         upload_of(
@@ -48,6 +49,9 @@ def test_errors_refuse_the_approve_then_skipped_it_applies_with_f2s_count(staff,
             sheet_row(s["gita"], **RAISED),
             new_row(legacy_code=None, email="nobody@acme.example"),
             new_row(legacy_code="HR-20002", email="ravi@acme.example", BASE=-5000),
+            sheet_row(
+                s["jaya"], effective_from=NEXT_MONTH, bonus_annual=Decimal("2000000"), **RAISED
+            ),
         ),
         actor=hr_user,
     )
@@ -63,23 +67,36 @@ def test_errors_refuse_the_approve_then_skipped_it_applies_with_f2s_count(staff,
     batch.refresh_from_db()
     assert (batch.status, batch.approved_at is not None) == ("approved", True)
     counts = (batch.created_rows, batch.updated_rows, batch.revised_rows, batch.applied_rows)
-    assert counts == (1, 2, 3, 6)
+    assert counts == (1, 2, 4, 7)
     assert batch.applied_rows == batch.total_rows - batch.skipped_rows - batch.noop_rows
     entries = AuditLog.objects.filter(id__gt=mark)
     # 2 x created + updated + revised + revised rows that changed identity or set last_date
     # (the promotion and the exit with a raise) + exit-before-pay cancels (none) + 1.
-    assert entries.count() == 2 * 1 + 2 + 3 + 2 + 0 + 1
+    assert entries.count() == 2 * 1 + 2 + 4 + 2 + 0 + 1
     assert set(entries.values_list("import_batch", flat=True)) == {batch.pk}
     applied = entries.get(action="import_apply")
     assert (applied.entity_type, applied.entity_id, applied.after["applied_rows"]) == (
         "import_batch",
         batch.pk,
-        6,
+        7,
     )
     dev = Employee.objects.get(pk=s["dev"].pk)
     assert (dev.designation, dev.level) == ("Lead Engineer", 4)
-    promotion = entries.filter(employee=dev).order_by("id")
-    assert [entry.action for entry in promotion] == ["update", "revise"]
+    assert [entry.action for entry in entries.filter(employee=dev).order_by("id")] == [
+        "update",
+        "revise",
+    ]
+    # SPEC F2's order for a row that sets last_date as well as amounts: exit, then revise.
+    esha = s["esha"]
+    assert [entry.action for entry in entries.filter(employee=esha).order_by("id")] == [
+        "exit",
+        "revise",
+    ]
+    raised = CompensationRecord.objects.get(employee=esha, version=2)
+    assert (raised.effective_from, raised.effective_to) == (NEXT_MONTH, date(2027, 1, 1))
+    # The warning row is applied like a valid one (SPEC F2).
+    jaya = CompensationRecord.objects.get(employee=s["jaya"], version=2)
+    assert jaya.bonus_annual == Decimal("2000000.00")
 
 
 def test_a_new_department_alone_is_an_update_and_adds_no_record(staff, hr_user):
@@ -154,10 +171,18 @@ def test_an_exit_before_pay_starts_writes_exit_and_cancel_in_the_count(lookups, 
     assert CompensationRecord.objects.get(employee=employee).cancelled_at is not None
 
 
-def test_a_simulated_failure_leaves_nothing_and_marks_the_batch_failed(staff, hr_user, monkeypatch):
-    """SPEC F2 acceptance 3: zero partial employees or records, the rows kept."""
+def test_a_simulated_failure_leaves_nothing_and_marks_the_batch_failed(
+    staff, hr_user, monkeypatch, caplog
+):
+    """SPEC F2 acceptance 3: zero partial employees or records, the rows kept. The failure comes
+    after the closing update and the identity update, so their rollback is proven too."""
+    chloe, ben = staff["chloe"], staff["ben"]
     batch = stage_upload(
-        upload_of(new_row(), sheet_row(staff["chloe"], effective_from=NEXT_MONTH, **RAISED)),
+        upload_of(
+            new_row(),
+            sheet_row(chloe, effective_from=NEXT_MONTH, **RAISED),
+            sheet_row(ben, department="sales"),
+        ),
         actor=hr_user,
     )
     before = (
@@ -182,7 +207,30 @@ def test_a_simulated_failure_leaves_nothing_and_marks_the_batch_failed(staff, hr
         CompensationRecord.objects.count(),
         AuditLog.objects.count(),
     ) == before
-    assert batch.rows.count() == 2
+    assert CompensationRecord.objects.get(employee=chloe).effective_to is None
+    ben.refresh_from_db()
+    assert ben.department.code == "engineering"
+    assert batch.rows.count() == 3
+    (logged,) = [record for record in caplog.records if record.name == "apps.imports.applier"]
+    assert (logged.levelname, logged.getMessage(), type(logged.exc_info[1])) == (
+        "ERROR",
+        f"approve of import batch {batch.pk} failed",
+        OSError,
+    )
+
+
+def test_a_blank_required_cell_refuses_the_approve_and_never_fails_it(staff, hr_user):
+    """It used to stage as valid, then fail the whole batch on a NOT NULL constraint (D56)."""
+    batch = stage_upload(
+        upload_of(sheet_row(staff["asha"], designation=""), new_row(full_name="")),
+        actor=hr_user,
+    )
+
+    with pytest.raises(Conflict, match="2 rows have errors"):
+        approve(batch, actor=hr_user)
+
+    batch.refresh_from_db()
+    assert (batch.status, batch.error_rows) == ("review", 2)
 
 
 def test_approving_an_approved_batch_is_a_409(lookups, hr_user):
@@ -221,6 +269,36 @@ def test_a_revision_made_since_staging_fails_the_recheck_and_the_batch_waits(sta
     assert Employee.objects.count() == created_before
 
 
+def test_a_row_that_would_now_apply_as_another_action_is_refused(staff, hr_user):
+    """D57: Ben's row was reviewed as an update. His scheduled raise became current before the
+    approve, so the sheet's old amounts would now write a revise over it. The row is refused and
+    re-marked, and nothing is applied."""
+    ben = staff["ben"]
+    compensation.revise(ben, RecordInput(NEXT_MONTH, Decimal("0"), "", RAISED))
+    batch = stage_upload(
+        upload_of(sheet_row(ben, designation="Lead Engineer", effective_from=date(2026, 12, 1))),
+        actor=hr_user,
+    )
+    assert row_at(batch, 2).action == "update"
+
+    with pytest.raises(Conflict) as excinfo:
+        approve(batch, actor=hr_user, today=date(2026, 11, 5))
+
+    assert (excinfo.value.detail, excinfo.value.extra) == (
+        "1 row failed re-validation against current data",
+        {"rows": [2]},
+    )
+    stale = row_at(batch, 2)
+    assert (stale.status, stale.action) == ("error", "update")
+    assert [m["message"] for m in stale.messages] == [
+        f"{ben.employee_code} changed since this sheet was uploaded; upload the sheet again"
+    ]
+    ben.refresh_from_db()
+    assert ben.designation != "Lead Engineer"
+    batch.refresh_from_db()
+    assert batch.status == "review"
+
+
 def test_a_code_taken_by_another_batch_is_never_matched_to_that_employee(lookups, hr_user):
     """D24: the row staged as new is re-marked, and the approve is refused."""
     first = stage_upload(upload_of(new_row()), actor=hr_user)
@@ -254,12 +332,9 @@ def test_skip_and_unskip_restore_the_status_and_the_counts(staff, hr_user):
     assert skipped == (0, 1)
     assert noops_while_skipped == 0
     error_row.refresh_from_db()
-    assert (error_row.status, batch.error_rows, batch.skipped_rows, batch.noop_rows) == (
-        "error",
-        1,
-        0,
-        1,
-    )
+    noop_row.refresh_from_db()
+    assert (error_row.status, noop_row.status) == ("error", "valid")
+    assert (batch.error_rows, batch.skipped_rows, batch.noop_rows) == (1, 0, 1)
 
 
 def test_only_a_batch_in_review_takes_skip_unskip_discard_or_approve(staff, hr_user):
@@ -277,3 +352,39 @@ def test_only_a_batch_in_review_takes_skip_unskip_discard_or_approve(staff, hr_u
         with pytest.raises(Conflict, match="the batch is discarded, not in review"):
             act()
     assert Employee.objects.filter(legacy_code="HR-20001").exists() is False
+
+
+def test_an_email_taken_since_staging_refuses_the_new_employee(lookups, hr_user):
+    """F2: the duplicate rules run again inside the approve."""
+    batch = stage_upload(upload_of(new_row()), actor=hr_user)
+    taken = EmployeeFactory(email="meera@acme.example")
+
+    with pytest.raises(Conflict, match="1 row failed re-validation"):
+        approve(batch, actor=hr_user)
+
+    assert [m["message"] for m in row_at(batch, 2).messages] == [
+        f"email already belongs to {taken.employee_code}"
+    ]
+    assert not Employee.objects.filter(legacy_code="HR-20001").exists()
+
+
+def test_a_change_made_in_the_ui_since_staging_is_neither_applied_nor_counted(staff, hr_user):
+    """The re-check classifies again: a staged update the UI has already made is a no-op now,
+    so the counts and the audit entries agree with what was written (SPEC F2)."""
+    ben = staff["ben"]
+    batch = stage_upload(upload_of(sheet_row(ben, department="sales"), new_row()), actor=hr_user)
+    employees_services.update_identity(ben, {"department": "sales"})
+    mark = last_entry_id()
+
+    approve(batch, actor=hr_user)
+
+    batch.refresh_from_db()
+    assert (batch.updated_rows, batch.created_rows, batch.applied_rows, batch.noop_rows) == (
+        0,
+        1,
+        1,
+        1,
+    )
+    assert row_at(batch, 2).action == "noop"
+    entries = AuditLog.objects.filter(id__gt=mark)
+    assert sorted(entries.values_list("action", flat=True)) == ["create", "import_apply", "revise"]

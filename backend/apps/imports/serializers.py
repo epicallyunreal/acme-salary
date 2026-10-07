@@ -42,7 +42,8 @@ class ImportBatchSerializer(serializers.ModelSerializer):
 
 
 class ImportRowSerializer(serializers.ModelSerializer):
-    """`raw` is what the sheet said, for the grid; `normalized` what the rules read."""
+    """`raw` is what the sheet said, for the grid. `normalized`, what the rules read, stays on the
+    server: approve reads it from the row, and the grid has no use for it."""
 
     matched_employee = serializers.SerializerMethodField()
 
@@ -59,7 +60,6 @@ class ImportRowSerializer(serializers.ModelSerializer):
             "messages",
             "matched_employee",
             "raw",
-            "normalized",
         ]
         read_only_fields = fields
 

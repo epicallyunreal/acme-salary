@@ -14,6 +14,7 @@ import { Link as RouterLink } from 'react-router';
 import type { ImportBatch } from '../../api/types';
 import { formatDateTime } from '../../lib/dates';
 import { StatusChip } from '../layout/StatusChip';
+import { formatCount } from './counts';
 
 const PAGE_SIZE = 25;
 
@@ -24,12 +25,9 @@ interface BatchListProps {
   onPageChange: (page: number) => void;
 }
 
-function count(value: number) {
-  return value.toLocaleString('en-US');
-}
-
-/** Every upload newest first, with its status, its counts and what was ignored in it. */
-export function BatchList({ batches, count: total, page, onPageChange }: BatchListProps) {
+/** Every upload newest first, with its status, its counts and what was ignored in it. A plain
+ * table, not a grid: nothing sorts, filters or hides here, and each batch carries its warnings. */
+export function BatchList({ batches, count, page, onPageChange }: BatchListProps) {
   return (
     <Paper>
       <Table size="small" aria-label="Imports">
@@ -62,25 +60,25 @@ export function BatchList({ batches, count: total, page, onPageChange }: BatchLi
                 <StatusChip status={batch.status} />
               </TableCell>
               <TableCell align="right" className="num">
-                {count(batch.total_rows)}
+                {formatCount(batch.total_rows)}
               </TableCell>
               <TableCell align="right" className="num">
-                {count(batch.valid_rows)}
+                {formatCount(batch.valid_rows)}
               </TableCell>
               <TableCell align="right" className="num">
-                {count(batch.warning_rows)}
+                {formatCount(batch.warning_rows)}
               </TableCell>
               <TableCell align="right" className="num">
-                {count(batch.error_rows)}
+                {formatCount(batch.error_rows)}
               </TableCell>
             </TableRow>
           ))}
         </TableBody>
       </Table>
-      {total > PAGE_SIZE ? (
+      {count > PAGE_SIZE ? (
         <TablePagination
           component="div"
-          count={total}
+          count={count}
           page={page - 1}
           rowsPerPage={PAGE_SIZE}
           rowsPerPageOptions={[PAGE_SIZE]}

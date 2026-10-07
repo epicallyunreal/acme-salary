@@ -7,8 +7,8 @@ from decimal import Decimal
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 
+from apps.compensation.validators import IDENTITY_COLUMNS
 from apps.employees.models import Employee
-from apps.imports.parser import IDENTITY_COLUMNS
 
 LINES = {
     "BASE": Decimal("1450000"),

@@ -27,7 +27,6 @@ interface FilterBarProps {
   filtered: boolean;
 }
 
-/** A text field that reports its value when the user pauses, presses Enter or leaves it. */
 /** A text field that reports its value on Enter, on blur, or after `delay` ms of quiet. */
 export function CommitField({
   label,

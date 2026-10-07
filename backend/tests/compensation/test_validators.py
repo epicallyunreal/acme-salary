@@ -8,6 +8,7 @@ import pytest
 
 from apps.compensation import services
 from apps.compensation import validators as v
+from apps.compensation.messages import msg
 from apps.compensation.services import RecordInput
 from apps.compensation.validators import NormalizedRow, build_context, validate_row
 from apps.core.exceptions import Conflict, Invalid
@@ -183,7 +184,7 @@ def test_a_legacy_code_is_free_text_up_to_32_characters(lookups):
     )
 
 
-@pytest.mark.parametrize("email", ["", "not-an-email", "a@b"])
+@pytest.mark.parametrize("email", ["not-an-email", "a@b"])
 def test_email_must_be_a_valid_address(lookups, email):
     assert_message(
         messages(new_row(email=email)),
@@ -192,6 +193,46 @@ def test_email_must_be_a_valid_address(lookups, email):
         "error",
         "email is not a valid address",
     )
+
+
+PRESENT = TEMPLATE_COLUMNS - {"last_date", "effective_from", "bonus_annual"}
+
+
+@pytest.mark.parametrize("name", v.REQUIRED_CELLS)
+def test_a_blank_required_cell_is_reported_once_and_by_no_other_rule(lookups, name):
+    found = messages(new_row(**{name: None}, present=PRESENT - {name}))
+
+    assert [(m.code, m.severity, m.message) for m in found if m.field == name] == [
+        ("cell_required", "error", f"{name} is required")
+    ]
+
+
+def test_a_create_that_leaves_out_a_required_field_is_refused(lookups):
+    """A new employee needs every required field, named or not. An edit needs only the fields it
+    names, as test_validate_identity_for_an_edit_checks_only_the_given_fields shows."""
+    identity = {
+        "full_name": "Asha Rao",
+        "email": "asha.rao@acme.example",
+        "department": "engineering",
+        "level": 2,
+        "country_code": "IN",
+        "gender": "female",
+        "joining_date": date(2026, 11, 1),
+    }
+
+    with pytest.raises(Invalid) as excinfo:
+        v.validate_identity(identity, build_context())
+
+    assert excinfo.value.errors == {"designation": ["designation is required"]}
+
+
+def test_a_message_repeats_at_most_64_characters_of_a_value():
+    """A cell can hold 100,000 characters, and messages are stored on every staged row (D56)."""
+    whole = msg("date_invalid", field="joining_date", value="1" * 64)
+    cut = msg("date_invalid", field="joining_date", value="1" * 65)
+
+    assert whole == f"joining_date is not a valid date: {'1' * 64}"
+    assert cut == f"joining_date is not a valid date: {'1' * 63}\u2026"
 
 
 def test_unknown_country(lookups):

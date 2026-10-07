@@ -7,5 +7,6 @@ export function saveFile(blob: Blob, fileName: string) {
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  // Revoked a moment later: some browsers cancel a save whose URL is revoked at once.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

@@ -10,9 +10,9 @@ from rest_framework import serializers
 
 from apps.compensation.messages import msg
 from apps.compensation.services import ZERO, RecordInput
+from apps.compensation.validators import LOOKUP_MAX
 
 NOTE_MAX = 1000
-LOOKUP_MAX = 64  # codes and names matched against a lookup, which a 400 repeats back
 LINES_MAX = 20  # more than any country's components, global ones included
 
 

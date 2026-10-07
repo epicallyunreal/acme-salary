@@ -2,20 +2,29 @@
 
 import csv
 import io
+import re
+import zipfile
 from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
 from openpyxl import Workbook
 
-from apps.compensation.validators import Message, build_context, validate_row
-from apps.core.exceptions import Invalid
-from apps.imports.parser import (
+from apps.compensation.validators import (
     IDENTITY_COLUMNS,
+    Message,
+    build_context,
     check_header,
+    validate_row,
+)
+from apps.core.exceptions import Invalid
+from apps.imports import parser
+from apps.imports.parser import (
     normalize,
     parse_date,
+    parse_level,
     parse_number,
+    preflight_xlsx,
     read,
 )
 
@@ -73,6 +82,47 @@ def csv_file(*rows, prefix: bytes = b"", encoding: str = "utf-8") -> io.BytesIO:
     text = io.StringIO()
     csv.writer(text).writerows(rows)
     return io.BytesIO(prefix + text.getvalue().encode(encoding))
+
+
+SHEET = "xl/worksheets/sheet1.xml"
+XLSX_UNREADABLE = "file is not a readable .xlsx workbook; save it again from Excel and upload it"
+UNREADABLE = {"file": [XLSX_UNREADABLE]}
+WORKBOOK_RELS = "xl/_rels/workbook.xml.rels"
+RELATIONSHIPS = b"http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def repacked(upload: io.BytesIO, name: str, change) -> io.BytesIO:
+    """The workbook with its part `name` passed through `change`, or added when it is new."""
+    result = io.BytesIO()
+    with (
+        zipfile.ZipFile(upload) as source,
+        zipfile.ZipFile(result, "w", zipfile.ZIP_DEFLATED) as target,
+    ):
+        for item in source.infolist():
+            data = source.read(item.filename)
+            target.writestr(item, change(data) if item.filename == name else data)
+        if name not in source.namelist():
+            target.writestr(name, change(b""))
+    return result
+
+
+def with_rows(rows: bytes) -> io.BytesIO:
+    """A one-row workbook with raw `<row>` XML added to the end of its sheet."""
+    return repacked(
+        xlsx(HEADER, asha()),
+        SHEET,
+        lambda data: data.replace(b"</sheetData>", rows + b"</sheetData>"),
+    )
+
+
+@pytest.fixture
+def no_openpyxl(monkeypatch):
+    """Fails the test if openpyxl opens the file: the pre-scan has to refuse it first."""
+
+    def opened(*args, **kwargs):
+        pytest.fail("openpyxl opened a file the pre-scan should have refused")
+
+    monkeypatch.setattr(parser, "open_workbook", opened)
 
 
 def message_of(parsed) -> str:
@@ -249,6 +299,16 @@ def test_parse_date_refuses_anything_else_with_the_value(cell):
     )
 
 
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [("3", 3), (3, 3), (3.0, 3), ("3.0", 3), ("9" * 5000, None), (10**6, None), (1e300, None)],
+)
+def test_parse_level_reads_a_whole_number_and_drops_one_no_level_could_be(cell, expected):
+    """A level past 999,999 is reported like any other out-of-range level, and is never kept as
+    an int of thousands of digits, which Python will not write back as text."""
+    assert parse_level(cell) == expected
+
+
 def test_normalize_reads_a_template_row():
     cells = asha(
         legacy_code=58213.0,
@@ -303,6 +363,14 @@ def test_normalize_reads_a_template_row():
         (
             {"last_date": datetime(9999, 12, 31)},
             {"last_date": ["last_date must be on or before 2100-12-31, got 9999-12-31"]},
+        ),
+        ({"designation": None}, {"designation": ["designation is required"]}),
+        ({"email": "   "}, {"email": ["email is required"]}),
+        ({"level": "9" * 5000}, {"level": ["level must be between 1 and 6"]}),
+        ({"full_name": "n" * 10_000}, {"full_name": ["full_name is longer than 120 characters"]}),
+        (
+            {"BASE": "x" * 1000},
+            {"BASE": [f"BASE must be a non-negative number, got {'x' * 63}\u2026"]},
         ),
     ],
 )
@@ -372,7 +440,8 @@ def test_the_extension_and_the_content_type_must_agree(name, content_type, messa
 
 
 @pytest.mark.parametrize(
-    "content_type", ["application/vnd.ms-excel", "text/csv; charset=utf-8", None]
+    "content_type",
+    ["application/vnd.ms-excel", "text/csv; charset=utf-8", "application/csv", "text/plain", None],
 )
 def test_a_csv_is_taken_under_the_types_browsers_send(content_type):
     assert read(csv_file(HEADER, asha()), "a.csv", content_type).row_count == 1
@@ -381,7 +450,7 @@ def test_a_csv_is_taken_under_the_types_browsers_send(content_type):
 @pytest.mark.parametrize(
     ("upload", "name", "message"),
     [
-        (io.BytesIO(b"not a zip at all"), "a.xlsx", "file is not a readable .xlsx workbook"),
+        (io.BytesIO(b"not a zip at all"), "a.xlsx", XLSX_UNREADABLE),
         (io.BytesIO(b""), "a.csv", "file has no header row"),
         (csv_file(["", ""], ["x", "y"]), "a.csv", "file has no header row"),
     ],
@@ -394,12 +463,16 @@ def test_an_unreadable_or_headerless_file_is_refused(upload, name, message):
 
 
 def test_more_than_ten_thousand_data_rows_are_refused_with_the_true_count():
-    rows = [asha(legacy_code=f"HR-{n}") for n in range(10_001)]
+    """Counting goes on past the limit, so the message gives the real size (SPEC section 8)."""
+    rows = [asha(legacy_code=f"HR-{n}") for n in range(10_450)]
 
     with pytest.raises(Invalid) as excinfo:
         read(csv_file(HEADER, *rows), "big.csv", "text/csv")
 
-    assert excinfo.value.errors == {"rows": ["file has 10,001 data rows, limit 10,000"]}
+    assert excinfo.value.errors == {"rows": ["file has 10,450 data rows, limit 10,000"]}
+    with pytest.raises(Invalid) as just_over:
+        read(csv_file(HEADER, *rows[:10_001]), "over.csv", "text/csv")
+    assert just_over.value.errors == {"rows": ["file has 10,001 data rows, limit 10,000"]}
     assert read(csv_file(HEADER, *rows[:10_000]), "ok.csv", "text/csv").row_count == 10_000
 
 
@@ -410,3 +483,236 @@ def test_data_under_no_header_is_named_by_its_column_letter():
     parsed = read(upload, "a.xlsx", None)
 
     assert parsed.unnamed == ["R", "S"]
+
+
+def test_an_xlsx_that_declares_too_small_a_dimension_is_still_read_in_full():
+    """The <dimension> a file declares cannot be trusted; every row and column is streamed."""
+    forged = repacked(
+        xlsx(HEADER, asha(), asha(legacy_code="HR-2"), asha(legacy_code="HR-3")),
+        SHEET,
+        lambda data: re.sub(rb'<dimension ref="[^"]+"/>', b'<dimension ref="A1:A2"/>', data),
+    )
+
+    parsed = read(forged, "forged.xlsx", None)
+
+    assert parsed.row_count == 3
+    assert parsed.header == HEADER
+
+
+@pytest.mark.parametrize(
+    ("part", "change"),
+    [
+        (SHEET, lambda data: data[: len(data) // 2]),
+        (
+            SHEET,
+            lambda data: data.replace(
+                b"</sheetData>", b'<row r="3"><c r="A3" t="s"><v>999</v></c></row></sheetData>'
+            ),
+        ),
+        ("xl/workbook.xml", lambda data: data[: len(data) // 2]),
+        ("xl/workbook.xml", lambda data: re.sub(rb"<sheets>.*</sheets>", b"<sheets/>", data)),
+    ],
+    ids=["sheet cut short", "shared string out of range", "workbook cut short", "no worksheet"],
+)
+def test_whatever_openpyxl_raises_on_a_crafted_file_is_a_400_not_a_crash(part, change):
+    with pytest.raises(Invalid) as excinfo:
+        read(repacked(xlsx(HEADER, asha()), part, change), "crafted.xlsx", None)
+
+    assert excinfo.value.errors == UNREADABLE
+
+
+def test_a_csv_cell_past_the_field_limit_is_a_400_not_a_crash():
+    upload = csv_file(HEADER, asha(full_name="x" * 131_073))
+
+    with pytest.raises(Invalid) as excinfo:
+        read(upload, "a.csv", "text/csv")
+
+    assert excinfo.value.errors == {
+        "file": ["file is not a readable .csv; save it again from Excel and upload it"]
+    }
+
+
+def test_a_csv_row_or_header_wider_than_200_cells_is_refused():
+    extra = 201 - len(HEADER)
+
+    with pytest.raises(Invalid) as row:
+        read(csv_file(HEADER, asha(), [*asha(), *["x"] * extra]), "wide.csv", "text/csv")
+    with pytest.raises(Invalid) as header:
+        read(csv_file([*HEADER, *["note"] * extra]), "wide.csv", "text/csv")
+
+    assert row.value.errors == {"file": ["row 3 has more than 200 cells"]}
+    assert header.value.errors == {"file": ["row 1 has more than 200 cells"]}
+
+
+# What a workbook may cost before openpyxl opens it (D56)
+
+
+def test_an_xlsx_that_unpacks_past_50_mb_is_refused_before_openpyxl_opens_it(no_openpyxl):
+    upload = xlsx(HEADER, asha())
+    with (
+        zipfile.ZipFile(upload, "a", zipfile.ZIP_DEFLATED) as archive,
+        archive.open("xl/media/padding.bin", "w") as part,
+    ):
+        for _ in range(51):
+            part.write(bytes(1024 * 1024))
+
+    with pytest.raises(Invalid) as excinfo:
+        read(upload, "padded.xlsx", None)
+
+    assert excinfo.value.errors == {"file": ["file unpacks to more than 50 MB"]}
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    [
+        (b'<row r="1048577"><c><v>1</v></c></row>', "row 1,048,577 is past row 1,048,576"),
+        (
+            b'<row r="999999999999999999"><c><v>1</v></c></row>',
+            "row 999,999,999,999,999,999 is past row 1,048,576",
+        ),
+        (b'<row r="3"><c r="GS3"><v>1</v></c></row>', "row 3 has more than 200 cells"),
+        (b'<row r="3">' + b"<c/>" * 201 + b"</row>", "row 3 has more than 200 cells"),
+        (b"<row>" + b"<c/>" * 201 + b"</row>", "row 3 has more than 200 cells"),
+        (b'<row r="1048577.0"><c><v>1</v></c></row>', "row 1,048,577 is past row 1,048,576"),
+    ],
+    ids=[
+        "past the last row",
+        "far past it",
+        "a cell at column 201",
+        "201 cells",
+        "no numbers",
+        "a whole float",
+    ],
+)
+def test_a_row_past_excels_last_or_wider_than_200_cells_is_refused(no_openpyxl, rows, message):
+    """openpyxl builds every filler row up to a row's number, and every cell up to a row's last
+    one, so a single cell at column ZZZ costs 18,278 of them."""
+    with pytest.raises(Invalid) as excinfo:
+        read(with_rows(rows), "wide.xlsx", None)
+
+    assert excinfo.value.errors == {"file": [message]}
+
+
+def test_the_pre_scan_lets_excels_last_row_and_column_200_through():
+    assert (
+        preflight_xlsx(with_rows(b'<row r="1048576"><c r="GR1048576"><v>1</v></c></row>')) is None
+    )
+    assert preflight_xlsx(with_rows(b'<row r="3">' + b"<c/>" * 200 + b"</row>")) is None
+
+
+def test_every_part_of_the_zip_is_scanned_whatever_its_name(no_openpyxl):
+    """openpyxl opens every worksheet at load, and a sheet can live under any name."""
+    far = b'<worksheet><sheetData><row r="2000000"/></sheetData></worksheet>'
+    upload = repacked(xlsx(HEADER, asha()), "xl/hidden/notes.bin", lambda _: far)
+
+    with pytest.raises(Invalid) as excinfo:
+        read(upload, "hidden.xlsx", None)
+
+    assert excinfo.value.errors == {"file": ["row 2,000,000 is past row 1,048,576"]}
+
+
+def test_the_element_budget_is_for_the_whole_file(monkeypatch, no_openpyxl):
+    """openpyxl builds styles.xml, among others, as one tree: 12 million empty elements, 50 KB
+    zipped, took it past 1.2 GB. The budget is 2,000,000 for the file as a whole, against under
+    400,000 in a full 10,000-row template, so parts each under it are not enough."""
+    assert parser.MAX_ELEMENTS == 2_000_000
+    monkeypatch.setattr(parser, "MAX_ELEMENTS", 1_000)
+    part = b"<notes>" + b"<x/>" * 400 + b"</notes>"
+    upload = repacked(xlsx(HEADER, asha()), "xl/extra/one.xml", lambda _: part)
+    upload = repacked(upload, "xl/extra/two.xml", lambda _: part)
+
+    with pytest.raises(Invalid) as excinfo:
+        read(upload, "dense.xlsx", None)
+
+    assert excinfo.value.errors == {"file": ["file is too big to read"]}
+
+
+def test_elements_openpyxl_builds_into_objects_have_a_budget_of_their_own(monkeypatch, no_openpyxl):
+    """Style formats, merged ranges and defined names become objects of up to 680 bytes each:
+    1.9 million style formats in an 18 KB file took openpyxl to 1,223 MB (D56)."""
+    assert parser.MAX_OBJECT_ELEMENTS == 300_000
+    monkeypatch.setattr(parser, "MAX_OBJECT_ELEMENTS", 1_000)
+    formats = b"<styleSheet><cellXfs>" + b"<xf/>" * 1_000 + b"</cellXfs></styleSheet>"
+    upload = repacked(xlsx(HEADER, asha()), "xl/styles.xml", lambda _: formats)
+
+    with pytest.raises(Invalid) as excinfo:
+        read(upload, "styled.xlsx", None)
+
+    assert excinfo.value.errors == {"file": ["file is too big to read"]}
+
+
+def test_cells_and_shared_strings_do_not_count_against_the_object_budget(monkeypatch):
+    """openpyxl streams them, row by row and string by string."""
+    monkeypatch.setattr(parser, "MAX_OBJECT_ELEMENTS", 1_000)
+    rows = [asha(legacy_code=f"HR-{n}") for n in range(100)]
+
+    assert read(xlsx(HEADER, *rows), "cells.xlsx", None).row_count == 100
+
+
+def test_a_part_that_is_not_xml_is_passed_over():
+    """Images and printer settings are binary. The scan reads past them, and openpyxl never
+    parses them."""
+    image = b"\x89PNG\r\n\x1a\n" + bytes(64)
+    upload = repacked(xlsx(HEADER, asha()), "xl/media/image1.png", lambda _: image)
+
+    assert read(upload, "pictured.xlsx", None).row_count == 1
+
+
+def test_only_the_first_worksheet_is_opened():
+    """openpyxl sized every sheet a workbook lists, once per entry, so entries naming one large
+    part read it as many times (D57). A second sheet is never opened now, a broken one included."""
+    upload = repacked(
+        xlsx(HEADER, asha()),
+        "xl/workbook.xml",
+        lambda data: data.replace(
+            b"</sheets>", b'<sheet name="Notes" sheetId="2" r:id="rId90"/></sheets>'
+        ),
+    )
+    upload = repacked(
+        upload,
+        WORKBOOK_RELS,
+        lambda data: data.replace(
+            b"</Relationships>",
+            b'<Relationship Id="rId90" Type="' + RELATIONSHIPS + b'/worksheet" '
+            b'Target="worksheets/notes.xml"/></Relationships>',
+        ),
+    )
+    upload = repacked(upload, "xl/worksheets/notes.xml", lambda _: b"<worksheet><sheetData><row>")
+
+    assert read(upload, "two-sheets.xlsx", None).row_count == 1
+
+
+def test_an_external_link_is_never_followed():
+    """openpyxl read a linked part once per reference to it, so 40 references to one part took
+    it past 1 GB (D57). A link is never opened now, a broken one included."""
+    upload = repacked(
+        xlsx(HEADER, asha()),
+        "xl/workbook.xml",
+        lambda data: data.replace(
+            b"</sheets>",
+            b'</sheets><externalReferences><externalReference r:id="rId91"/></externalReferences>',
+        ),
+    )
+    upload = repacked(
+        upload,
+        WORKBOOK_RELS,
+        lambda data: data.replace(
+            b"</Relationships>",
+            b'<Relationship Id="rId91" Type="' + RELATIONSHIPS + b'/externalLink" '
+            b'Target="externalLinks/externalLink1.xml"/></Relationships>',
+        ),
+    )
+    upload = repacked(upload, "xl/externalLinks/externalLink1.xml", lambda _: b"<externalLink><x")
+
+    assert read(upload, "linked.xlsx", None).row_count == 1
+
+
+def test_an_entity_declaration_is_refused_as_unreadable(no_openpyxl):
+    """No entity is ever expanded, as defusedxml would refuse it too."""
+    laughs = b'<!DOCTYPE d [<!ENTITY a "aaaaaaaaaa">]><d>&a;</d>'
+    upload = repacked(xlsx(HEADER, asha()), "xl/extra.xml", lambda _: laughs)
+
+    with pytest.raises(Invalid) as excinfo:
+        read(upload, "laughs.xlsx", None)
+
+    assert excinfo.value.errors == UNREADABLE

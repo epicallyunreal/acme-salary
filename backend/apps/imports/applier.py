@@ -4,8 +4,8 @@ transaction through the bulk service, or none of them.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
-from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
@@ -17,9 +17,10 @@ from apps.compensation.services import ZERO, BulkEntry, RecordInput
 from apps.compensation.validators import NormalizedRow, ValidationContext
 from apps.core.dates import today_utc
 from apps.core.exceptions import ApplyFailed, Conflict
-from apps.employees.identity import IDENTITY_FIELDS
 from apps.imports.models import ImportBatch, ImportRow
-from apps.imports.services import recount, require_review, row_from_json
+from apps.imports.services import CHUNK_SIZE, classify, recount, require_review, row_from_json
+
+logger = logging.getLogger(__name__)
 
 ACCEPTED_STATUSES = (ImportRow.Status.VALID, ImportRow.Status.WARNING)
 APPLIED_ACTIONS = (ImportRow.Action.CREATE, ImportRow.Action.UPDATE, ImportRow.Action.REVISE)
@@ -46,34 +47,11 @@ def _record_of(row: NormalizedRow) -> RecordInput:
     )
 
 
-def _identity_changes(row: NormalizedRow, employee, ctx: ValidationContext) -> dict[str, Any]:
-    """The identity fields the sheet changes, as the API would send them."""
-    proposed = {
-        "full_name": row.full_name,
-        "email": row.email,
-        "department": row.department,
-        "designation": row.designation,
-        "level": row.level,
-        "gender": row.gender,
-        "joining_date": row.joining_date,
-    }
-    changes: dict[str, Any] = {}
-    for name in IDENTITY_FIELDS:
-        if name not in row.columns:
-            continue
-        if name == "department":
-            department = ctx.department_for(row.department)
-            if department is not None and department.pk != employee.department_id:
-                changes[name] = department.code
-        elif proposed[name] != getattr(employee, name):
-            changes[name] = proposed[name]
-    return changes
-
-
 def build_entries(
     accepted: list[ImportRow], rows: list[NormalizedRow], ctx: ValidationContext
 ) -> list[BulkEntry]:
-    """One BulkEntry per accepted row, referenced by the ImportRow id (DESIGN 1.5)."""
+    """One BulkEntry per accepted row, referenced by the ImportRow id (DESIGN 1.5). The rows have
+    been through the rules again, which recorded the identity changes each one makes."""
     entries = []
     for staged, row in zip(accepted, rows, strict=True):
         if staged.action == ImportRow.Action.CREATE:
@@ -97,7 +75,7 @@ def build_entries(
             BulkEntry(
                 ref=staged.pk,
                 employee=employee,
-                identity_changes=_identity_changes(row, employee, ctx) or None,
+                identity_changes=row.identity_changes or None,
                 last_date=row.last_date if exits else None,
                 records=[_record_of(row)] if staged.action == ImportRow.Action.REVISE else [],
             )
@@ -140,10 +118,34 @@ def approve(
                 for staged, row in zip(accepted, rows, strict=True)
                 if (found := validators.recheck_for_apply(row, ctx, staged.action))
             }
+            # The live tables may have moved since staging. A row the UI has made a no-op since
+            # is left out. A row that would now apply as another action than the one reviewed
+            # is refused, as the re-check refuses (SPEC F2, D57).
+            noops = []
+            for staged, row in zip(accepted, rows, strict=True):
+                if staged.pk in failures:
+                    continue
+                action = classify(row, ctx)
+                if action == ImportRow.Action.NOOP:
+                    staged.action = action
+                    noops.append(staged)
+                elif action != staged.action:
+                    employee = ctx.employee_for(row).employee_code
+                    failures[staged.pk] = [
+                        validators.error("legacy_code", "action_changed", employee=employee)
+                    ]
             if failures:
                 raise ReValidationFailed(failures)
+            ImportRow.objects.bulk_update(noops, ["action"], batch_size=CHUNK_SIZE)
+            applying = [
+                (staged, row)
+                for staged, row in zip(accepted, rows, strict=True)
+                if staged.action != ImportRow.Action.NOOP
+            ]
+            applied = [staged for staged, _ in applying]
+            rows = [row for _, row in applying]
             result = compensation.bulk_apply(
-                build_entries(accepted, rows, ctx),
+                build_entries(applied, rows, ctx),
                 actor=actor,
                 source="import",
                 batch=batch,
@@ -151,14 +153,15 @@ def approve(
                 today=today,
                 ctx=ctx,
             )
-            created = [staged for staged in accepted if staged.action == ImportRow.Action.CREATE]
+            created = [staged for staged in applied if staged.action == ImportRow.Action.CREATE]
             for staged in created:
                 staged.matched_employee = result.by_ref[staged.pk]["employee"]
-            ImportRow.objects.bulk_update(created, ["matched_employee"], batch_size=1000)
+            ImportRow.objects.bulk_update(created, ["matched_employee"], batch_size=CHUNK_SIZE)
             batch.created_rows = len(created)
-            batch.updated_rows = sum(row.action == ImportRow.Action.UPDATE for row in accepted)
-            batch.revised_rows = sum(row.action == ImportRow.Action.REVISE for row in accepted)
-            batch.applied_rows = len(accepted)
+            batch.updated_rows = sum(row.action == ImportRow.Action.UPDATE for row in applied)
+            batch.revised_rows = sum(row.action == ImportRow.Action.REVISE for row in applied)
+            batch.applied_rows = len(applied)
+            recount(batch)  # noop_rows takes in the rows left out above
             batch.status = ImportBatch.Status.APPROVED
             batch.approved_at = at
             batch.save()
@@ -182,13 +185,14 @@ def approve(
                 at=at,
             )
     except ReValidationFailed as exc:
-        # The rollback is complete; the rows keep what they were found to be.
-        stale = ImportRow.objects.filter(pk__in=exc.failures)
-        for staged in stale:
-            staged.status = staged.validation_status = ImportRow.Status.ERROR
-            staged.messages = [message.as_dict() for message in exc.failures[staged.pk]]
-        ImportRow.objects.bulk_update(stale, ["status", "validation_status", "messages"])
-        recount(batch)
+        # The rollback is complete; the rows keep what they were found to be, in one write.
+        with transaction.atomic():
+            stale = list(ImportRow.objects.filter(pk__in=exc.failures))
+            for staged in stale:
+                staged.status = staged.validation_status = ImportRow.Status.ERROR
+                staged.messages = [message.as_dict() for message in exc.failures[staged.pk]]
+            ImportRow.objects.bulk_update(stale, ["status", "validation_status", "messages"])
+            recount(batch)
         count = len(exc.failures)
         raise Conflict(
             f"{count} {'row' if count == 1 else 'rows'} failed re-validation against current data",
@@ -197,6 +201,7 @@ def approve(
     except Conflict:
         raise
     except Exception as exc:
+        logger.exception("approve of import batch %s failed", batch.pk)
         batch.status = ImportBatch.Status.FAILED
         batch.error_summary = f"{type(exc).__name__}: {exc}"[:2000]
         batch.save(update_fields=["status", "error_summary"])

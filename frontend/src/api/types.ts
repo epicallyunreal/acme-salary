@@ -270,7 +270,8 @@ export interface RowMessage {
   message: string;
 }
 
-export type CellValue = string | number | boolean | null;
+/** The API sends a cell as text, so numbers keep the digits the user typed. */
+export type CellValue = string | boolean | null;
 
 export interface ImportRow {
   id: number;
@@ -285,7 +286,6 @@ export interface ImportRow {
   matched_employee: { id: number; employee_code: string } | null;
   /** The cells as the sheet had them, by template column. */
   raw: Record<string, CellValue>;
-  normalized: Record<string, unknown>;
 }
 
 export interface ImportRowParams {
