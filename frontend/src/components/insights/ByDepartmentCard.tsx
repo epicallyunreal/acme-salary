@@ -23,6 +23,7 @@ export function ByDepartmentCard({
       question="Which departments cost most and pay most?"
       what="the payroll by department"
       query={query}
+      on={query.data?.to}
       actions={actions}
     >
       {query.data ? <DepartmentChart data={query.data} /> : null}

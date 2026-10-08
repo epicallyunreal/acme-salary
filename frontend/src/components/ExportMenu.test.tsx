@@ -130,11 +130,14 @@ describe('ExportMenu', () => {
 describe('Export menus on the pages', () => {
   beforeEach(() => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
+    // Today is 7 October 2026 in UTC, so the default period is 7 October 2025 to that day.
+    vi.setSystemTime(new Date('2026-10-07T09:00:00Z'));
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('exports every page of the directory with its filters, search and sort', async () => {
@@ -163,7 +166,7 @@ describe('Export menus on the pages', () => {
 
     await waitFor(() => expect(saved).toEqual(['acme-by-level-20261007-0900.json']));
     expect(asked).toEqual([
-      '/api/v1/exports/insights/by-level/?country=IN&currency=local&file=json&include_exited=true Bearer access-1',
+      '/api/v1/exports/insights/by-level/?country=IN&currency=local&file=json&from=2025-10-07&include_exited=true&to=2026-10-07 Bearer access-1',
     ]);
   });
 
@@ -178,7 +181,22 @@ describe('Export menus on the pages', () => {
 
     await waitFor(() => expect(saved).toEqual(['acme-summary-20261007-0900.xlsx']));
     expect(asked).toEqual([
-      '/api/v1/exports/insights/summary/?currency=usd&department=engineering&file=xlsx Bearer access-1',
+      '/api/v1/exports/insights/summary/?currency=usd&department=engineering&file=xlsx&from=2025-10-07&to=2026-10-07 Bearer access-1',
+    ]);
+  });
+
+  it('exports with the period the URL holds, its dates and never its name', async () => {
+    const user = userEvent.setup();
+    const saved = catchSaves();
+    const asked = recordRequests();
+    renderApp('/?period=custom&from=2026-01-01&to=2026-03-31');
+
+    await user.click(await screen.findByRole('button', { name: 'Export cost trend' }));
+    await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
+
+    await waitFor(() => expect(saved).toEqual(['acme-trend-20261007-0900.csv']));
+    expect(asked).toEqual([
+      '/api/v1/exports/insights/trend/?currency=usd&file=csv&from=2026-01-01&measure=total_cost&to=2026-03-31 Bearer access-1',
     ]);
   });
 
@@ -188,8 +206,8 @@ describe('Export menus on the pages', () => {
     ['How are salaries distributed?', 'Export salary distribution', 'distribution'],
     ['What does each level pay?', 'Export pay by level', 'by-level'],
     ['Is there a gender pay gap? (on annual pay)', 'Export gender pay gap', 'gender-gap'],
-    ['How has total cost moved over two years?', 'Export cost trend', 'trend'],
-    ['Why did total cost move over the year?', 'Export cost bridge', 'cost-bridge'],
+    ['How has total cost moved over the period?', 'Export cost trend', 'trend'],
+    ['Why did total cost move over the period?', 'Export cost bridge', 'cost-bridge'],
     ['Does pay rise with tenure?', 'Export pay by tenure', 'by-tenure'],
     ['What is pay made of?', 'Export cost mix', 'cost-mix'],
   ])('the card "%s" exports its own table', async (question, label, name) => {
@@ -221,9 +239,11 @@ describe('Export menus on the pages', () => {
       await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
 
       await waitFor(() => expect(saved).toEqual([`acme-${name}-20261007-0900.csv`]));
-      expect(asked).toEqual([
-        `/api/v1/exports/insights/${name}/?currency=usd&file=csv&${sent} Bearer access-1`,
-      ]);
+      const query = new URLSearchParams(
+        `currency=usd&file=csv&from=2025-10-07&to=2026-10-07&${sent}`,
+      );
+      query.sort();
+      expect(asked).toEqual([`/api/v1/exports/insights/${name}/?${query} Bearer access-1`]);
     },
   );
 

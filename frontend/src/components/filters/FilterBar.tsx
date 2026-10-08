@@ -18,6 +18,7 @@ import { useCountries, useDepartments } from '../../api/meta';
 import type { DirectoryStatus, ReportingCurrency } from '../../api/types';
 import { DIRECTORY_STATUSES, LEVELS } from '../../lib/constants';
 import type { DirectoryFilters } from '../grid/serverModel';
+import { PeriodControl } from './PeriodControl';
 import type { DashboardFilters } from './useDashboardFilters';
 
 export const SEARCH_DELAY_MS = 300;
@@ -333,8 +334,8 @@ interface DashboardFilterBarProps {
   filtered: boolean;
 }
 
-/** The dashboard's filters (SPEC F5): country, department, reporting currency, and whether the
- * people who have left count. */
+/** The dashboard's filters (SPEC F5): country, department, reporting currency, whether the people
+ * who have left count, and the period (D64). */
 export function DashboardFilterBar({
   filters,
   onChange,
@@ -366,6 +367,7 @@ export function DashboardFilterBar({
         }
         label="Include exited"
       />
+      <PeriodControl filters={filters} onChange={onChange} />
       {filtered ? (
         <Button variant="text" onClick={onReset}>
           Clear filters

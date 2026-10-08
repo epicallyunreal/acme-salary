@@ -1,4 +1,6 @@
+import { formatDate } from '../../lib/dates';
 import { formatAmount, formatMoney } from '../../lib/money';
+import { todayUtc } from '../../lib/period';
 
 /** SPEC section 9 and D59: under five people a group shows its headcount alone, and the spread
  * figures (p10 to p90, the distribution) need twenty. The API withholds the figures; these name
@@ -40,6 +42,13 @@ export function count(value: number): string {
  * employed on each date, the one exception to the bar deciding who is counted (D62). */
 export const EMPLOYED_ON_EACH_DATE =
   "Counts people employed on each date; Include exited doesn't apply";
+
+/** What a card that groups by level says when its period ends on a day other than today: the
+ * level is kept on the employee, so every date reads today's (D64), or null on today. */
+export function levelsAsOfToday(to: string, today: string = todayUtc()): string | null {
+  if (to === today) return null;
+  return `Levels are as of today; anyone promoted after ${formatDate(to)} appears at their new level`;
+}
 
 /** A woman's or a man's figure for a table: the amount, `—` for nobody, or `fewer than 5 women`
  * (or men), the gender gap card's words (D62). */

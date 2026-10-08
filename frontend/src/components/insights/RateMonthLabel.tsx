@@ -5,10 +5,13 @@ import type { RateMonth } from '../../api/types';
 import { formatDate } from '../../lib/dates';
 import { formatRate } from '../../lib/money';
 
-/** "October 2026 rates" (SPEC F5), each pair's own rate and date on hover or focus (D28). */
-export function RateMonthLabel({ rateMonth }: { rateMonth: RateMonth }) {
-  const rates = useExchangeRates();
-  const text = rateMonth.label.charAt(0).toUpperCase() + rateMonth.label.slice(1);
+/** "October 2026 rates for the whole period" (SPEC F5): one rate, in force on the period's last
+ * day `on`, converts every date (D64), each pair's own rate and date on hover or focus (D28). */
+export function RateMonthLabel({ rateMonth, on }: { rateMonth: RateMonth; on: string }) {
+  const rates = useExchangeRates(on);
+  const name = rateMonth.label.charAt(0).toUpperCase() + rateMonth.label.slice(1);
+  // Local currency converts nothing, so it has no rate to name.
+  const text = rateMonth.effective_from === null ? name : `${name} for the whole period`;
   const label = (
     <Typography component="span" variant="body2" sx={{ color: 'text.secondary' }}>
       {text}

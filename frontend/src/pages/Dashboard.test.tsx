@@ -1,10 +1,10 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setSession } from '../lib/auth';
-import { insightFor, nobody } from '../test/fixtures/insights';
+import { exchangeRates, insightFor, nobody } from '../test/fixtures/insights';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
 
@@ -14,8 +14,8 @@ const QUESTIONS = [
   'How are salaries distributed?',
   'What does each level pay?',
   'Is there a gender pay gap? (on annual pay)',
-  'How has total cost moved over two years?',
-  'Why did total cost move over the year?',
+  'How has total cost moved over the period?',
+  'Why did total cost move over the period?',
   'Does pay rise with tenure?',
   'What is pay made of?',
 ];
@@ -33,7 +33,8 @@ const INSIGHTS = [
   'trend',
 ];
 
-/** Answers every insight from the fixtures and records the query string of each request. */
+/** Answers every insight from the fixtures over the period it asks for, as the API would, and
+ * records the query string of each request. */
 function recordRequests() {
   const seen: Record<string, URLSearchParams[]> = {};
   server.use(
@@ -41,12 +42,20 @@ function recordRequests() {
       const name = String(params.name);
       const query = new URL(request.url).searchParams;
       (seen[name] ??= []).push(query);
-      return HttpResponse.json(
-        insightFor(name, query.get('include_exited') === 'true', query.get('view')),
-      );
+      const payload = insightFor(name, query.get('include_exited') === 'true', query.get('view'));
+      return HttpResponse.json({
+        ...(payload as Record<string, unknown>),
+        from: query.get('from'),
+        to: query.get('to'),
+      });
     }),
   );
   return seen;
+}
+
+/** The period a request asked for. */
+function dates(query: URLSearchParams | undefined): (string | null)[] {
+  return [query?.get('from') ?? null, query?.get('to') ?? null];
 }
 
 /** Answers every insight in the currency the request asks for, as the API would. */
@@ -74,6 +83,11 @@ async function keyFigures() {
 describe('Dashboard', () => {
   beforeEach(() => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
+    // Today is 7 October 2026 in UTC, the day the fixtures stand on.
+    vi.setSystemTime(new Date('2026-10-07T09:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('answers every question for the whole company, under three headings', async () => {
@@ -81,7 +95,7 @@ describe('Dashboard', () => {
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
     expect(await within(await keyFigures()).findByText('27')).toBeInTheDocument();
-    expect(screen.getByText('October 2026 rates')).toBeInTheDocument();
+    expect(screen.getByText('October 2026 rates for the whole period')).toBeInTheDocument();
     for (const section of SECTIONS) {
       expect(await screen.findByRole('heading', { level: 2, name: section })).toBeInTheDocument();
     }
@@ -163,7 +177,7 @@ describe('Dashboard', () => {
     renderApp('/?country=IN&currency=local');
     const kpis = await keyFigures();
     expect(await screen.findByText('Local currency (INR)')).toBeInTheDocument();
-    expect(within(kpis).getAllByText('INR')).toHaveLength(3);
+    expect(within(kpis).getAllByText('INR')).toHaveLength(4);
 
     // India to Germany in one visit to the menu: still one country, so local stays.
     await user.click(screen.getByLabelText('Country'));
@@ -172,14 +186,14 @@ describe('Dashboard', () => {
     await user.keyboard('{Escape}');
 
     expect(await screen.findByText('Local currency (EUR)')).toBeInTheDocument();
-    expect(within(kpis).getAllByText('EUR')).toHaveLength(3);
+    expect(within(kpis).getAllByText('EUR')).toHaveLength(4);
 
     await user.click(screen.getByLabelText('Country'));
     await user.click(await screen.findByRole('option', { name: 'India' }));
     await user.keyboard('{Escape}');
 
-    expect(await screen.findByText('October 2026 rates')).toBeInTheDocument();
-    expect(within(kpis).getAllByText('USD')).toHaveLength(3);
+    expect(await screen.findByText('October 2026 rates for the whole period')).toBeInTheDocument();
+    expect(within(kpis).getAllByText('USD')).toHaveLength(4);
   });
 
   it('drops local when no country is left', async () => {
@@ -192,8 +206,8 @@ describe('Dashboard', () => {
     await user.click(await screen.findByRole('option', { name: 'Germany' }));
     await user.keyboard('{Escape}');
 
-    expect(await screen.findByText('October 2026 rates')).toBeInTheDocument();
-    expect(within(await keyFigures()).getAllByText('USD')).toHaveLength(3);
+    expect(await screen.findByText('October 2026 rates for the whole period')).toBeInTheDocument();
+    expect(within(await keyFigures()).getAllByText('USD')).toHaveLength(4);
   });
 
   it("the trend's control picks its line, lives in the URL and refetches that card alone", async () => {
@@ -308,6 +322,149 @@ describe('Dashboard', () => {
     expect([search.get('trend.measure'), search.get('gap.view')]).toEqual(['headcount', 'bonus']);
   });
 
+  it('reads the last 12 months by default and sends their dates with every card', async () => {
+    const seen = recordRequests();
+    const { router } = renderApp('/');
+
+    await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
+    for (const name of INSIGHTS) {
+      expect(dates(seen[name][0])).toEqual(['2025-10-07', '2026-10-07']);
+      expect(seen[name][0].has('period')).toBe(false);
+    }
+    expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
+    expect(router.state.location.search).toBe('');
+  });
+
+  it('a preset sends its dates with every card, and the URL keeps its name', async () => {
+    const seen = recordRequests();
+    const user = userEvent.setup();
+    const { router } = renderApp('/');
+    await within(await keyFigures()).findByText('27');
+
+    await user.click(screen.getByLabelText('Period'));
+    await user.click(await screen.findByRole('option', { name: 'Last 3 months' }));
+
+    expect(router.state.location.search).toBe('?period=last_3_months');
+    await waitFor(() => {
+      for (const name of INSIGHTS) {
+        expect(seen[name].map(dates)).toContainEqual(['2026-07-07', '2026-10-07']);
+      }
+    });
+  });
+
+  it.each([
+    ['last_6_months', 'Last 6 months', '2026-04-07', '2026-10-07'],
+    ['fy_to_date', 'Current FY to date', '2026-04-01', '2026-10-07'],
+    ['last_fy', 'Last FY', '2025-04-01', '2026-03-31'],
+  ])('a link to %s counts back from the day it is opened', async (period, label, from, to) => {
+    const seen = recordRequests();
+    renderApp(`/?period=${period}`);
+
+    await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
+    for (const name of INSIGHTS) expect(dates(seen[name][0])).toEqual([from, to]);
+    expect(screen.getByLabelText('Period')).toHaveTextContent(label);
+  });
+
+  it('Custom starts from the dates on screen, fetching nothing new, and keeps them in the URL', async () => {
+    const seen = recordRequests();
+    const user = userEvent.setup();
+    const { router } = renderApp('/?period=last_6_months');
+    await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
+
+    await user.click(screen.getByLabelText('Period'));
+    await user.click(await screen.findByRole('option', { name: 'Custom' }));
+
+    expect(router.state.location.search).toBe('?period=custom&from=2026-04-07&to=2026-10-07');
+    expect(await screen.findByLabelText('From')).toHaveValue('2026-04-07');
+    expect(screen.getByLabelText('To')).toHaveValue('2026-10-07');
+    for (const name of INSIGHTS) expect(seen[name]).toHaveLength(1);
+  });
+
+  it('a custom range the API would refuse says why and keeps the last valid period', async () => {
+    const seen = recordRequests();
+    const { router } = renderApp('/?period=custom&from=2026-01-01&to=2026-03-31');
+    await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
+    for (const name of INSIGHTS) expect(dates(seen[name][0])).toEqual(['2026-01-01', '2026-03-31']);
+
+    const from = screen.getByLabelText('From');
+    fireEvent.change(from, { target: { value: '2026-04-15' } });
+    fireEvent.keyDown(from, { key: 'Enter' });
+
+    expect(await screen.findByText('From must be on or before To.')).toBeInTheDocument();
+    expect(from).toHaveValue('2026-04-15');
+    expect(router.state.location.search).toBe('?period=custom&from=2026-01-01&to=2026-03-31');
+
+    const to = screen.getByLabelText('To');
+    fireEvent.change(to, { target: { value: '2026-06-30' } });
+    fireEvent.keyDown(to, { key: 'Enter' });
+
+    expect(router.state.location.search).toBe('?period=custom&from=2026-04-15&to=2026-06-30');
+    expect(screen.queryByText('From must be on or before To.')).not.toBeInTheDocument();
+    await waitFor(() => {
+      for (const name of INSIGHTS) {
+        expect(seen[name].map(dates)).toContainEqual(['2026-04-15', '2026-06-30']);
+      }
+    });
+    for (const name of INSIGHTS) {
+      expect(seen[name].map(dates)).not.toContainEqual(['2026-04-15', '2026-03-31']);
+    }
+  });
+
+  it('a custom range from before 2015 in a link falls back to the last 12 months', async () => {
+    const seen = recordRequests();
+    renderApp('/?period=custom&from=2014-12-31&to=2026-01-01');
+
+    await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
+    for (const name of INSIGHTS) expect(dates(seen[name][0])).toEqual(['2025-10-07', '2026-10-07']);
+    expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
+  });
+
+  it('Clear filters takes the period back to the last 12 months with the rest', async () => {
+    const seen = recordRequests();
+    const user = userEvent.setup();
+    const { router } = renderApp('/?country=IN&period=custom&from=2026-01-01&to=2026-03-31');
+
+    await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
+
+    expect(router.state.location.search).toBe('');
+    expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
+    expect(screen.queryByLabelText('From')).not.toBeInTheDocument();
+    await waitFor(() => expect(dates(seen.summary.at(-1))).toEqual(['2025-10-07', '2026-10-07']));
+  });
+
+  it('every card that shows a state names its day, and trend and the bridge their period', async () => {
+    recordRequests();
+    renderApp('/?period=last_fy');
+
+    await waitFor(() => expect(screen.getAllByText('On 31 Mar 2026')).toHaveLength(7));
+    expect(
+      screen.getAllByText('From 1 Apr 2025 to 31 Mar 2026, at October 2026 rates.'),
+    ).toHaveLength(2);
+    const kpis = await keyFigures();
+    expect(within(kpis).getByText('Headcount on 31 Mar 2026')).toBeInTheDocument();
+    expect(within(kpis).getByText('1 Apr 2025 to 31 Mar 2026')).toBeInTheDocument();
+  });
+
+  it("the rates behind the label are the ones in force on the period's last day", async () => {
+    recordRequests();
+    const asked: (string | null)[] = [];
+    server.use(
+      http.get('/api/v1/meta/exchange-rates/', ({ request }) => {
+        asked.push(new URL(request.url).searchParams.get('on'));
+        return HttpResponse.json(exchangeRates);
+      }),
+    );
+    renderApp('/?period=last_fy');
+
+    await waitFor(() => expect(asked).toEqual(['2026-03-31']));
+  });
+
+  it('a period alone still offers Clear filters', async () => {
+    renderApp('/?period=last_fy');
+
+    expect(await screen.findByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+  });
+
   it('a card control alone still offers Clear filters', async () => {
     renderApp('/?trend.measure=headcount');
 
@@ -330,5 +487,22 @@ describe('Dashboard', () => {
     expect(screen.queryByRole('heading', { name: QUESTIONS[0] })).not.toBeInTheDocument();
     // The filter bar's own button clears them.
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
+  });
+
+  it('says on which day no one matches when the period ends before today', async () => {
+    server.use(
+      http.get('/api/v1/insights/:name/', ({ params }) =>
+        HttpResponse.json(
+          params.name === 'summary'
+            ? { ...nobody, from: '2025-04-01', to: '2026-03-31' }
+            : insightFor(String(params.name), false),
+        ),
+      ),
+    );
+    renderApp('/?country=NL&period=last_fy');
+
+    expect(
+      await screen.findByText('No one matches these filters on 31 Mar 2026. Clear a filter.'),
+    ).toBeInTheDocument();
   });
 });

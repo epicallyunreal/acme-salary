@@ -48,6 +48,7 @@ export function DistributionCard({
       question="How are salaries distributed?"
       what="the salary distribution"
       query={query}
+      on={query.data?.to}
       actions={actions}
       wide
     >

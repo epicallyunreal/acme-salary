@@ -21,6 +21,8 @@ import { RateMonthLabel } from '../components/insights/RateMonthLabel';
 import { TrendCard } from '../components/insights/TrendCard';
 import { EmptyState } from '../components/layout/EmptyState';
 import { PageHeader } from '../components/layout/PageHeader';
+import { formatDate } from '../lib/dates';
+import { todayUtc } from '../lib/period';
 
 const MEASURES = [
   { value: 'total_cost', label: 'Total cost' },
@@ -47,25 +49,28 @@ const LEVELS = [
 ] as const;
 
 /** The questions of SPEC section 9 for the filters in the URL (SPEC F5), under three headings
- * (D62). Each card is its own query, so a filter change refetches every card, and a card's own
- * control refetches that card alone. */
+ * (D62), over the bar's period (D64). Each card is its own query, so a filter change refetches
+ * every card, and a card's own control refetches that card alone. */
 export function Dashboard() {
-  const { filters, controls, set, setControl, reset, filtered } = useDashboardFilters();
+  const { filters, params, controls, set, setControl, reset, filtered } = useDashboardFilters();
   const trendControl = controlQuery('trend', controls);
   const tenureControl = controlQuery('tenure', controls);
   const mixControl = controlQuery('mix', controls);
   const gapControl = controlQuery('gap', controls);
-  const summary = useInsight('summary', filters);
-  const trend = useInsight('trend', filters, trendControl);
-  const costBridge = useInsight('cost-bridge', filters);
-  const byCountry = useInsight('by-country', filters);
-  const byDepartment = useInsight('by-department', filters);
-  const costMix = useInsight('cost-mix', filters, mixControl);
-  const distribution = useInsight('distribution', filters);
-  const byLevel = useInsight('by-level', filters);
-  const byTenure = useInsight('by-tenure', filters, tenureControl);
-  const genderGap = useInsight('gender-gap', filters, gapControl);
+  const summary = useInsight('summary', params);
+  const trend = useInsight('trend', params, trendControl);
+  const costBridge = useInsight('cost-bridge', params);
+  const byCountry = useInsight('by-country', params);
+  const byDepartment = useInsight('by-department', params);
+  const costMix = useInsight('cost-mix', params, mixControl);
+  const distribution = useInsight('distribution', params);
+  const byLevel = useInsight('by-level', params);
+  const byTenure = useInsight('by-tenure', params, tenureControl);
+  const genderGap = useInsight('gender-gap', params, gapControl);
   const nobody = summary.data?.headcount === 0;
+  // The population is the one on the period's last day, today unless the period ends earlier.
+  const lastDay = summary.data?.to;
+  const when = !lastDay || lastDay === todayUtc() ? 'today' : `on ${formatDate(lastDay)}`;
   // Every insight downloads from where it is shown, with the filters and its control on screen
   // (SPEC F6, D62).
   const exportMenu = (name: InsightName, label: string, what: string, control?: InsightControl) => (
@@ -73,7 +78,7 @@ export function Dashboard() {
       size="small"
       label={label}
       what={what}
-      onExport={(file) => exportInsight(name, filters, file, control)}
+      onExport={(file) => exportInsight(name, params, file, control)}
     />
   );
 
@@ -83,13 +88,15 @@ export function Dashboard() {
       <DashboardFilterBar filters={filters} onChange={set} onReset={reset} filtered={filtered} />
       <Section title="What we spend">
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-          {summary.data ? <RateMonthLabel rateMonth={summary.data.rate_month} /> : null}
+          {summary.data ? (
+            <RateMonthLabel rateMonth={summary.data.rate_month} on={summary.data.to} />
+          ) : null}
           {/* The summary has no card, so its menu sits on the rate month line above it (D60). */}
           <Box sx={{ ml: 'auto' }}>{exportMenu('summary', 'Export summary', 'the summary')}</Box>
         </Box>
         <KpiRow query={summary} />
         {nobody ? (
-          <EmptyState message="No one matches these filters today. Clear a filter." />
+          <EmptyState message={`No one matches these filters ${when}. Clear a filter.`} />
         ) : (
           <CardGrid>
             <TrendCard

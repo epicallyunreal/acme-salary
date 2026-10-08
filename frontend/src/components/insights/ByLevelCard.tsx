@@ -13,7 +13,7 @@ import {
 
 import type { InsightPayloads, LevelRow } from '../../api/types';
 import { AXIS, compactTick, CURSOR, GRID, plot, SERIES, STILL } from './chartTheme';
-import { count, money, SPREAD_GROUP } from './figures';
+import { count, levelsAsOfToday, money, SPREAD_GROUP } from './figures';
 import { ChartNote, ChartTable, ChartTooltip, InsightCard } from './InsightCard';
 
 type ByLevel = InsightPayloads['by-level'];
@@ -32,6 +32,7 @@ export function ByLevelCard({
       question="What does each level pay?"
       what="the pay by level"
       query={query}
+      on={query.data?.to}
       actions={actions}
     >
       {query.data ? <LevelChart data={query.data} /> : null}
@@ -68,6 +69,7 @@ function LevelChart({ data }: { data: ByLevel }) {
   const withheld = data.rows
     .filter((row) => row.headcount > 0 && row.median === null)
     .map((row) => `L${row.level}`);
+  const levels = levelsAsOfToday(data.to);
   return (
     <>
       {shown ? (
@@ -122,6 +124,7 @@ function LevelChart({ data }: { data: ByLevel }) {
           Not shown, fewer than {SPREAD_GROUP} people: {withheld.join(', ')}.
         </ChartNote>
       ) : null}
+      {levels ? <ChartNote>{levels}</ChartNote> : null}
       <ChartTable
         caption="Pay by level"
         head={['Level', 'Headcount', 'p10', 'p25', 'Median', 'p75', 'p90']}

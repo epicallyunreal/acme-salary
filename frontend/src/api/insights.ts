@@ -4,14 +4,16 @@ import { apiFetch } from './client';
 import { keys } from './keys';
 import type { InsightControl, InsightName, InsightParams, InsightPayloads } from './types';
 
-/** The dashboard's filters on the wire, for an insight and for its export. The UI never sends
- * `on`, so the API reports on today (DESIGN section 6). */
+/** The dashboard's filters on the wire, for an insight and for its export, the period's dates
+ * among them (D64). */
 export function insightQuery(params: InsightParams) {
   return {
     country: params.country,
     department: params.department,
     currency: params.currency,
     include_exited: params.include_exited ? 'true' : undefined,
+    from: params.from,
+    to: params.to,
   };
 }
 

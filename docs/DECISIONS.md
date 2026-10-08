@@ -576,6 +576,14 @@ Decision: the owner kept `shared-cpu-1x` on 8 October. One HR user's dashboard l
 
 Consequences: the code meets SPEC section 13's 500 ms target. A load test, or a run of filter changes just after a deploy, can still be throttled to several hundred ms a card, and PERFORMANCE.md records both numbers. Revisit if the app gains users.
 
+## D66. The period control's details, defaults taken while the owner was away
+
+Context: the owner was offline on 8 October and asked for every reversible choice in step 9 to take the recommended default, be recorded and be listed at the close. DESIGN section 6 left these details of the period control open.
+
+Decision: From and To apply on Enter, on leaving the field, or 600 ms after the last change, so a date picked from the calendar applies without a click elsewhere. A range the API would refuse keeps what was typed beside the reason, and the dashboard stays on the last valid period. A link with such a range, or `period=custom` without both dates, opens on Last 12 months. The four state cards of the KPI row read `Headcount on 7 Oct 2026` and so on, and Spent in period is captioned `7 Oct 2025 to 7 Oct 2026`. The rate label reads `October 2026 rates for the whole period`, and its tooltip lists the rates in force on `to`. The trend's axis names a month-end `Sep 26` and a first or last day that is not one `7 Oct 25`. The empty state says `on 31 Mar 2026` in place of `today` when the period ends before today. A preset and a custom range of the same dates are one query.
+
+Consequences: each is a few lines in `PeriodControl.tsx`, `useDashboardFilters.ts`, `KpiRow.tsx`, `RateMonthLabel.tsx`, `TrendCard.tsx` or `Dashboard.tsx`, and the step 9 close report lists them for the owner to confirm or change.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

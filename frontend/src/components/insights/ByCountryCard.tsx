@@ -22,6 +22,7 @@ export function ByCountryCard({
       question="Where does payroll go, by country?"
       what="the payroll by country"
       query={query}
+      on={query.data?.to}
       actions={actions}
     >
       {query.data ? <CountryChart data={query.data} /> : null}

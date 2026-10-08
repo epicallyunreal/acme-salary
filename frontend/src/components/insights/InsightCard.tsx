@@ -3,6 +3,7 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { type ReactNode, useId } from 'react';
 
 import { visuallyHidden } from '../../lib/a11y';
+import { formatDate } from '../../lib/dates';
 import { ErrorState } from '../layout/ErrorState';
 
 interface InsightCardProps {
@@ -11,6 +12,8 @@ interface InsightCardProps {
   /** What failed to load, for the error state: "the payroll by country". */
   what: string;
   query: Pick<UseQueryResult, 'isPending' | 'isError' | 'refetch'>;
+  /** The day a card that shows a state shows it on, the period's last (D64). */
+  on?: string;
   /** The card's export menu (SPEC F6). */
   actions?: ReactNode;
   /** Spans both columns of the grid. */
@@ -18,7 +21,15 @@ interface InsightCardProps {
   children: ReactNode;
 }
 
-export function InsightCard({ question, what, query, actions, wide, children }: InsightCardProps) {
+export function InsightCard({
+  question,
+  what,
+  query,
+  on,
+  actions,
+  wide,
+  children,
+}: InsightCardProps) {
   const headingId = useId();
   return (
     <Paper
@@ -36,13 +47,20 @@ export function InsightCard({ question, what, query, actions, wide, children }: 
           mb: 3,
         }}
       >
-        <Typography
-          id={headingId}
-          component="h3"
-          sx={{ fontSize: 16, lineHeight: '24px', fontWeight: 600 }}
-        >
-          {question}
-        </Typography>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            id={headingId}
+            component="h3"
+            sx={{ fontSize: 16, lineHeight: '24px', fontWeight: 600 }}
+          >
+            {question}
+          </Typography>
+          {on ? (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              On {formatDate(on)}
+            </Typography>
+          ) : null}
+        </Box>
         {actions}
       </Box>
       {query.isError ? (

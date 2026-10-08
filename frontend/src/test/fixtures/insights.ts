@@ -3,9 +3,12 @@ import type { JsonBodyType } from 'msw';
 import type { ExchangeRates, InsightPayloads, LevelRow } from '../../api/types';
 
 // Insight payloads in the shapes of DESIGN 1.6, with the figures DESIGN section 9 works out by
-// hand for the backend fixture, in USD with no filter.
+// hand for the backend fixture, in USD with no filter, over the default period, the 12 months to
+// 7 October 2026 (D64).
 
 const USD = {
+  from: '2025-10-07',
+  to: '2026-10-07',
   currency: 'USD',
   rate_month: { label: 'October 2026 rates', effective_from: '2026-10-01' },
 };
@@ -18,6 +21,8 @@ export const summary: InsightPayloads['summary'] = {
   median_gross: '75000.00',
   countries: 4,
   departments: 4,
+  // The 28 employed on any day of the period, X1 among them until the last working day (D64).
+  spent: { headcount: 28, total_cost: '2538681.37' },
 };
 
 /** With `include_exited`: the fixture's two exited employees, X1 and X2, count too. */
@@ -36,6 +41,7 @@ export const nobody: InsightPayloads['summary'] = {
   median_gross: null,
   countries: 0,
   departments: 0,
+  spent: { headcount: 0, total_cost: null },
 };
 
 function country(
@@ -281,19 +287,8 @@ export const levelGapView: InsightPayloads['gender-gap'] = {
   others: [{ country: { code: 'NL', name: 'Netherlands' }, other_count: 1, undisclosed_count: 0 }],
 };
 
-const MONTH_ENDS = [
-  '2024-10-31',
-  '2024-11-30',
-  '2024-12-31',
-  '2025-01-31',
-  '2025-02-28',
-  '2025-03-31',
-  '2025-04-30',
-  '2025-05-31',
-  '2025-06-30',
-  '2025-07-31',
-  '2025-08-31',
-  '2025-09-30',
+const TREND_DATES = [
+  '2025-10-07',
   '2025-10-31',
   '2025-11-30',
   '2025-12-31',
@@ -306,18 +301,19 @@ const MONTH_ENDS = [
   '2026-07-31',
   '2026-08-31',
   '2026-09-30',
+  '2026-10-07',
 ];
 
-/** Two years of month-ends: four people at the first two, so their totals are withheld (D59),
- * then 26 people at 2,300,000.00, then the 27 of the summary from April 2026. */
+/** The period's first day, each month-end and its last day (D64): four people on the first two,
+ * so their totals are withheld (D59), then 26 people at 2,300,000.00, then the 27 of the summary
+ * from April 2026. */
 export const trend: InsightPayloads['trend'] = {
   ...USD,
   measure: 'total_cost',
-  latest: '2026-09-30',
-  points: MONTH_ENDS.map((month_end, index) => {
-    if (index < 2) return { month_end, headcount: 4, total_cost: null };
-    if (index < 18) return { month_end, headcount: 26, total_cost: '2300000.00' };
-    return { month_end, headcount: 27, total_cost: '2435450.00' };
+  points: TREND_DATES.map((date, index) => {
+    if (index < 2) return { date, headcount: 4, total_cost: null };
+    if (index < 7) return { date, headcount: 26, total_cost: '2300000.00' };
+    return { date, headcount: 27, total_cost: '2435450.00' };
   }),
 };
 

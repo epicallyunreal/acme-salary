@@ -12,13 +12,14 @@ import {
 } from 'recharts';
 
 import type { TrendInsight, TrendMeasure, TrendPoint } from '../../api/types';
-import { formatDate, formatMonthShort } from '../../lib/dates';
+import { formatDate, formatMonthShort, parseIsoDate } from '../../lib/dates';
 import { AXIS, compactTick, GRID, plot, SERIES, STILL } from './chartTheme';
 import { count, EMPLOYED_ON_EACH_DATE, money, people, SMALL_GROUP } from './figures';
 import { ChartNote, ChartTable, ChartTooltip, InsightCard } from './InsightCard';
 
-/** Question 7 (D62): total cost or headcount at the 24 month-ends ending at the reporting date,
- * one line at a time and never two axes, every month at the one rate in use today. */
+/** Question 7 (D62, D64): total cost or headcount on the period's first day, on each month-end
+ * between and on its last day, one line at a time and never two axes, every date at the one rate
+ * in force on the last day. */
 export function TrendCard({
   query,
   measure,
@@ -32,7 +33,7 @@ export function TrendCard({
 }) {
   return (
     <InsightCard
-      question="How has total cost moved over two years?"
+      question="How has total cost moved over the period?"
       what="the cost trend"
       query={query}
       actions={actions}
@@ -58,24 +59,22 @@ function Trend({
   const cost = measure === 'total_cost';
   const rows = points.map((point) => ({
     point,
-    month: formatMonthShort(point.month_end),
+    label: axisLabel(point.date),
     // A withheld total is null, so the line breaks there instead of dropping to zero.
     value: cost ? plot(point.total_cost) : point.headcount,
   }));
-  // The KPI row is at the reporting date and this is at month-ends, so the subtitle names the
-  // latest one rather than seem to disagree with it (D62).
   const rates =
     rateMonth.effective_from === null ? `in ${rateMonth.label}` : `at ${rateMonth.label}`;
   const gaps = cost && points.some((point) => point.headcount > 0 && point.total_cost === null);
   return (
     <>
       <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
-        Month-end totals, latest {formatDate(data.latest)}, {rates}.
+        From {formatDate(data.from)} to {formatDate(data.to)}, {rates}.
       </Typography>
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={rows} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid vertical={false} {...GRID} />
-          <XAxis dataKey="month" interval="preserveStartEnd" minTickGap={24} {...AXIS} />
+          <XAxis dataKey="label" interval="preserveStartEnd" minTickGap={24} {...AXIS} />
           <YAxis
             width={cost ? 80 : 40}
             allowDecimals={false}
@@ -88,7 +87,7 @@ function Trend({
               if (!active || !item) return null;
               return (
                 <ChartTooltip
-                  title={formatDate(item.point.month_end)}
+                  title={formatDate(item.point.date)}
                   lines={lines(item.point, currency)}
                 />
               );
@@ -106,21 +105,31 @@ function Trend({
       </ResponsiveContainer>
       {gaps ? (
         <ChartNote>
-          A gap is a month-end with fewer than {SMALL_GROUP} people, where total cost is not shown.
+          A gap is a date with fewer than {SMALL_GROUP} people, where total cost is not shown.
         </ChartNote>
       ) : null}
       {includeExited ? <ChartNote>{EMPLOYED_ON_EACH_DATE}</ChartNote> : null}
       <ChartTable
-        caption="Cost trend by month-end"
-        head={['Month-end', 'Headcount', 'Total cost']}
+        caption="Cost trend by date"
+        head={['Date', 'Headcount', 'Total cost']}
         rows={points.map((point) => [
-          formatDate(point.month_end),
+          formatDate(point.date),
           count(point.headcount),
           money(point.total_cost, currency, point.headcount),
         ])}
       />
     </>
   );
+}
+
+/** A month-end on the axis as `Sep 26`, the period's first or last day, where it is not one, as
+ * `7 Oct 26`. */
+function axisLabel(date: string): string {
+  const day = parseIsoDate(date);
+  const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+  return next.getDate() === 1
+    ? formatMonthShort(date)
+    : `${day.getDate()} ${formatMonthShort(date)}`;
 }
 
 function lines(point: TrendPoint, currency: string): string[] {

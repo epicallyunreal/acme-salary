@@ -52,6 +52,7 @@ import {
   GAP_FLAG_NOTE,
   GENDER_NOTE,
   genderMoney,
+  levelsAsOfToday,
   SMALL_GROUP,
   SPREAD_GROUP,
 } from './figures';
@@ -79,6 +80,7 @@ export function GenderGapCard({
       question="Is there a gender pay gap? (on annual pay)"
       what="the gender pay gap"
       query={query}
+      on={query.data?.to}
       actions={actions}
       wide
     >
@@ -426,6 +428,7 @@ function unrankedByCountry(others: LevelOthers[]): string {
 
 function LevelView({ data }: { data: LevelGapsInsight }) {
   const flagged = data.rows.some((row) => row.flagged);
+  const levels = levelsAsOfToday(data.to);
   return (
     <>
       <TableContainer>
@@ -458,6 +461,7 @@ function LevelView({ data }: { data: LevelGapsInsight }) {
       </TableContainer>
       <ChartNote>{unrankedByCountry(data.others)}</ChartNote>
       {flagged ? <ChartNote>{GAP_FLAG_NOTE}</ChartNote> : null}
+      {levels ? <ChartNote>{levels}</ChartNote> : null}
     </>
   );
 }

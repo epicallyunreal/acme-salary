@@ -321,6 +321,9 @@ export interface InsightParams {
   department: string[];
   currency: ReportingCurrency;
   include_exited: boolean;
+  /** The period's first and last days, both counted (D64). */
+  from: string;
+  to: string;
 }
 
 export interface RateMonth {
@@ -328,7 +331,11 @@ export interface RateMonth {
   effective_from: string | null;
 }
 
+/** Every payload names its period. Trend and the bridge move over it, every other card shows the
+ * state on `to`, and one rate, in force on `to`, converts every date (D64). */
 interface InsightHeader {
+  from: string;
+  to: string;
   currency: string;
   rate_month: RateMonth;
 }
@@ -340,6 +347,9 @@ export interface SummaryInsight extends InsightHeader {
   median_gross: string | null;
   countries: number;
   departments: number;
+  /** What the period cost, each record's annual total cost pro-rated by the days it was in force,
+   * and everyone employed on any day of it, the total `null` under five of them (D64). */
+  spent: { headcount: number; total_cost: string | null };
 }
 
 export interface CountryRow {
@@ -402,15 +412,14 @@ export interface GapRow {
 export type TrendMeasure = 'total_cost' | 'headcount';
 
 export interface TrendPoint {
-  month_end: string;
+  date: string;
   headcount: number;
   total_cost: string | null;
 }
 
-/** Headcount and total cost at the 24 month-ends ending at `on`, at one rate (D62). */
+/** Headcount and total cost on `from`, each month-end between and `to`, at one rate (D64). */
 export interface TrendInsight extends InsightHeader {
   measure: TrendMeasure;
-  latest: string;
   points: TrendPoint[];
 }
 
@@ -424,7 +433,7 @@ export interface BridgePart {
   reason: string | null;
 }
 
-/** Why total cost moved over the 12 months ending at `on`, the parts adding up exactly. */
+/** Why total cost moved from `from` to `to`, the parts adding up exactly (D64). */
 export interface CostBridgeInsight extends InsightHeader {
   start_date: string;
   end_date: string;

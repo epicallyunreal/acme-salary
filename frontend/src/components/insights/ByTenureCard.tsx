@@ -14,7 +14,7 @@ import {
   SERIES,
   STILL,
 } from './chartTheme';
-import { count, money, people, SMALL_GROUP } from './figures';
+import { count, levelsAsOfToday, money, people, SMALL_GROUP } from './figures';
 import { ChartNote, ChartTable, ChartTooltip, InsightCard } from './InsightCard';
 
 /** Question 9 (D62): median gross by completed years of service, within the level the card's
@@ -31,6 +31,7 @@ export function ByTenureCard({
       question="Does pay rise with tenure?"
       what="the pay by tenure"
       query={query}
+      on={query.data?.to}
       actions={actions}
     >
       {query.data ? <Tenure data={query.data} /> : null}
@@ -44,6 +45,7 @@ function Tenure({ data }: { data: ByTenureInsight }) {
   const withheld = rows
     .filter((row) => row.headcount > 0 && row.median_gross === null)
     .map((row) => row.label);
+  const levels = levelsAsOfToday(data.to);
   return (
     <>
       <ResponsiveContainer width="100%" height={240}>
@@ -87,6 +89,7 @@ function Tenure({ data }: { data: ByTenureInsight }) {
           Not shown, fewer than {SMALL_GROUP} people: {withheld.join(', ')}.
         </ChartNote>
       ) : null}
+      {levels ? <ChartNote>{levels}</ChartNote> : null}
       <ChartTable
         caption="Median gross by tenure"
         head={['Tenure', 'Headcount', 'Median gross']}

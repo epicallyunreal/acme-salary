@@ -14,6 +14,12 @@ export const EMPLOYEE_STATUSES = ['active', 'exited', 'upcoming'] as const;
 export const DIRECTORY_STATUSES = [...EMPLOYEE_STATUSES, 'any'] as const;
 export const LEVELS = [1, 2, 3, 4, 5, 6] as const;
 
+/** ACME's financial year runs from 1 April to 31 March (SPEC F5). The one place it is defined. */
+export const FY_START = { month: 4, day: 1 } as const;
+/** The first and last days a period may cover, as the API bounds `from` and `to` (D64). */
+export const PERIOD_FIRST = '2015-01-01';
+export const PERIOD_LAST = '2100-12-31';
+
 /** The genders the API accepts, in the order the forms offer them (SPEC section 5). */
 export const GENDERS = [
   'female',

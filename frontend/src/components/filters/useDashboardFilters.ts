@@ -3,17 +3,43 @@ import { useSearchParams } from 'react-router';
 
 import type { InsightParams } from '../../api/types';
 import { REPORTING_CURRENCIES } from '../../lib/constants';
+import {
+  customPeriod,
+  DEFAULT_PERIOD,
+  type PeriodName,
+  PERIODS,
+  type PresetName,
+  presetPeriod,
+  todayUtc,
+} from '../../lib/period';
 import { csv, oneOf, withCurrencyRule } from '../grid/serverModel';
 
-/** The dashboard's filters (SPEC F5), in the URL so a view is a link. */
-export type DashboardFilters = InsightParams;
+/** The dashboard's filters (SPEC F5), in the URL so a view is a link: who is counted, in which
+ * currency, and over which period, a preset's name or `custom` with its dates (D64). */
+export interface DashboardFilters extends InsightParams {
+  period: PeriodName;
+}
 
-export const DASHBOARD_DEFAULTS: DashboardFilters = {
-  country: [],
-  department: [],
+/** Everyone, in USD, without the people who have left, over the last 12 months. */
+export const DASHBOARD_DEFAULTS = {
+  country: [] as string[],
+  department: [] as string[],
   currency: 'usd',
   include_exited: false,
-};
+  period: DEFAULT_PERIOD,
+} satisfies Omit<DashboardFilters, 'from' | 'to'>;
+
+/** The defaults with the default period's dates, worked out against `today`. */
+export function defaultFilters(today: string = todayUtc()): DashboardFilters {
+  return { ...DASHBOARD_DEFAULTS, ...presetPeriod(DEFAULT_PERIOD, today) };
+}
+
+/** The filters as the insights take them: the period's dates without its name, so a preset and a
+ * custom range of the same dates are one query. */
+export function insightParams(filters: DashboardFilters): InsightParams {
+  const { country, department, currency, include_exited, from, to } = filters;
+  return { country, department, currency, include_exited, from, to };
+}
 
 /** Each card's own control (D62), in the URL under the card's prefix, the first value the default.
  * It slices or measures and never decides who is counted. */
@@ -52,13 +78,22 @@ export function controlQuery(card: CardName, controls: CardControls): Record<str
   return { [CARD_CONTROLS[card].param]: controls[card] };
 }
 
-/** Reads the URL; anything malformed falls back to the default. `local` needs one country. */
-export function dashboardFromSearchParams(params: URLSearchParams): DashboardFilters {
+/** Reads the URL; anything malformed falls back to the default. `local` needs one country, and a
+ * preset's dates are worked out against `today`, so a shared link stays relative (D64). */
+export function dashboardFromSearchParams(
+  params: URLSearchParams,
+  today: string = todayUtc(),
+): DashboardFilters {
+  const named = oneOf(params.get('period'), PERIODS, DASHBOARD_DEFAULTS.period);
+  const custom = named === 'custom' ? customPeriod(params.get('from'), params.get('to')) : null;
+  const preset: PresetName = named === 'custom' ? DASHBOARD_DEFAULTS.period : named;
   return withCurrencyRule({
     country: csv(params.get('country')),
     department: csv(params.get('department')),
     currency: oneOf(params.get('currency'), REPORTING_CURRENCIES, DASHBOARD_DEFAULTS.currency),
     include_exited: params.get('include_exited') === 'true',
+    period: custom ? 'custom' : preset,
+    ...(custom ?? presetPeriod(preset, today)),
   });
 }
 
@@ -72,6 +107,11 @@ export function dashboardToSearchParams(
   if (filters.department.length) params.set('department', filters.department.join(','));
   if (filters.currency !== DASHBOARD_DEFAULTS.currency) params.set('currency', filters.currency);
   if (filters.include_exited) params.set('include_exited', 'true');
+  if (filters.period !== DASHBOARD_DEFAULTS.period) params.set('period', filters.period);
+  if (filters.period === 'custom') {
+    params.set('from', filters.from);
+    params.set('to', filters.to);
+  }
   for (const card of CARDS) {
     const { key, values } = CARD_CONTROLS[card];
     if (controls[card] !== values[0]) params.set(key, controls[card]);
@@ -82,6 +122,7 @@ export function dashboardToSearchParams(
 export function useDashboardFilters() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => dashboardFromSearchParams(searchParams), [searchParams]);
+  const params = useMemo(() => insightParams(filters), [filters]);
   const controls = useMemo(() => controlsFromSearchParams(searchParams), [searchParams]);
 
   const set = useCallback(
@@ -104,9 +145,9 @@ export function useDashboardFilters() {
       ),
     [setSearchParams],
   );
-  // Clear filters resets the card controls with the bar's filters (D62).
+  // Clear filters resets the card controls and the period with the bar's filters (D62, D64).
   const reset = useCallback(() => setSearchParams(new URLSearchParams()), [setSearchParams]);
   const filtered = dashboardToSearchParams(filters, controls).size > 0;
 
-  return { filters, controls, set, setControl, reset, filtered };
+  return { filters, params, controls, set, setControl, reset, filtered };
 }

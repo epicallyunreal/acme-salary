@@ -12,15 +12,16 @@ export function listDepartments(): Promise<Department[]> {
   return apiFetch<Department[]>('/meta/departments/');
 }
 
-export function getExchangeRates(): Promise<ExchangeRates> {
-  return apiFetch<ExchangeRates>('/meta/exchange-rates/');
+export function getExchangeRates(on?: string): Promise<ExchangeRates> {
+  return apiFetch<ExchangeRates>('/meta/exchange-rates/', { query: { on } });
 }
 
-/** Today's rate for every pair, with each pair's own date (D28). */
-export function useExchangeRates() {
+/** The rate for every pair in force on `on`, today when not given, with each pair's own date
+ * (D28). */
+export function useExchangeRates(on?: string) {
   return useQuery({
-    queryKey: keys.meta.rates(),
-    queryFn: getExchangeRates,
+    queryKey: keys.meta.rates(on),
+    queryFn: () => getExchangeRates(on),
     staleTime: META_STALE_TIME,
   });
 }

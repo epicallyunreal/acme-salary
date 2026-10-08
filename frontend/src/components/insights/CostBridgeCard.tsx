@@ -29,8 +29,8 @@ const LABELS: Record<BridgePartName, string> = {
 };
 const TOTALS: readonly BridgePartName[] = ['start', 'end'];
 
-/** Question 8 (D62): start, minus leavers, plus joiners, plus pay changes, end, over the year
- * ending at the reporting date, every date at the one rate in use today. */
+/** Question 8 (D62, D64): start, minus leavers, plus joiners, plus pay changes, end, from the
+ * period's first day to its last, both at the one rate in force on the last day. */
 export function CostBridgeCard({
   query,
   includeExited,
@@ -42,7 +42,7 @@ export function CostBridgeCard({
 }) {
   return (
     <InsightCard
-      question="Why did total cost move over the year?"
+      question="Why did total cost move over the period?"
       what="the cost bridge"
       query={query}
       actions={actions}
@@ -103,7 +103,7 @@ function Bridge({ data, includeExited }: { data: CostBridgeInsight; includeExite
   return (
     <>
       <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
-        From {formatDate(data.start_date)} to {formatDate(data.end_date)}, {rates}.
+        From {formatDate(data.from)} to {formatDate(data.to)}, {rates}.
       </Typography>
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={rows} margin={{ top: 24, right: 16, bottom: 0, left: 0 }}>
@@ -142,7 +142,7 @@ function Bridge({ data, includeExited }: { data: CostBridgeInsight; includeExite
       ) : null}
       {includeExited ? <ChartNote>{EMPLOYED_ON_EACH_DATE}</ChartNote> : null}
       <ChartTable
-        caption="Cost bridge for the year"
+        caption="Cost bridge for the period"
         head={['Part', 'People', 'Amount']}
         rows={parts.map((part) => [
           LABELS[part.part],

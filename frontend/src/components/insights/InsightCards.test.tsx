@@ -2,15 +2,18 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JsonBodyType } from 'msw';
 import { http, HttpResponse } from 'msw/http';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useInsight } from '../../api/insights';
 import { setSession } from '../../lib/auth';
 import type { MixView, TrendMeasure } from '../../api/types';
 import {
   bonusGap,
+  byLevel,
+  byTenure,
   costBridgeShown,
   distribution,
+  genderGap,
   levelGapView,
   quartileGap,
   quartileGapWithheld,
@@ -18,7 +21,7 @@ import {
 } from '../../test/fixtures/insights';
 import { renderWithProviders } from '../../test/render';
 import { server } from '../../test/setup';
-import { DASHBOARD_DEFAULTS } from '../filters/useDashboardFilters';
+import { defaultFilters, insightParams } from '../filters/useDashboardFilters';
 import { ByCountryCard } from './ByCountryCard';
 import { ByDepartmentCard } from './ByDepartmentCard';
 import { ByLevelCard } from './ByLevelCard';
@@ -30,40 +33,43 @@ import { GenderGapCard } from './GenderGapCard';
 import { KpiRow } from './KpiRow';
 import { TrendCard } from './TrendCard';
 
+// The fixtures' period is the default one on 7 October 2026, the day the tests stand on.
+const PARAMS = insightParams(defaultFilters('2026-10-07'));
+
 function Kpis() {
-  const query = useInsight('summary', DASHBOARD_DEFAULTS);
+  const query = useInsight('summary', PARAMS);
   return <KpiRow query={query} />;
 }
 function Countries() {
-  const query = useInsight('by-country', DASHBOARD_DEFAULTS);
+  const query = useInsight('by-country', PARAMS);
   return <ByCountryCard query={query} />;
 }
 function Departments() {
-  const query = useInsight('by-department', DASHBOARD_DEFAULTS);
+  const query = useInsight('by-department', PARAMS);
   return <ByDepartmentCard query={query} />;
 }
 function Spread() {
-  const query = useInsight('distribution', DASHBOARD_DEFAULTS);
+  const query = useInsight('distribution', PARAMS);
   return <DistributionCard query={query} />;
 }
 function Levels() {
-  const query = useInsight('by-level', DASHBOARD_DEFAULTS);
+  const query = useInsight('by-level', PARAMS);
   return <ByLevelCard query={query} />;
 }
 function Gap() {
-  const query = useInsight('gender-gap', DASHBOARD_DEFAULTS);
+  const query = useInsight('gender-gap', PARAMS);
   return <GenderGapCard query={query} />;
 }
 function Mixes({ view = 'cost' }: { view?: MixView }) {
-  const query = useInsight('cost-mix', DASHBOARD_DEFAULTS, { view });
+  const query = useInsight('cost-mix', PARAMS, { view });
   return <CostMixCard query={query} />;
 }
 function Tenures() {
-  const query = useInsight('by-tenure', DASHBOARD_DEFAULTS, { level: 'all' });
+  const query = useInsight('by-tenure', PARAMS, { level: 'all' });
   return <ByTenureCard query={query} />;
 }
 function Bridge({ includeExited = false }: { includeExited?: boolean }) {
-  const query = useInsight('cost-bridge', DASHBOARD_DEFAULTS);
+  const query = useInsight('cost-bridge', PARAMS);
   return <CostBridgeCard query={query} includeExited={includeExited} />;
 }
 function Trend({
@@ -73,7 +79,7 @@ function Trend({
   includeExited?: boolean;
   measure?: TrendMeasure;
 }) {
-  const query = useInsight('trend', DASHBOARD_DEFAULTS, { measure });
+  const query = useInsight('trend', PARAMS, { measure });
   return <TrendCard query={query} measure={measure} includeExited={includeExited} />;
 }
 
@@ -92,21 +98,60 @@ function answer(name: string, payload: JsonBodyType) {
 const UNDER_FIVE = 'fewer than 5 people';
 const UNDER_TWENTY = 'fewer than 20 people';
 
+const LEVEL_QUESTIONS = [
+  'What does each level pay?',
+  'Does pay rise with tenure?',
+  'Is there a gender pay gap? (on annual pay)',
+];
+
+function ByLevelCards() {
+  return (
+    <>
+      <Levels />
+      <Tenures />
+      <Gap />
+    </>
+  );
+}
+
 describe('insight cards', () => {
   beforeEach(() => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
+    vi.setSystemTime(new Date('2026-10-07T09:00:00Z'));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
-  it('the key figures show headcount, total cost, mean and median with their counts', async () => {
+  it('the key figures show the state on the last day with its counts, and the spend', async () => {
     renderWithProviders(<Kpis />);
     const kpis = await screen.findByRole('region', { name: 'Key figures' });
 
     expect(await within(kpis).findByText('27')).toBeInTheDocument();
+    expect(within(kpis).getByText('Headcount on 7 Oct 2026')).toBeInTheDocument();
     expect(within(kpis).getByText('4 countries')).toBeInTheDocument();
+    expect(within(kpis).getByText('Annual cost on 7 Oct 2026')).toBeInTheDocument();
     expect(within(kpis).getByTitle(/^USD\s2,435,450$/)).toHaveTextContent('2.4M');
     expect(within(kpis).getByText('4 departments')).toBeInTheDocument();
+    expect(within(kpis).getByText('Mean gross on 7 Oct 2026')).toBeInTheDocument();
     expect(within(kpis).getByText('80,463')).toBeInTheDocument();
+    expect(within(kpis).getByText('Median gross on 7 Oct 2026')).toBeInTheDocument();
     expect(within(kpis).getByText('75,000')).toBeInTheDocument();
+    expect(within(kpis).getByText('Spent in period')).toBeInTheDocument();
+    expect(within(kpis).getByTitle(/^USD\s2,538,681$/)).toHaveTextContent('2.5M');
+    expect(within(kpis).getByText('7 Oct 2025 to 7 Oct 2026')).toBeInTheDocument();
+  });
+
+  it('the spend is withheld under five people in the period, its dates kept', async () => {
+    answer('summary', { ...summary, spent: { headcount: 4, total_cost: null } });
+    renderWithProviders(<Kpis />);
+    const kpis = await screen.findByRole('region', { name: 'Key figures' });
+
+    expect(
+      await within(kpis).findByText('7 Oct 2025 to 7 Oct 2026, shown for 5 people or more'),
+    ).toBeInTheDocument();
+    expect(within(kpis).getAllByText('—')).toHaveLength(1);
+    expect(within(kpis).getByTitle(/^USD\s2,435,450$/)).toBeInTheDocument();
   });
 
   it('the key figures show a population under five by its headcount alone', async () => {
@@ -364,18 +409,18 @@ describe('insight cards', () => {
     ).toBeInTheDocument();
   });
 
-  it('the trend names its latest month-end and rates, and its gaps, month by month', async () => {
+  it('the trend names its period and rates, and its gaps, date by date', async () => {
     renderWithProviders(<Trend />);
 
     expect(
-      await screen.findByText('Month-end totals, latest 30 Sep 2026, at October 2026 rates.'),
+      await screen.findByText('From 7 Oct 2025 to 7 Oct 2026, at October 2026 rates.'),
     ).toBeInTheDocument();
-    expect(await row('Cost trend by month-end', '31 Oct 2024')).toEqual(['4', UNDER_FIVE]);
-    expect(await row('Cost trend by month-end', '30 Sep 2026')).toEqual(['27', 'USD 2,435,450']);
+    expect(await row('Cost trend by date', '7 Oct 2025')).toEqual(['4', UNDER_FIVE]);
+    expect(await row('Cost trend by date', '31 Oct 2025')).toEqual(['4', UNDER_FIVE]);
+    expect(await row('Cost trend by date', '30 Sep 2026')).toEqual(['27', 'USD 2,435,450']);
+    expect(await row('Cost trend by date', '7 Oct 2026')).toEqual(['27', 'USD 2,435,450']);
     expect(
-      screen.getByText(
-        'A gap is a month-end with fewer than 5 people, where total cost is not shown.',
-      ),
+      screen.getByText('A gap is a date with fewer than 5 people, where total cost is not shown.'),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Include exited doesn't apply/)).not.toBeInTheDocument();
   });
@@ -383,8 +428,8 @@ describe('insight cards', () => {
   it('the trend by headcount has no gaps to explain, its table unchanged', async () => {
     renderWithProviders(<Trend measure="headcount" />);
 
-    expect(await row('Cost trend by month-end', '31 Oct 2024')).toEqual(['4', UNDER_FIVE]);
-    expect(screen.queryByText(/A gap is a month-end/)).not.toBeInTheDocument();
+    expect(await row('Cost trend by date', '7 Oct 2025')).toEqual(['4', UNDER_FIVE]);
+    expect(screen.queryByText(/A gap is a date/)).not.toBeInTheDocument();
   });
 
   it('the trend says Include exited does not apply to it while the box is ticked', async () => {
@@ -402,11 +447,11 @@ describe('insight cards', () => {
     expect(
       await screen.findByText('From 7 Oct 2025 to 7 Oct 2026, at October 2026 rates.'),
     ).toBeInTheDocument();
-    expect(await row('Cost bridge for the year', 'Start')).toEqual(['6', 'USD 415,000']);
-    expect(await row('Cost bridge for the year', 'Leavers')).toEqual(['0', 'USD 0']);
-    expect(await row('Cost bridge for the year', 'Joiners')).toEqual(['5', '+USD 295,000']);
-    expect(await row('Cost bridge for the year', 'Pay changes')).toEqual(['6', '+USD 23,000']);
-    expect(await row('Cost bridge for the year', 'End')).toEqual(['11', 'USD 733,000']);
+    expect(await row('Cost bridge for the period', 'Start')).toEqual(['6', 'USD 415,000']);
+    expect(await row('Cost bridge for the period', 'Leavers')).toEqual(['0', 'USD 0']);
+    expect(await row('Cost bridge for the period', 'Joiners')).toEqual(['5', '+USD 295,000']);
+    expect(await row('Cost bridge for the period', 'Pay changes')).toEqual(['6', '+USD 23,000']);
+    expect(await row('Cost bridge for the period', 'End')).toEqual(['11', 'USD 733,000']);
     expect(screen.queryByText(/any one could be worked out/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Include exited doesn't apply/)).not.toBeInTheDocument();
   });
@@ -414,13 +459,13 @@ describe('insight cards', () => {
   it('a bridge with a short change shows the others with people by their people alone', async () => {
     renderWithProviders(<Bridge includeExited />);
 
-    expect(await row('Cost bridge for the year', 'Leavers')).toEqual(['1', UNDER_FIVE]);
-    expect(await row('Cost bridge for the year', 'Joiners')).toEqual(['0', 'USD 0']);
-    expect(await row('Cost bridge for the year', 'Pay changes')).toEqual([
+    expect(await row('Cost bridge for the period', 'Leavers')).toEqual(['1', UNDER_FIVE]);
+    expect(await row('Cost bridge for the period', 'Joiners')).toEqual(['0', 'USD 0']);
+    expect(await row('Cost bridge for the period', 'Pay changes')).toEqual([
       '27',
       'withheld with the leavers',
     ]);
-    expect(await row('Cost bridge for the year', 'End')).toEqual(['27', 'USD 2,435,450']);
+    expect(await row('Cost bridge for the period', 'End')).toEqual(['27', 'USD 2,435,450']);
     expect(
       screen.getByText(
         'Leavers, joiners and pay changes are shown when none of them has 1 to 4 people, since any one could be worked out from the others.',
@@ -429,6 +474,35 @@ describe('insight cards', () => {
     expect(
       screen.getByText("Counts people employed on each date; Include exited doesn't apply"),
     ).toBeInTheDocument();
+  });
+
+  it('the cards grouped by level say levels are as of today when the period ends before it', async () => {
+    answer('by-level', { ...byLevel, to: '2026-03-31' });
+    answer('by-tenure', { ...byTenure, to: '2026-03-31' });
+    answer('gender-gap', { ...levelGapView, to: '2026-03-31' });
+    renderWithProviders(<ByLevelCards />);
+
+    for (const question of LEVEL_QUESTIONS) {
+      const card = await screen.findByRole('region', { name: question });
+      expect(
+        await within(card).findByText(
+          'Levels are as of today; anyone promoted after 31 Mar 2026 appears at their new level',
+        ),
+      ).toBeInTheDocument();
+      expect(within(card).getByText('On 31 Mar 2026')).toBeInTheDocument();
+    }
+  });
+
+  it('a period ending today, or a gender view not by level, has no levels caption', async () => {
+    answer('gender-gap', { ...genderGap, to: '2026-03-31' });
+    renderWithProviders(<ByLevelCards />);
+
+    for (const question of LEVEL_QUESTIONS) {
+      const card = await screen.findByRole('region', { name: question });
+      expect(await within(card).findByText(/^On \d+ \w+ 2026$/)).toBeInTheDocument();
+    }
+    expect(screen.getAllByText('On 7 Oct 2026')).toHaveLength(2);
+    expect(screen.queryByText(/Levels are as of today/)).not.toBeInTheDocument();
   });
 
   it('by tenure gives each band and names the short one', async () => {

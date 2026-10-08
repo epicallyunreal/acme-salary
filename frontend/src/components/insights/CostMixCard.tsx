@@ -32,6 +32,7 @@ export function CostMixCard({
       question="What is pay made of?"
       what="the cost mix"
       query={query}
+      on={query.data?.to}
       actions={actions}
     >
       {query.data ? <Mix data={query.data} /> : null}
