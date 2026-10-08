@@ -30,7 +30,9 @@ def entity_type_of(entity: models.Model) -> str:
 def build(
     action: str,
     *,
-    entity: models.Model,
+    entity: models.Model | None = None,
+    entity_type: str | None = None,
+    entity_id: int | None = None,
     actor=None,
     before: Mapping[str, Any] | None,
     after: Mapping[str, Any] | None,
@@ -38,12 +40,15 @@ def build(
     import_batch=None,
     at: datetime | None = None,
 ) -> AuditLog:
-    """An unsaved entry, for record() and for bulk_record()."""
+    """An unsaved entry, for record() and for bulk_record(). The entity is a model instance, or a
+    type and id named outright for the one entry on no row, the demo reset's (D72)."""
+    if entity is None and (entity_type is None or entity_id is None):
+        raise ValueError("an audit entry names its entity, or an entity type and id")
     entry = AuditLog(
         actor=actor,
         action=action,
-        entity_type=entity_type_of(entity),
-        entity_id=entity.pk,
+        entity_type=entity_type_of(entity) if entity is not None else entity_type,
+        entity_id=entity.pk if entity is not None else entity_id,
         employee=employee,
         before=render(before) if before is not None else None,
         after=render(after) if after is not None else None,

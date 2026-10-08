@@ -1,6 +1,7 @@
 """Domain exceptions raised by services and the DRF handler that maps them to responses.
 
 Invalid is a 400 with per-field messages. Conflict is a 409 with a detail and optional extras.
+Forbidden is a 403 with per-field messages, for the demo reset's password and confirmation (D72).
 Services raise these; views never build error responses by hand.
 """
 
@@ -35,6 +36,10 @@ class Invalid(DomainError):
         super().__init__(self.errors)
 
 
+class Forbidden(Invalid):
+    """Refused on what the caller gave, with per-field messages, as a 403."""
+
+
 class Conflict(DomainError):
     def __init__(self, detail: str, **extra):
         self.detail = detail
@@ -60,6 +65,8 @@ class ApplyFailed(APIException):
 
 
 def handler(exc, context):
+    if isinstance(exc, Forbidden):
+        return Response(exc.errors, status=status.HTTP_403_FORBIDDEN)
     if isinstance(exc, Invalid):
         return Response(exc.errors, status=status.HTTP_400_BAD_REQUEST)
     if isinstance(exc, Conflict):

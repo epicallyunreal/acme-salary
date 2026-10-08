@@ -39,6 +39,9 @@ def concrete(route: str) -> str:
 
 def test_the_route_list_is_what_the_step_expects():
     assert api_routes() == [
+        "api/v1/admin/reset-demo/",
+        "api/v1/admin/sample-files/",
+        "api/v1/admin/sample-files/<slug:name>/",
         "api/v1/auth/login/",
         "api/v1/auth/logout/",
         "api/v1/auth/me/",

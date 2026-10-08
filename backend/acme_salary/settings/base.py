@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "apps.insights",
     "apps.exports",
     "apps.audit",
+    "apps.demo",
     "seed",
 ]
 
@@ -147,7 +148,7 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
     ],
     "EXCEPTION_HANDLER": "apps.core.exceptions.handler",
-    "DEFAULT_THROTTLE_RATES": {"login": "5/min"},
+    "DEFAULT_THROTTLE_RATES": {"login": "5/min", "reset": "5/hour"},
     # Fly's proxy is the one trusted hop, so a client cannot mint throttle buckets.
     "NUM_PROXIES": 1,
     "COERCE_DECIMAL_TO_STRING": True,
@@ -169,6 +170,10 @@ SIMPLE_JWT = {
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 SEED_ADMIN_PASSWORD = env("SEED_ADMIN_PASSWORD")
+
+# The Demo data page's committed base file (F9, D72): the repository's folder locally, a copy in
+# the image on Fly.
+SAMPLE_DATA_DIR = env("SAMPLE_DATA_DIR", str(BASE_DIR.parent / "sample-data"))
 
 LOGGING = {
     "version": 1,

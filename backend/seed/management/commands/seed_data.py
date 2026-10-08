@@ -31,8 +31,15 @@ CHUNK = 1000
 def truncate_business_tables() -> None:
     """Delete every business row in dependency order and reset SQLite's id counters, so a reseed
     is byte-identical to a fresh seed (D20). Users are kept."""
+    truncate(profiles.BUSINESS_TABLES)
+
+
+def truncate(labels: tuple[str, ...]) -> None:
+    """Delete every row of `labels`, in the order given, and clear their id counters. The seed
+    passes every business table and the demo reset the pay tables alone (D72). The one function
+    that deletes rows (CLAUDE.md rule 6)."""
     tables = []
-    for label in profiles.BUSINESS_TABLES:
+    for label in labels:
         model = apps.get_model(label)
         model.objects.all().delete()
         tables.append(model._meta.db_table)

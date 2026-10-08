@@ -221,6 +221,8 @@ RATES = (
 )
 
 # The business tables in the determinism scope (SPEC section 11 rule 8), in truncation order.
+# The first six hold pay data and are what the demo reset empties (D72); the lookups and the
+# rates that follow stay.
 BUSINESS_TABLES = (
     "audit.AuditLog",
     "compensation.CompensationLine",
@@ -233,3 +235,4 @@ BUSINESS_TABLES = (
     "core.Department",
     "core.Country",
 )
+PAY_TABLES = BUSINESS_TABLES[:6]

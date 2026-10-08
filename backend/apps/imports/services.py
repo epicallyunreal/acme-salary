@@ -175,16 +175,25 @@ def recount(batch: ImportBatch) -> ImportBatch:
 
 
 @contextmanager
-def _one_upload_at_a_time():
-    """One upload is read at a time (D56). The worst file the limits allow peaks near 400 MB,
-    and gunicorn runs one worker with eight threads on a 1 GB machine. More workers would need a
-    lock across processes."""
+def reading_lock(message: str):
+    """The process lock an upload is read under, taken without waiting: `Conflict(message)` when
+    another holds it. The demo reset takes it too, so a reset never meets a file being read
+    (D72)."""
     if not _reading.acquire(blocking=False):
-        raise Conflict(msg("upload_busy"))
+        raise Conflict(message)
     try:
         yield
     finally:
         _reading.release()
+
+
+@contextmanager
+def _one_upload_at_a_time():
+    """One upload is read at a time (D56). The worst file the limits allow peaks near 400 MB,
+    and gunicorn runs one worker with eight threads on a 1 GB machine. More workers would need a
+    lock across processes."""
+    with reading_lock(msg("upload_busy")):
+        yield
 
 
 def stage_upload(upload, *, actor, today: date | None = None) -> ImportBatch:

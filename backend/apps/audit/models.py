@@ -20,6 +20,7 @@ class AuditLog(models.Model):
         CANCEL = "cancel", "Cancel"
         IMPORT_APPLY = "import_apply", "Import apply"
         SET_RATE = "set_rate", "Set rate"
+        DEMO_RESET = "demo_reset", "Demo reset"
 
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
