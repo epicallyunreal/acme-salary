@@ -1,12 +1,14 @@
 import type { GridColDef, GridColumnVisibilityModel } from '@mui/x-data-grid';
 
-import { Button } from '@mui/material';
+import { Box, Button } from '@mui/material';
 
 import type { EmployeeRow, ImportRow } from '../../api/types';
+import { visuallyHidden } from '../../lib/a11y';
 import { formatDate } from '../../lib/dates';
 import { formatMoney } from '../../lib/money';
 import { RowMessagesCell, SheetCell } from '../imports/RowCells';
 import { StatusChip } from '../layout/StatusChip';
+import { EditLink } from './EditLink';
 
 /** Why the record shown is not the one in force, in the API's order (SPEC F3): the employee has
  * left, else pay starts later. */
@@ -18,7 +20,8 @@ export function recordLabel(row: EmployeeRow): string {
 }
 
 /** Columns of the directory grid (DESIGN section 6). The money columns show whole units. With a
- * local currency the header names it, the one selected country's own. */
+ * local currency the header names it, the one selected country's own. The widths of the columns
+ * shown by default fit a 1280 px window without sideways scrolling (D63). */
 export function directoryColumns(
   reportingCurrency: string,
   localCurrency?: string,
@@ -28,7 +31,22 @@ export function directoryColumns(
       ? `Gross (${localCurrency ?? 'local currency'})`
       : `Gross (${reportingCurrency.toUpperCase()})`;
   return [
-    { field: 'employee_code', headerName: 'Code', width: 110 },
+    {
+      field: 'edit',
+      headerName: 'Edit',
+      width: 52,
+      sortable: false,
+      hideable: false,
+      resizable: false,
+      disableColumnMenu: true,
+      renderHeader: () => (
+        <Box component="span" sx={visuallyHidden}>
+          Edit
+        </Box>
+      ),
+      renderCell: ({ row, tabIndex }) => <EditLink row={row} tabIndex={tabIndex} />,
+    },
+    { field: 'employee_code', headerName: 'Code', width: 104 },
     {
       field: 'legacy_code',
       headerName: 'Legacy code',
@@ -36,26 +54,26 @@ export function directoryColumns(
       sortable: false,
       valueGetter: (_value, row) => row.legacy_code ?? '',
     },
-    { field: 'full_name', headerName: 'Name', flex: 1, minWidth: 160 },
+    { field: 'full_name', headerName: 'Name', flex: 1, minWidth: 150 },
     { field: 'email', headerName: 'Email', flex: 1, minWidth: 200, sortable: false },
     {
       field: 'department',
       headerName: 'Department',
-      width: 140,
+      width: 136,
       valueGetter: (_value, row) => row.department.name,
     },
     {
       field: 'country',
       headerName: 'Country',
-      width: 130,
+      width: 124,
       valueGetter: (_value, row) => row.country.name,
     },
     { field: 'designation', headerName: 'Designation', width: 180 },
-    { field: 'level', headerName: 'Level', type: 'number', width: 80 },
+    { field: 'level', headerName: 'Level', type: 'number', width: 84 },
     {
       field: 'status',
       headerName: 'Status',
-      width: 110,
+      width: 96,
       sortable: false,
       renderCell: ({ value }) => <StatusChip status={String(value)} />,
     },
@@ -80,7 +98,7 @@ export function directoryColumns(
       field: 'gross_reporting',
       headerName: reportingHeader,
       type: 'number',
-      width: 160,
+      width: 136,
       valueGetter: (_value, row) => row.shown?.gross_reporting ?? null,
       valueFormatter: (value: string | null, row) =>
         value && row.shown ? formatMoney(value, row.shown.reporting_currency) : '',
@@ -88,7 +106,7 @@ export function directoryColumns(
     {
       field: 'joining_date',
       headerName: 'Joined',
-      width: 120,
+      width: 104,
       valueFormatter: (value: string) => formatDate(value),
     },
     {
@@ -117,10 +135,15 @@ export function directoryColumns(
   ];
 }
 
+/** Shown from the column chooser: what a 1280 px window has no room for (D63). */
 export const DIRECTORY_HIDDEN_COLUMNS: GridColumnVisibilityModel = {
   legacy_code: false,
   email: false,
+  designation: false,
+  record: false,
+  gross_local: false,
   last_date: false,
+  effective_from: false,
   version: false,
 };
 

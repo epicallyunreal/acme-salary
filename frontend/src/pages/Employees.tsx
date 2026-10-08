@@ -1,7 +1,7 @@
 import AddIcon from '@mui/icons-material/Add';
 import { Button, Stack, Typography } from '@mui/material';
 import { useMemo } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link } from 'react-router';
 
 import { useEmployeeList } from '../api/employees';
 import { exportEmployees } from '../api/exports';
@@ -24,7 +24,6 @@ import { PageHeader } from '../components/layout/PageHeader';
 /** The directory (SPEC F4, section 10): a server-side grid whose state lives in the URL. */
 export function Employees() {
   const { state, set, reset } = useUrlFilters();
-  const navigate = useNavigate();
   // Stable references: a fresh model each render makes the grid re-apply it, report a change
   // and reset the page.
   const { page, page_size: pageSize, ordering, currency } = state;
@@ -90,7 +89,6 @@ export function Employees() {
           sortModel={sortModel}
           onSortModelChange={(model) => set({ ordering: fromSortModel(model) })}
           initialColumnVisibility={DIRECTORY_HIDDEN_COLUMNS}
-          onRowClick={(row) => navigate(`/employees/${row.id}`)}
           emptyMessage={
             filtered
               ? 'No employees match these filters. Clear a filter or change the search.'

@@ -7,7 +7,6 @@ import {
   type GridColDef,
   type GridColumnVisibilityModel,
   type GridPaginationModel,
-  type GridRowParams,
   type GridSortModel,
   type GridValidRowModel,
   Toolbar,
@@ -49,7 +48,6 @@ interface ServerGridProps<Row extends GridValidRowModel> {
   sortModel: GridSortModel;
   onSortModelChange: (model: GridSortModel) => void;
   initialColumnVisibility?: GridColumnVisibilityModel;
-  onRowClick?: (row: Row) => void;
   /** One sentence for the empty overlay that says what to do next. */
   emptyMessage: string;
   /** Rows of a given height let the grid size itself; a minimum keeps short lists tidy. */
@@ -62,6 +60,11 @@ interface ServerGridProps<Row extends GridValidRowModel> {
 const inTests = import.meta.env.MODE === 'test';
 
 const SLOTS: DataGridProps['slots'] = { toolbar: GridToolbar, noRowsOverlay: NoRowsOverlay };
+
+/** The column chooser lists only the columns it can hide, so an action column stays out of it. */
+function togglable(columns: GridColDef[]): string[] {
+  return columns.filter((column) => column.hideable !== false).map((column) => column.field);
+}
 
 /**
  * A DataGrid with everything server-side (DESIGN section 6): the page, sort and filters live in
@@ -78,7 +81,6 @@ export function ServerGrid<Row extends GridValidRowModel>({
   sortModel,
   onSortModelChange,
   initialColumnVisibility,
-  onRowClick,
   emptyMessage,
   height = 'calc(100vh - 280px)',
   getRowHeight,
@@ -102,10 +104,12 @@ export function ServerGrid<Row extends GridValidRowModel>({
       onSortModelChange={onSortModelChange}
       sortingOrder={['asc', 'desc']}
       initialState={{ columns: { columnVisibilityModel: initialColumnVisibility } }}
-      onRowClick={onRowClick ? (params: GridRowParams<Row>) => onRowClick(params.row) : undefined}
       showToolbar
       slots={SLOTS}
-      slotProps={{ noRowsOverlay: { message: emptyMessage } }}
+      slotProps={{
+        noRowsOverlay: { message: emptyMessage },
+        columnsManagement: { getTogglableColumns: togglable },
+      }}
       disableVirtualization={inTests}
       getRowHeight={getRowHeight}
       sx={{
@@ -113,7 +117,6 @@ export function ServerGrid<Row extends GridValidRowModel>({
         minHeight: 360,
         bgcolor: 'background.paper',
         borderColor: 'divider',
-        '& .MuiDataGrid-row': { cursor: onRowClick ? 'pointer' : 'default' },
         '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 },
       }}
     />

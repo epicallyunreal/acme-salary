@@ -346,7 +346,7 @@ Context: three places where SPEC and DESIGN leave a small choice open came up in
 
 Decision: `currency=local` on `GET /employees/{id}/` resolves to that employee's own currency, the one-country case of the SPEC section 8 rule, instead of answering 400 because the detail has no country filter. The directory's designation filter is a text field matched exactly but case-insensitively, because titles have no lookup endpoint and section 8 lists none. The start page `/` redirects to `/employees` until the dashboard lands in step 6, and Dashboard and Imports join the navigation with their steps, so the shell never links to a page that does not exist yet.
 
-Consequences: the detail page in step 4 can show local figures without a second request. A designation lookup under `/meta/` is not in the spec and would be a later addition. The redirect is removed in step 6. The directory's row click goes to `/employees/:id`, which is the not-found page until step 4 builds the detail; the navigation column itself only links to built pages.
+Consequences: the detail page in step 4 can show local figures without a second request. A designation lookup under `/meta/` is not in the spec and would be a later addition. The redirect is removed in step 6. The directory's row click goes to `/employees/:id`, which is the not-found page until step 4 builds the detail; the navigation column itself only links to built pages. D63 replaces the row click with a pencil button.
 
 ## D41. Two hardenings from the step 3 security review
 
@@ -547,6 +547,14 @@ Amended at the step 8 close, after the four reviews and two sets of the owner's 
 The owner's other answers: a bridge part with nobody shows 0.00 and triggers nothing, and a change withheld because another is short says `withheld with the leavers` (or the joiners, or the pay changes). `fewer than 5 women with a bonus` and its kin stand, and a group with nobody in it gives no reason, as every other table words it. Dates write every month in three letters, `Sep` in place of en-GB's `Sept`.
 
 The reviews also brought these. The receiving count reads the bonus in its own currency, and the By level flag reads the gap before rounding, so 4.999% shows as 5.0 unflagged. A control is read in any case, the export's JSON filters carry it as applied, its default when none was given, and the JSON of trend and cost-bridge leaves Include exited out. An `on` before 1900-01-01 is a 400, since the trend and the bridge reach two years back and the year 1 gave a 500. `timing` times every value of every control. The cost-mix swatches are theme tokens, one per component of a view, each clearing 3:1 on white and standing apart from its neighbours in a bar under deutan, protan and tritan vision. Commit 26b12bc said a part with nobody shows 0, which the code did only from this close, and ff8db4b said the quartiles rank everyone and `timing` covers each control value, the first replaced and the second made true here. SPEC v2.14, DESIGN 1.6, 1.7, 7, 8 and 9.
+
+## D63. The directory opens an employee from a pencil, sorts by code, and keeps its sort through Clear filters
+
+Context: before step 9 the owner asked for four changes to the directory. A click anywhere on a row opened the employee (SPEC section 10, DESIGN 6), the sort icons showed only on hover, the default order was by name with no column marked, and Clear filters reset the sort with the filters.
+
+Decision: the first column is a pencil button, a link to the employee page named and titled `Edit <full name>` and reached by keyboard through the grid's cell focus, and the row click and its pointer cursor are gone. The column is not pinned, because column pinning is a Pro feature in MUI X 9 and the app uses the free grid. Instead the grid shows by default only the columns that fit a 1280 px window without sideways scrolling (the pencil, Code, Name, Department, Country, Level, Status, Gross in the reporting currency and Joined), and the rest wait in the column chooser. Every sortable column shows a faint up-down icon at rest and the sorted one its arrow at full strength, and a column that cannot sort shows none. The default sort is Code ascending: the grid marks it, the URL leaves it out, and the API orders the directory and its export by code when `ordering` is absent. Clear filters resets the filters and the search, keeps the sort and the page size, and goes back to page 1.
+
+Consequences: the other columns are one click away in the chooser, and showing them brings sideways scrolling back at 1280 px. A test holds the default columns' widths to the room a 1280 px window leaves. SPEC v2.15 sections 10 and F4, DESIGN 6.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

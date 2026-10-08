@@ -57,14 +57,30 @@ describe('Employees', () => {
     expect(screen.getByText('4 employees')).toBeInTheDocument();
     const asha = rows[0];
     expect(within(asha).getByText('ACME-1')).toBeInTheDocument();
-    expect(within(asha).getByText('INR 1,450,000')).toBeInTheDocument();
     expect(within(asha).getByText('USD 17,400')).toBeInTheDocument();
     expect(within(asha).getByText('active')).toBeInTheDocument();
-    expect(within(asha).getByText('current')).toBeInTheDocument();
     const chloe = rows[2];
     expect(within(chloe).getByText('exited')).toBeInTheDocument();
-    expect(within(chloe).getByText('exited 30 Jun 2026')).toBeInTheDocument();
-    expect(within(chloe).getByText('GBP 80,000')).toBeInTheDocument();
+    expect(within(chloe).getByText('USD 107,600')).toBeInTheDocument();
+  });
+
+  it('shows by default the columns a 1280 px window has room for, the rest in the chooser', async () => {
+    renderApp('/employees');
+    await rowsShown();
+
+    expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
+      'Edit',
+      'Code',
+      'Name',
+      'Department',
+      'Country',
+      'Level',
+      'Status',
+      'Gross (USD)',
+      'Joined',
+    ]);
+    expect(screen.queryByText('INR 1,450,000')).not.toBeInTheDocument();
+    expect(screen.queryByText('current')).not.toBeInTheDocument();
     expect(screen.queryByText('asha@acme.example')).not.toBeInTheDocument();
   });
 
@@ -85,7 +101,6 @@ describe('Employees', () => {
 
     expect(within(ben).getByText('Ben Carter')).toBeInTheDocument();
     expect(within(ben).getByText('exited')).toBeInTheDocument();
-    expect(within(ben).getByText('no record')).toBeInTheDocument();
     expect(within(ben).queryByText(/USD/)).not.toBeInTheDocument();
   });
 
@@ -231,13 +246,41 @@ describe('Employees', () => {
     expect(seen.at(-1)?.get('search')).toBe('rao');
   });
 
-  it('opens an employee on row click', async () => {
+  it('opens an employee from the pencil, named and titled for them', async () => {
+    const { router } = renderApp('/employees');
+    const user = userEvent.setup();
+    await rowsShown();
+    const edit = screen.getByRole('link', { name: 'Edit Ben Carter' });
+
+    expect(edit).toHaveAttribute('href', '/employees/2');
+    await user.hover(edit);
+    expect(await screen.findByRole('tooltip', { name: 'Edit Ben Carter' })).toBeInTheDocument();
+    await user.click(edit);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/employees/2'));
+  });
+
+  it('opens nothing from a click on the rest of the row', async () => {
     const { router } = renderApp('/employees');
     const user = userEvent.setup();
     const rows = await rowsShown();
 
     await user.click(within(rows[1]).getByText('Ben Carter'));
 
+    expect(router.state.location.pathname).toBe('/employees');
+  });
+
+  it("reaches the pencil by keyboard through the grid's cell focus", async () => {
+    const { router } = renderApp('/employees');
+    const user = userEvent.setup();
+    const rows = await rowsShown();
+
+    await user.click(within(rows[1]).getByText('ACME-2'));
+    await user.keyboard('{ArrowLeft}');
+
+    const edit = screen.getByRole('link', { name: 'Edit Ben Carter' });
+    await waitFor(() => expect(edit).toHaveFocus());
+    await user.keyboard('{Enter}');
     await waitFor(() => expect(router.state.location.pathname).toBe('/employees/2'));
   });
 
