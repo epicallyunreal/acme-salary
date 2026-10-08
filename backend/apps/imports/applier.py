@@ -13,6 +13,7 @@ from django.utils import timezone
 from apps.audit import services as audit
 from apps.compensation import services as compensation
 from apps.compensation import validators
+from apps.compensation.messages import msg
 from apps.compensation.services import ZERO, BulkEntry, RecordInput
 from apps.compensation.validators import NormalizedRow, ValidationContext
 from apps.core.dates import today_utc
@@ -25,6 +26,7 @@ from apps.imports.services import (
     recount,
     require_review,
     row_from_json,
+    waited_out_the_lock,
 )
 
 logger = logging.getLogger(__name__)
@@ -213,9 +215,16 @@ def approve(
     except Conflict:
         raise
     except Exception as exc:
+        if waited_out_the_lock(exc):
+            # Another approve, a cut one still running on the server, holds SQLite's lock for
+            # its whole transaction. This one wrote nothing and the batch waits in review (D72).
+            raise Conflict(msg("apply_busy")) from exc
         logger.exception("approve of import batch %s failed", batch.pk)
-        batch.status = ImportBatch.Status.FAILED
-        batch.error_summary = f"{type(exc).__name__}: {exc}"[:2000]
-        batch.save(update_fields=["status", "error_summary"])
-        raise ApplyFailed(error_summary=batch.error_summary) from exc
+        summary = f"{type(exc).__name__}: {exc}"[:2000]
+        # Only a batch still in review is marked, so an approve that finished meanwhile stands.
+        ImportBatch.objects.filter(pk=batch.pk, status=ImportBatch.Status.REVIEW).update(
+            status=ImportBatch.Status.FAILED, error_summary=summary
+        )
+        batch.refresh_from_db(fields=["status", "error_summary"])
+        raise ApplyFailed(error_summary=summary) from exc
     return batch

@@ -13,11 +13,12 @@ from datetime import date
 from pathlib import Path
 
 from django.conf import settings
-from django.db import OperationalError, transaction
+from django.db import transaction
 from django.http import Http404
 
 from apps.audit import services as audit
 from apps.audit.models import AuditLog
+from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.compensation.validators import template_columns
 from apps.core.dates import months_before, today_utc
@@ -32,7 +33,6 @@ from seed.management.commands.seed_data import truncate
 CONFIRM_WORD = "RESET"
 DEFAULT_SEED = 42
 READING = "an import is being read; try again in a moment"
-APPLYING = "an import is being applied; try again in a moment"
 
 
 def counts() -> dict[str, int]:
@@ -75,10 +75,10 @@ def reset_demo(*, actor, password: str, confirm: str) -> dict[str, int]:
                     before=deleted,
                     after={},
                 )
-        except OperationalError as exc:
-            if "locked" not in str(exc).lower():
+        except Exception as exc:
+            if not imports.waited_out_the_lock(exc):
                 raise
-            raise Conflict(APPLYING) from exc
+            raise Conflict(msg("apply_busy")) from exc
     return deleted
 
 
@@ -110,7 +110,9 @@ SAMPLE_FILES = (
         "newhires.xlsx",
         "500 new employees with fresh legacy codes who joined in the last three months. Each row "
         "creates an employee.",
-        lambda today: dict(effective=today, new=500, joined_after=months_before(today, 3)),
+        lambda today: dict(
+            effective=today, new=500, stream="newhires", joined_after=months_before(today, 3)
+        ),
     ),
     SampleFile(
         "diwali-bonus",
@@ -143,8 +145,15 @@ SAMPLE_FILES = (
         "fix-me",
         "fix-me.xlsx",
         "50 rows, 30 raises and 20 new joiners, with 6 planted errors to skip or fix in the sheet.",
+        # Its joiners follow newhires' 500 in the one stream, so the two files never collide.
         lambda today: dict(
-            effective=files.next_month_first(today), raises=30, new=20, errors=6, share=4
+            effective=files.next_month_first(today),
+            raises=30,
+            new=20,
+            errors=6,
+            share=4,
+            stream="newhires",
+            offset=500,
         ),
     ),
 )

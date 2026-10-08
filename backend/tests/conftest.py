@@ -2,6 +2,7 @@ from datetime import date
 
 import freezegun
 import pytest
+import rest_framework.throttling  # noqa: F401  (the note below)
 from django.core.cache import cache
 from freezegun import freeze_time
 from rest_framework.test import APIClient
@@ -13,6 +14,10 @@ TODAY = date(2026, 10, 7)
 
 # pytest times tests with its own clock; frozen, `--durations` reports nonsense.
 freezegun.configure(extend_ignore_list=["_pytest."])
+
+# DRF binds `SimpleRateThrottle.timer` to `time.time` when first imported. Imported above, before
+# any test freezes time, it keeps the real clock; under a freeze it would bind freezegun's fake,
+# a plain function that then takes `self`, and every throttled request would raise.
 
 
 @pytest.fixture(autouse=True)

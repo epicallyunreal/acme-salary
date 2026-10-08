@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from django.db import OperationalError
 
 from apps.audit import services as audit_services
 from apps.audit.models import AuditLog
@@ -218,6 +219,30 @@ def test_a_simulated_failure_leaves_nothing_and_marks_the_batch_failed(
         f"approve of import batch {batch.pk} failed",
         OSError,
     )
+
+
+def test_an_approve_that_waits_out_the_lock_on_another_is_a_409_and_the_batch_waits(
+    staff, hr_user, monkeypatch
+):
+    """D72: a second approve, from a reload while a cut one still runs on the server, hits
+    SQLite's lock after 20 s. It is a 409 that writes nothing, so the batch waits in review and
+    the first approve's result is never overwritten."""
+    chloe = staff["chloe"]
+    batch = stage_upload(
+        upload_of(sheet_row(chloe, effective_from=NEXT_MONTH, **RAISED)), actor=hr_user
+    )
+
+    def locked(entries):
+        raise OperationalError("database is locked")
+
+    monkeypatch.setattr(audit_services, "bulk_record", locked)
+
+    with pytest.raises(Conflict, match="an import is being applied; try again in a moment"):
+        approve(batch, actor=hr_user)
+
+    batch.refresh_from_db()
+    assert (batch.status, batch.error_summary) == ("review", "")
+    assert CompensationRecord.objects.get(employee=chloe).effective_to is None
 
 
 def test_a_blank_required_cell_refuses_the_approve_and_never_fails_it(staff, hr_user):

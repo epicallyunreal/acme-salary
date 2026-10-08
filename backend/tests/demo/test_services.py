@@ -2,11 +2,13 @@
 
 from datetime import date
 from io import BytesIO
+from itertools import combinations
 from pathlib import Path
 
 import pytest
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import OperationalError
 from django.http import Http404
 from openpyxl import load_workbook
@@ -20,8 +22,10 @@ from apps.core.models import Country, Department, ExchangeRate, SalaryComponent
 from apps.demo import services
 from apps.employees.models import Employee
 from apps.imports import services as imports
+from apps.imports.applier import approve
 from apps.imports.management.commands.make_import_file import database_codes
 from apps.imports.models import ImportBatch, ImportRow
+from apps.imports.parser import XLSX_TYPE
 from seed import profiles
 from seed.generator import ordered_entries
 from tests.imports.sheets import new_row, upload_of
@@ -105,23 +109,36 @@ def test_a_wrong_password_or_confirmation_is_refused_naming_each_wrong_field(see
 
 def test_a_reset_while_a_file_is_being_read_or_applied_is_a_conflict(seeded, hr_user, monkeypatch):
     """The import lock covers a file being read. SQLite's write lock covers an approve in
-    flight: the transaction waits out the 20 s and the locked error becomes a 409 (D72)."""
+    flight: the transaction waits out the 20 s and the locked error becomes a 409, the truncation
+    already done rolled back with it, and the lock is free again afterwards (D72). Any other
+    database error is the 500 it always was."""
     assert imports._reading.acquire(blocking=False)
     try:
         with pytest.raises(Conflict, match="an import is being read; try again in a moment"):
             services.reset_demo(actor=hr_user, password=PASSWORD, confirm="RESET")
     finally:
         imports._reading.release()
+    before = services.counts()
 
-    def locked(labels):
+    def locked(*args, **kwargs):  # the audit entry is written after the truncation
         raise OperationalError("database is locked")
 
-    monkeypatch.setattr(services, "truncate", locked)
+    monkeypatch.setattr(services.audit, "record", locked)
     with pytest.raises(Conflict, match="an import is being applied; try again in a moment"):
         services.reset_demo(actor=hr_user, password=PASSWORD, confirm="RESET")
+    assert services.counts() == before
 
+    def broken(*args, **kwargs):
+        raise OperationalError("no such table: audit_auditlog")
+
+    monkeypatch.setattr(services.audit, "record", broken)
+    with pytest.raises(OperationalError, match="no such table"):
+        services.reset_demo(actor=hr_user, password=PASSWORD, confirm="RESET")
+    assert services.counts() == before
     assert Employee.objects.count() == 7
-    assert not AuditLog.objects.filter(action="demo_reset").exists()
+
+    monkeypatch.undo()
+    assert services.reset_demo(actor=hr_user, password=PASSWORD, confirm="RESET") == before
 
 
 def test_the_file_list_and_the_base_file_need_no_data(lookups):
@@ -183,3 +200,50 @@ def test_generated_files_come_from_the_live_tables_in_the_templates_shape(seeded
     assert len(rows) == 500
     assert all(date(2026, 7, 7) <= r["joining_date"].date() <= TODAY for r in rows)
     assert len({r["legacy_code"] for r in rows}) == 500
+
+
+GENERATED = ("newhires", "diwali-bonus", "april-raises", "promotions", "exits", "fix-me")
+SHARES = {"diwali-bonus": 0, "april-raises": 1, "promotions": 2, "exits": 3}
+
+
+def upload(file_name: str, data: bytes) -> SimpleUploadedFile:
+    return SimpleUploadedFile(file_name, data, content_type=XLSX_TYPE)
+
+
+def test_the_six_files_from_one_database_touch_no_one_twice_and_import_in_turn(lookups, rates):
+    """D72 on forty on staff and ten leavers: made from one database, no two files share a
+    legacy code or an email, each revision file keeps to its share, april-raises is dated 1 April
+    next, and in page order every file imports with no error rows but fix-me's planted ones,
+    which mark seven rows since the duplicated code marks both. Imported again, every row that
+    is not one of those is a no-op."""
+    seed(40, 10)
+    on_staff = list(Employee.objects.filter(last_date=None).values_list("pk", flat=True))
+    made = {name: services.sample_file(name, today=TODAY) for name in GENERATED}
+    rows = {name: rows_of(data)[1] for name, (_, data) in made.items()}
+    codes = {name: {r["legacy_code"] for r in rows[name]} for name in GENERATED}
+    emails = {name: {r["email"] for r in rows[name]} for name in GENERATED}
+
+    for first, second in combinations(GENERATED, 2):
+        assert not codes[first] & codes[second], (first, second)
+        assert not emails[first] & emails[second], (first, second)
+    for name, share in SHARES.items():
+        picked = [Employee.objects.get(legacy_code=r["legacy_code"]).pk for r in rows[name]]
+        assert picked and all(pk % 5 == share for pk in picked), name
+    assert all(r["effective_from"].date() == date(2027, 4, 1) for r in rows["april-raises"])
+    assert all(r["effective_from"].date() == TODAY for r in rows["diwali-bonus"])
+    assert len(rows["newhires"]) == 500
+    assert len(rows["fix-me"]) == sum(pk % 5 == 4 for pk in on_staff) + 20
+
+    for name, (file_name, data) in made.items():
+        batch = imports.stage_upload(upload(file_name, data), actor=None)
+        planted = 7 if name == "fix-me" else 0
+        assert (batch.total_rows, batch.error_rows) == (len(rows[name]), planted), name
+        for row in batch.rows.filter(status=ImportRow.Status.ERROR):
+            imports.skip_row(batch, row)
+        approve(batch, actor=None)
+    assert Employee.objects.count() == 50 + 500 + 20
+    assert Employee.objects.exclude(last_date=None).count() == 10 + len(rows["exits"])
+
+    for name, (file_name, data) in made.items():
+        again = imports.stage_upload(upload(file_name, data), actor=None)
+        assert again.noop_rows == again.total_rows - again.error_rows, name

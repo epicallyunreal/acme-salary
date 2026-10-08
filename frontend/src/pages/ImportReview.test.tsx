@@ -293,6 +293,57 @@ describe('ImportReview', () => {
     }
   });
 
+  it('gives up on a cut approve after the wait and says where to look', async () => {
+    const defaults = { ...POLL };
+    POLL.every = 10;
+    POLL.upTo = 60;
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v1/imports/3/', () => HttpResponse.json(READY)),
+      http.post('/api/v1/imports/3/approve/', () => HttpResponse.error()),
+    );
+    renderApp('/imports/3');
+    try {
+      await user.click(await screen.findByRole('button', { name: 'Approve' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
+
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+        'The server may still be working, or the approve was refused; open the batch again.',
+      );
+    } finally {
+      Object.assign(POLL, defaults);
+    }
+  });
+
+  it('says so when a cut approve ends with the batch failed', async () => {
+    const defaults = { ...POLL };
+    POLL.every = 10;
+    POLL.upTo = 2000;
+    const user = userEvent.setup();
+    let polls = 0;
+    const failed: ImportBatch = { ...READY, status: 'failed', error_summary: 'OSError: disk full' };
+    server.use(
+      http.get('/api/v1/imports/3/', () => {
+        polls += 1;
+        return HttpResponse.json(polls >= 3 ? failed : READY);
+      }),
+      http.post('/api/v1/imports/3/approve/', () => HttpResponse.error()),
+    );
+    renderApp('/imports/3');
+    try {
+      await user.click(await screen.findByRole('button', { name: 'Approve' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
+
+      const alert = await within(dialog).findByRole('alert');
+      expect(alert).toHaveTextContent('approve failed, the batch is marked failed');
+      expect(alert).toHaveTextContent('OSError: disk full');
+    } finally {
+      Object.assign(POLL, defaults);
+    }
+  });
+
   it('shows why an approve was refused, with the rows the re-check marked', async () => {
     const user = userEvent.setup();
     server.use(

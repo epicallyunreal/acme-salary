@@ -187,8 +187,9 @@ def draw_career(
 ) -> Career:
     """Experience at the last review, then a joining date that fits it, then the promotion
     points either side of it, so the level path ends at `level` (D64). `joined_after` bounds
-    the joining date below, for a new hire of the last months (D72), and `end` is the last day
-    the career is drawn to, the reference date unless given.
+    the joining date below, the day after it the earliest, as Last N months starts the day after
+    the date N months back (D69, D72), and `end` is the last day the career is drawn to, the
+    reference date unless given.
 
     The last review is the latest 1 April on or before the end (the reference date, or the last
     day), unless they joined after it, or in the six months before it, when it is the joining
@@ -202,7 +203,7 @@ def draw_career(
     experience = low + rng.randrange(high - low + 1)
     earliest = max(profiles.HISTORY_START, april - timedelta(days=experience))
     if joined_after is not None:
-        earliest = max(earliest, joined_after)
+        earliest = max(earliest, joined_after + timedelta(days=1))
     latest = end - timedelta(days=profiles.MIN_TENURE_DAYS) if last_date else end
     if earliest > latest:
         raise ValueError(f"nobody can join after {joined_after} and be on staff by {end}")

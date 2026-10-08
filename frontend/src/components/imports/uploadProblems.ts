@@ -1,12 +1,10 @@
-import { ApiError } from '../../api/client';
+import type { ApiError } from '../../api/client';
 import type { FormMessage } from '../forms/applyServerErrors';
 
-/** The 400, 413 and other failures of an upload as one list for the error summary. Every key of
- * the refusal is shown (SPEC F1): what is missing or ambiguous first, then what was ignored. */
-export function uploadProblems(error: unknown): FormMessage[] {
-  if (!(error instanceof ApiError)) {
-    return [{ key: null, message: 'The file was not sent. Check your connection and try again.' }];
-  }
+/** The 400, 413 and other refusals of an upload as one list for the error summary. Every key of
+ * the refusal is shown (SPEC F1): what is missing or ambiguous first, then what was ignored. A
+ * failure that is not an answer from the API is waited through instead (D72). */
+export function uploadProblems(error: ApiError): FormMessage[] {
   const detail = error.detail();
   if (detail) return [{ key: null, message: detail }];
   const fields = error.fieldErrors();

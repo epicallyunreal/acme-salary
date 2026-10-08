@@ -127,7 +127,7 @@ def test_all_writes_every_employee_with_raises_errors_and_new_rows(thirty, tmp_p
     assert (rows[3]["legacy_code"], rows[3]["full_name"], rows[3]["BASE"]) == (
         "HR-90977",
         "Charan Chahal",
-        1605208,
+        1568352,
     )
     # New joiners get fresh HR- codes that no employee holds.
     fresh = [row["legacy_code"] for row in rows[30:]]
@@ -165,8 +165,9 @@ def test_new_alone_invents_employees_with_unused_legacy_codes(thirty, tmp_path):
 
 def test_a_new_row_is_paid_as_today_beside_todays_level():
     """The seed's history starts at the joining pay, levels below the one written beside it, so a
-    new row carries the latest record's pay (D64)."""
-    entries = list(generate(5, 42, start_number=1))
+    new row carries the latest record's pay (D64). The people come from the file's own stream,
+    `import` at offset 0 by default."""
+    entries = list(generate(5, "import-42-0", start_number=1))
 
     rows = new_rows(5, 42, 1, set())
 
@@ -324,14 +325,17 @@ def test_bonus_rows_add_5_to_15_percent_of_base_to_the_bonus_and_nothing_else(th
 
 
 def test_promotions_move_one_level_with_the_designation_and_12_to_20_percent(thirty, tmp_path):
-    """Identity and amounts in one row, and nobody at L6, who has nowhere to go (D72)."""
+    """Identity and amounts in one row, and nobody at L6, who has nowhere to go (D72): the one L6
+    among the thirty, id 22, is passed over by a file that reaches past it."""
     path = tmp_path / "promotions.xlsx"
     specs = {spec.code: spec for spec in profiles.DEPARTMENTS}
+    assert [e.pk for e in Employee.objects.filter(level=6)] == [22]
 
-    run(path, promotions=5, effective=date(2026, 10, 7))
+    run(path, promotions=25, effective=date(2026, 10, 7))
 
     _, rows = rows_of_xlsx(path)
-    assert len(rows) == 5
+    assert len(rows) == 25
+    assert 22 not in {by_code(row).pk for row in rows}
     for row in rows:
         employee = by_code(row)
         _, lines = current_pay(employee)
@@ -382,7 +386,8 @@ def test_a_share_keeps_to_its_ids_and_passes_over_anyone_revised_on_or_after_the
 
 
 def test_new_hires_join_within_the_window_and_today_ends_their_careers(thirty, tmp_path):
-    """Today is 7 October 2026, so a hire of the last three months joined from 7 July (D72)."""
+    """Today is 7 October 2026, so a hire of the last three months joined from 8 July, the day
+    after 7 July, as the Last 3 months preset starts (D69, D72)."""
     path = tmp_path / "newhires.xlsx"
 
     run(path, new=5, joined_after=date(2026, 7, 7))
@@ -390,7 +395,7 @@ def test_new_hires_join_within_the_window_and_today_ends_their_careers(thirty, t
     _, rows = rows_of_xlsx(path)
     assert len(rows) == 5
     for row in rows:
-        assert datetime(2026, 7, 7) <= row["joining_date"] <= datetime(2026, 10, 7)
+        assert datetime(2026, 7, 8) <= row["joining_date"] <= datetime(2026, 10, 7)
         assert row["effective_from"] is None and row["last_date"] is None
         assert re.fullmatch(r"HR-\d{5}", row["legacy_code"])
         assert row["legacy_code"] not in taken_codes()
@@ -459,3 +464,69 @@ def test_a_generated_file_imported_twice_is_a_no_op_scheduled_raises_included(th
             SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
         )
         assert (again.total_rows, again.noop_rows) == (4, 4)
+
+
+def test_a_control_character_in_a_name_is_replaced_so_the_file_still_builds(thirty, tmp_path):
+    """openpyxl refuses XML-illegal characters; a generated file replaces them as the exports do."""
+    employee = Employee.objects.order_by("pk").first()
+    employee.designation = "Lead\x07Engineer"
+    employee.save()
+    path = tmp_path / "all.xlsx"
+
+    run(path, all=True)
+
+    _, rows = rows_of_xlsx(path)
+    assert rows[0]["designation"] == "Lead\ufffdEngineer"
+
+
+def test_a_joining_window_that_ends_before_it_starts_is_a_command_error(thirty, tmp_path):
+    with pytest.raises(CommandError, match="nobody can join after 2027-01-01"):
+        run(tmp_path / "late.xlsx", new=1, joined_after=date(2027, 1, 1))
+
+
+def test_exits_pass_over_anyone_with_a_record_dated_after_the_last_day(thirty, tmp_path):
+    """A scheduled revision must be cancelled before an exit, so the file never names them."""
+    first = Employee.objects.order_by("pk").first()
+    bonus, lines = current_pay(first)
+    compensation.revise(first, RecordInput(date(2026, 11, 1), bonus, "", lines))
+    path = tmp_path / "exits.xlsx"
+
+    run(path, exits=3, effective=date(2026, 10, 7))
+
+    _, rows = rows_of_xlsx(path)
+    assert [by_code(row).pk for row in rows] == [
+        e.pk for e in Employee.objects.filter(last_date=None).order_by("pk")[1:4]
+    ]
+
+
+def test_a_raise_builds_on_a_revision_already_scheduled(thirty, tmp_path):
+    """The latest live record is what a revision replaces: a raise dated after a scheduled one
+    scales that one, instead of undoing it or warning that gross falls."""
+    first = Employee.objects.order_by("pk").first()
+    bonus, lines = current_pay(first)
+    doubled = {code: amount * 2 for code, amount in lines.items()}
+    compensation.revise(first, RecordInput(date(2026, 12, 1), bonus, "", doubled))
+    path = tmp_path / "raises.xlsx"
+
+    run(path, raises=1, effective=date(2027, 4, 1))
+
+    _, rows = rows_of_xlsx(path)
+    assert by_code(rows[0]).pk == first.pk
+    assert Decimal("1.03") <= Decimal(rows[0]["BASE"]) / doubled["BASE"] <= Decimal("1.0801")
+    batch = stage_upload(
+        SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
+    )
+    assert (batch.error_rows, batch.warning_rows) == (0, 0)
+
+
+def test_two_files_from_one_stream_share_no_code_and_no_email(thirty):
+    """D72: fix-me's joiners follow newhires' 500 in codes and email numbers, so the two files
+    made from one database collide nowhere, whichever is imported first."""
+    hires = new_rows(500, 42, 31, set(), stream="newhires")
+    fixes = new_rows(20, 42, 31, set(), stream="newhires", offset=500)
+
+    assert not {r["legacy_code"] for r in hires} & {r["legacy_code"] for r in fixes}
+    assert not {r["email"] for r in hires} & {r["email"] for r in fixes}
+    assert [r["email"].split("@")[0].rsplit(".", 1)[1] for r in fixes] == [
+        str(n) for n in range(531, 551)
+    ]

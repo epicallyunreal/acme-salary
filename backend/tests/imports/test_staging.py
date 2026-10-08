@@ -15,6 +15,7 @@ from apps.audit.models import AuditLog
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.compensation.validators import TEXT_LIMITS, check_header
 from apps.core.exceptions import Conflict, Invalid, PayloadTooLarge
+from apps.employees import services as employees_services
 from apps.employees.models import LEGACY_CODE_MAX, Employee
 from apps.imports import parser, services
 from apps.imports.models import ImportBatch
@@ -254,8 +255,10 @@ def test_the_organisation_cap_counts_the_database_and_the_new_rows_that_are_not_
     staff, monkeypatch
 ):
     """D72: exactly at the cap stages, one past it is refused with no batch, an error row never
-    counts, and a file of updates and revisions stages on a full database."""
+    counts, a leaver counts, and a file of updates and revisions stages on a full database."""
+    employees_services.exit_employee(staff["ben"], last_date=date(2026, 9, 30), actor=None)
     now = Employee.objects.count()
+    assert now == Employee.objects.filter(last_date=None).count() + 1
     monkeypatch.setattr(services, "ORGANISATION_CAP", now + 2)
     two = [new_row(), new_row(legacy_code="HR-20002", email="two@acme.example")]
     third = new_row(legacy_code="HR-20003", email="three@acme.example")
@@ -272,14 +275,22 @@ def test_the_organisation_cap_counts_the_database_and_the_new_rows_that_are_not_
     assert at_cap.total_rows == 2
     assert refused.value.errors == {
         "rows": [
-            "No more data can be imported: this file would take ACME past "
-            f"{now + 2:,} employees (now {now:,}, this file adds 3)"
+            "No more data can be imported: this file would take ACME past 12 employees "
+            "(now 10, this file adds 3)"
         ]
     }
     assert ImportBatch.objects.count() == 3
     assert (with_error.total_rows, with_error.error_rows) == (3, 1)
     assert (changes.total_rows, changes.error_rows) == (1, 0)
     assert Employee.objects.count() == now
+
+
+def test_the_cap_is_25_000_and_its_message_says_so():
+    assert services.ORGANISATION_CAP == 25_000
+    assert services.organisation_cap_message(24_999, 2) == (
+        "No more data can be imported: this file would take ACME past 25,000 employees "
+        "(now 24,999, this file adds 2)"
+    )
 
 
 def test_an_upload_over_ten_megabytes_is_refused_before_it_is_read(lookups):

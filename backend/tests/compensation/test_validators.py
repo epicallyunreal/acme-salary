@@ -793,6 +793,21 @@ def test_the_api_and_the_seed_see_the_falling_gross_too(existing):
     assert len(result.revised) == 1
 
 
+def test_an_equal_gross_through_the_record_scope_warns_nothing(existing):
+    """The edge the API and the seed share with the import: the same gross again is no fall."""
+    warnings = v.validate_record(
+        build_context(employees=[existing]),
+        employee=existing,
+        country_code="IN",
+        joining_date=existing.joining_date,
+        effective_from=date(2026, 11, 1),
+        bonus_annual=Decimal("0"),
+        lines=INDIA_LINES,
+    )
+
+    assert [w.message for w in warnings] == []
+
+
 def test_a_row_that_repeats_a_scheduled_revision_is_a_noop(with_scheduled):
     """D72: a generated file imported twice. The row's date and amounts are the scheduled
     revision's, so it changes nothing and the date rules do not run. Another amount on that date

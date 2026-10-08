@@ -11,15 +11,24 @@ from apps.demo.serializers import ResetSerializer
 from apps.imports.parser import XLSX_TYPE
 
 
+class ResetRateThrottle(LoginRateThrottle):
+    """Keyed on the client address as the login throttle is, an IPv6 address reduced to its /64.
+    DRF keys an authenticated request on the user instead, which here would be one bucket for
+    the shared HR login, so one reviewer's five attempts would block every other for an hour."""
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {"scope": self.scope, "ident": self.get_ident(request)}
+
+
 class ResetDemoView(APIView):
     """GET the live counts, POST `{password, confirm}` to empty the database and get the counts
-    deleted. The POST is throttled on scope `reset`, five an hour per client address, keyed as
-    the login throttle is, so wrong passwords count."""
+    deleted. The POST is throttled on scope `reset`, five an hour per client address, so wrong
+    passwords count and the counts the dialog reads never do."""
 
     throttle_scope = "reset"
 
     def get_throttles(self):
-        return [LoginRateThrottle()] if self.request.method == "POST" else []
+        return [ResetRateThrottle()] if self.request.method == "POST" else []
 
     def get(self, request):
         return Response(services.counts())

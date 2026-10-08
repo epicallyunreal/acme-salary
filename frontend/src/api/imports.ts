@@ -100,8 +100,6 @@ export function useSkipRow(batchId: number) {
   });
 }
 
-/** Approve. The live records changed, so the directory, the employee pages and the insights
- * refetch too. A refusal also refreshes the batch: the re-check may have re-marked rows. */
 /** What an approve leaves to refresh: the batch, its rows, the directory and the dashboard. The
  * hook does this on success, and the review page after a polled approve (D72). */
 export function afterApprove(client: QueryClient, batch: ImportBatch) {
@@ -113,6 +111,8 @@ export function afterApprove(client: QueryClient, batch: ImportBatch) {
   ]);
 }
 
+/** Approve. The live records changed, so the directory, the employee pages and the insights
+ * refetch too. A refusal also refreshes the batch: the re-check may have re-marked rows. */
 export function useApproveImport(id: number) {
   const client = useQueryClient();
   return useMutation({

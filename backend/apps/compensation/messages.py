@@ -21,6 +21,7 @@ MESSAGES = {
     "file_unpacks_large": "file unpacks to more than {limit}",
     "file_too_big": "file is too big to read",
     "upload_busy": "another file is being read; try again in a moment",
+    "apply_busy": "an import is being applied; try again in a moment",
     "row_too_wide": "row {row} has more than {limit} cells",
     "row_past_limit": "row {row} is past row {limit}",
     "cell_required": "{field} is required",

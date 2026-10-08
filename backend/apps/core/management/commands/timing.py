@@ -223,10 +223,15 @@ def run_base_import(path: Path, stdout) -> None:
     `timing --case base-import` runs it in a child process against a scratch database (D72)."""
     from django.core.management import call_command
 
+    from apps.employees.models import Employee
     from seed.lookups import ensure_lookups, ensure_rates
     from seed.management.commands.seed_data import ensure_hr_manager
 
     call_command("migrate", verbosity=0)
+    if Employee.objects.exists():
+        raise CommandError(
+            "base-import-run builds an empty database; point DATABASE_PATH at a scratch file"
+        )
     ensure_lookups()
     ensure_rates()
     ensure_hr_manager(settings.SEED_ADMIN_PASSWORD)

@@ -16,21 +16,20 @@ export function Imports() {
   const page = Math.max(1, Math.floor(Number(searchParams.get('page'))) || 1);
   const imports = useImportList(page);
   const navigate = useNavigate();
-  // Arrived from the Demo data page's reset (D72): the state says what to do next.
+  // Arrived from the Demo data page's reset (D72): the state says what to do next, while nothing
+  // is imported yet. Back or a reload after the base import shows it no more.
   const reset = (useLocation().state as { reset?: unknown } | null)?.reset;
+  const empty = imports.data?.count === 0;
 
   return (
     <>
       <PageHeader title="Imports" actions={<TemplateMenu />} />
-      {reset ? (
+      {reset && empty ? (
         <Alert severity="success" role="status" sx={{ mb: 4 }}>
           The database is empty. Import base-15000.xlsx to start.
         </Alert>
       ) : null}
-      <UploadDropzone
-        onUploaded={(batch) => navigate(`/imports/${batch.id}`)}
-        newestId={imports.data?.results[0]?.id}
-      />
+      <UploadDropzone onUploaded={(batch) => navigate(`/imports/${batch.id}`)} />
       {imports.isError ? (
         <ErrorState what="the imports" onRetry={() => void imports.refetch()} />
       ) : imports.isPending ? (

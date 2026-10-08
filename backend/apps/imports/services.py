@@ -15,7 +15,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any
 
-from django.db import transaction
+from django.db import OperationalError, transaction
 from django.db.models import Count, Q
 
 from apps.compensation import validators
@@ -172,6 +172,12 @@ def recount(batch: ImportBatch) -> ImportBatch:
         setattr(batch, name, value)
     batch.save(update_fields=list(counts))
     return batch
+
+
+def waited_out_the_lock(exc: BaseException) -> bool:
+    """SQLite's answer when a write waited out the 20 s lock on another transaction, an approve
+    in flight: the request that waited has written nothing (D72)."""
+    return isinstance(exc, OperationalError) and "locked" in str(exc).lower()
 
 
 @contextmanager

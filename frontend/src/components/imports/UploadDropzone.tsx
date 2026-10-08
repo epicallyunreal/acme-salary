@@ -2,9 +2,10 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { Box, Button, LinearProgress, Typography } from '@mui/material';
 import { type DragEvent, useRef, useState } from 'react';
 
+import { ApiError } from '../../api/client';
 import { listImports, useUploadImport } from '../../api/imports';
 import type { ImportBatch } from '../../api/types';
-import { mayStillBeRunning, waitFor } from '../../lib/poll';
+import { mayStillBeRunning, useUnmountSignal, waitFor } from '../../lib/poll';
 import type { FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
 import { uploadProblems } from './uploadProblems';
@@ -15,20 +16,32 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 interface UploadDropzoneProps {
   onUploaded: (batch: ImportBatch) => void;
-  /** The newest batch before this upload, so a cut request can find the one it made (D72). */
-  newestId?: number;
 }
 
 const STILL_WORKING = 'Still working. The server is reading the file.';
 const GAVE_UP = 'The server may still be working, or the file was refused; check the batch list.';
 
+/** The newest batch there is, read as an upload is sent, so a request the proxy cuts can find
+ * the batch it made: one newer than that, with the file's name. Null when the list cannot be
+ * read, and a cut upload is then not waited for, since an older batch of the same name could
+ * pass for the one made (D72). */
+async function newestBatchId(): Promise<number | null> {
+  try {
+    return (await listImports(1)).results[0]?.id ?? 0;
+  } catch {
+    return null;
+  }
+}
+
 /** Drop a sheet, or choose one with the button: dragging is never the only way (WCAG 2.5.7). */
-export function UploadDropzone({ onUploaded, newestId = 0 }: UploadDropzoneProps) {
+export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
   const upload = useUploadImport();
   const input = useRef<HTMLInputElement>(null);
+  const unmountSignal = useUnmountSignal();
   const [dragging, setDragging] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [waiting, setWaiting] = useState(false);
-  const busy = upload.isPending || waiting;
+  const busy = upload.isPending || locating || waiting;
   const [problems, setProblems] = useState<FormMessage[]>([]);
   const [attempt, setAttempt] = useState(0);
 
@@ -37,25 +50,38 @@ export function UploadDropzone({ onUploaded, newestId = 0 }: UploadDropzoneProps
     setAttempt((count) => count + 1);
   };
 
-  const send = (file: File) => {
+  const send = async (file: File) => {
     setProblems([]);
     if (file.size > MAX_UPLOAD_BYTES) {
       refuse([{ key: null, message: 'upload is larger than the 10 MB limit' }]);
       return;
     }
+    setLocating(true);
+    const newestId = await newestBatchId();
+    setLocating(false);
     upload.mutate(file, {
       onSuccess: onUploaded,
       onError: async (error) => {
-        if (!mayStillBeRunning(error)) {
+        if (error instanceof ApiError && !mayStillBeRunning(error)) {
           refuse(uploadProblems(error));
           return;
         }
+        if (newestId === null) {
+          refuse([{ key: null, message: GAVE_UP }]);
+          return;
+        }
         // The proxy cut the request, but the server reads on: the batch appears in the list.
+        const signal = unmountSignal();
         setWaiting(true);
         const batch = await waitFor(async () => {
           const page = await listImports(1);
-          return page.results.find((candidate) => candidate.id > newestId) ?? null;
-        });
+          return (
+            page.results.find(
+              (candidate) => candidate.id > newestId && candidate.file_name === file.name,
+            ) ?? null
+          );
+        }, signal);
+        if (signal.aborted) return;
         setWaiting(false);
         if (batch) onUploaded(batch);
         else refuse([{ key: null, message: GAVE_UP }]);
@@ -67,7 +93,7 @@ export function UploadDropzone({ onUploaded, newestId = 0 }: UploadDropzoneProps
     event.preventDefault();
     setDragging(false);
     const file = event.dataTransfer.files[0];
-    if (file && !busy) send(file);
+    if (file && !busy) void send(file);
   };
 
   return (
@@ -119,7 +145,7 @@ export function UploadDropzone({ onUploaded, newestId = 0 }: UploadDropzoneProps
             const file = event.target.files?.[0];
             // Cleared, so choosing the same file again after fixing it still uploads.
             event.target.value = '';
-            if (file) send(file);
+            if (file) void send(file);
           }}
         />
         {busy ? (

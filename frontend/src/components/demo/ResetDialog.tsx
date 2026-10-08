@@ -17,17 +17,15 @@ import { type FormEvent, useState } from 'react';
 import { ApiError, type FieldErrors } from '../../api/client';
 import { getResetCounts, useResetCounts, useResetDemo } from '../../api/demo';
 import type { ResetCounts } from '../../api/types';
-import { mayStillBeRunning, waitFor } from '../../lib/poll';
+import { mayStillBeRunning, useUnmountSignal, waitFor } from '../../lib/poll';
 import type { FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
 import { deletes } from './deletes';
 
 /** Why a reset was refused, for the summary at the top of the dialog. The password and the
- * confirmation map onto their fields instead. */
-function resetProblems(error: unknown): FormMessage[] {
-  if (!(error instanceof ApiError)) {
-    return [{ key: null, message: 'Nothing was sent. Check your connection and try again.' }];
-  }
+ * confirmation map onto their fields instead, and a failure that is not an answer from the API
+ * is waited through (D72). */
+function resetProblems(error: ApiError): FormMessage[] {
   if (error.status === 429) {
     return [{ key: null, message: 'Too many attempts. Wait an hour and try again.' }];
   }
@@ -61,6 +59,7 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
   const counts = useResetCounts(open);
   const reset = useResetDemo();
   const client = useQueryClient();
+  const unmountSignal = useUnmountSignal();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [shown, setShown] = useState(false);
@@ -71,9 +70,20 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
   const busy = reset.isPending || waiting;
   const ready = password.length > 0 && confirm.length > 0 && !busy;
 
-  const done = (deleted: ResetCounts) => {
+  // Nothing typed outlives the dialog: a reopened one starts clean, the password hidden.
+  const clear = () => {
     setPassword('');
     setConfirm('');
+    setShown(false);
+    setErrors({});
+    setProblems([]);
+  };
+  const close = () => {
+    clear();
+    onClose();
+  };
+  const done = (deleted: ResetCounts) => {
+    clear();
     onDone(deleted);
   };
 
@@ -92,18 +102,20 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
             setErrors(error.fieldErrors());
             return;
           }
-          if (!mayStillBeRunning(error)) {
+          if (error instanceof ApiError && !mayStillBeRunning(error)) {
             setAttempt((count) => count + 1);
             setProblems(resetProblems(error));
             return;
           }
           // The proxy cut the request, but the server empties on: the counts reach zero (D72).
           const before = counts.data;
+          const signal = unmountSignal();
           setWaiting(true);
           const now = await waitFor(async () => {
             const latest = await getResetCounts();
             return emptied(latest) ? latest : null;
-          });
+          }, signal);
+          if (signal.aborted) return;
           setWaiting(false);
           if (now) {
             client.clear();
@@ -118,7 +130,7 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} aria-labelledby="reset-title" fullWidth maxWidth="sm">
+    <Dialog open={open} onClose={close} aria-labelledby="reset-title" fullWidth maxWidth="sm">
       <form onSubmit={submit} noValidate>
         <DialogTitle id="reset-title">Empty the database?</DialogTitle>
         <DialogContent>
@@ -175,7 +187,7 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={close}>Cancel</Button>
           <Button type="submit" color="error" variant="contained" disabled={!ready} loading={busy}>
             Empty the database
           </Button>

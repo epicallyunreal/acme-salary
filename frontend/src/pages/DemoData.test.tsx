@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSession } from '../lib/auth';
 import { POLL } from '../lib/poll';
 import { resetCounts, sampleFilesEmpty } from '../test/fixtures/demo';
+import { batchPage } from '../test/fixtures/imports';
 import { HR_PASSWORD } from '../test/handlers';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
@@ -82,17 +83,29 @@ describe('DemoData', () => {
     expect(within(list).getAllByText('Import the base file first.')).toHaveLength(6);
   });
 
-  it('downloads a file under the name the API gives it', async () => {
+  it('downloads a file with the token, under the name the API gives it', async () => {
     const user = userEvent.setup();
     const saved = catchSaves();
+    let authorization: string | null = null;
+    server.use(
+      http.get('/api/v1/admin/sample-files/exits/', ({ request }) => {
+        authorization = request.headers.get('authorization');
+        return new HttpResponse(new Blob(['xlsx']), {
+          headers: { 'Content-Disposition': 'attachment; filename="exits-20261007.xlsx"' },
+        });
+      }),
+    );
     renderApp('/demo');
 
     await user.click(await screen.findByRole('button', { name: 'Download exits.xlsx' }));
 
-    await waitFor(() => expect(saved).toEqual(['exits.xlsx']));
+    await waitFor(() => expect(saved).toEqual(['exits-20261007.xlsx']));
+    expect(authorization).toBe('Bearer access-1');
   });
 
   it('empties the database behind the password and RESET, then goes to Imports', async () => {
+    // Emptied, the imports list is empty too, which is when Imports shows the notice.
+    server.use(http.get('/api/v1/imports/', () => HttpResponse.json(batchPage([]))));
     const user = userEvent.setup();
     const { router } = renderApp('/demo');
 
@@ -110,8 +123,8 @@ describe('DemoData', () => {
 
     await user.click(submit);
 
-    expect(await within(dialog).findByText('password did not match')).toBeInTheDocument();
-    expect(within(dialog).getByText('type RESET to confirm')).toBeInTheDocument();
+    await waitFor(() => expect(password).toHaveAccessibleDescription('password did not match'));
+    expect(confirm).toHaveAccessibleDescription('type RESET to confirm');
     expect(router.state.location.pathname).toBe('/demo');
 
     await user.clear(password);
@@ -147,6 +160,7 @@ describe('DemoData', () => {
         posted = true;
         return HttpResponse.error();
       }),
+      http.get('/api/v1/imports/', () => HttpResponse.json(batchPage([]))),
     );
     const user = userEvent.setup();
     const { router } = renderApp('/demo');
@@ -165,6 +179,42 @@ describe('DemoData', () => {
     expect(
       await screen.findByText('The database is empty. Import base-15000.xlsx to start.'),
     ).toBeInTheDocument();
+  });
+
+  it('gives up on a cut reset after the wait and says where to look', async () => {
+    POLL.every = 10;
+    POLL.upTo = 60;
+    server.use(http.post('/api/v1/admin/reset-demo/', () => HttpResponse.error()));
+    const user = userEvent.setup();
+    renderApp('/demo');
+
+    await user.click(await screen.findByRole('button', { name: 'Empty the database' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Empty the database?' });
+    await within(dialog).findByText(DELETES);
+    await user.type(within(dialog).getByLabelText('Your password'), HR_PASSWORD);
+    await user.type(within(dialog).getByLabelText('Type RESET to confirm'), 'RESET');
+    await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The server may still be working, or the reset was refused; reload the page and check the counts.',
+    );
+  });
+
+  it('starts clean when reopened after a cancel', async () => {
+    const user = userEvent.setup();
+    renderApp('/demo');
+
+    await user.click(await screen.findByRole('button', { name: 'Empty the database' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Empty the database?' });
+    await user.type(within(dialog).getByLabelText('Your password'), 'secret');
+    await user.click(within(dialog).getByRole('button', { name: 'Show password' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Empty the database' }));
+
+    dialog = await screen.findByRole('dialog', { name: 'Empty the database?' });
+    expect(within(dialog).getByLabelText('Your password')).toHaveValue('');
+    expect(within(dialog).getByLabelText('Your password')).toHaveAttribute('type', 'password');
   });
 
   it('shows the password on request and says when the attempts run out', async () => {

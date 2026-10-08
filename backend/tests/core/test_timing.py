@@ -3,6 +3,7 @@
 import io
 from datetime import date
 
+import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from apps.compensation.validators import template_columns
@@ -110,3 +111,14 @@ def test_the_demo_files_case_builds_each_generated_file_on_the_seed(lookups, rat
     ]
     assert all(" rows, " in line and " bytes in " in line for line in lines)
     assert lines[0].split(":")[1].strip().startswith("500 rows")
+
+
+def test_the_base_import_run_refuses_a_database_that_holds_employees(db, lookups, tmp_path):
+    """Run by hand against the live database it would stage into it; it builds an empty one."""
+    from django.core.management import CommandError
+
+    from tests.factories import EmployeeFactory
+
+    EmployeeFactory()
+    with pytest.raises(CommandError, match="scratch"):
+        run_base_import(tmp_path / "none.xlsx", io.StringIO())

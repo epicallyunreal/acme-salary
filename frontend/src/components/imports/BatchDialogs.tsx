@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { ApiError } from '../../api/client';
 import { afterApprove, getImport, useApproveImport, useDiscardImport } from '../../api/imports';
 import type { ImportBatch } from '../../api/types';
-import { mayStillBeRunning, waitFor } from '../../lib/poll';
+import { mayStillBeRunning, useUnmountSignal, waitFor } from '../../lib/poll';
 import type { FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
 import { rowsWord } from './counts';
@@ -58,6 +58,7 @@ const GAVE_UP =
 export function ApproveDialog({ batch, onClose, onDone }: DialogProps) {
   const approve = useApproveImport(batch.id);
   const client = useQueryClient();
+  const unmountSignal = useUnmountSignal();
   const [problems, setProblems] = useState<FormMessage[]>([]);
   const [attempt, setAttempt] = useState(0);
   const [waiting, setWaiting] = useState(false);
@@ -80,11 +81,13 @@ export function ApproveDialog({ batch, onClose, onDone }: DialogProps) {
           return;
         }
         // The proxy cut the request, but the server applies on: the batch leaves review (D72).
+        const signal = unmountSignal();
         setWaiting(true);
         const done = await waitFor(async () => {
           const latest = await getImport(batch.id);
           return latest.status === 'review' ? null : latest;
-        });
+        }, signal);
+        if (signal.aborted) return;
         setWaiting(false);
         if (!done) {
           refuse([{ key: null, message: GAVE_UP }]);

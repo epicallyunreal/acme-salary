@@ -243,12 +243,16 @@ describe('Imports', () => {
     POLL.every = 10;
     POLL.upTo = 2000;
     let polls = 0;
-    const made = { ...reviewBatch, id: 4, file_name: 'october.csv' };
+    // Another file's batch and an older batch of the same name are never the one made.
+    const other = { ...reviewBatch, id: 4, file_name: 'other.csv' };
+    const made = { ...reviewBatch, id: 5, file_name: 'october.csv' };
+    const older = { ...reviewBatch, id: 2, file_name: 'october.csv' };
     server.use(
       http.post('/api/v1/imports/', () => HttpResponse.error()),
       http.get('/api/v1/imports/', () => {
         polls += 1;
-        return HttpResponse.json(batchPage(polls >= 3 ? [made, ...batches] : batches));
+        const newest = polls >= 4 ? [made, other] : polls >= 3 ? [other] : [];
+        return HttpResponse.json(batchPage([...newest, ...batches, older]));
       }),
     );
     const { router } = renderApp('/imports');
@@ -259,7 +263,7 @@ describe('Imports', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Still working. The server is reading the file.',
     );
-    await waitFor(() => expect(router.state.location.pathname).toBe('/imports/4'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/imports/5'));
   });
 
   it('gives up on a cut upload after the wait and says where to look', async () => {
@@ -276,11 +280,71 @@ describe('Imports', () => {
     );
   });
 
-  it('says the database is empty after a reset from the Demo data page', async () => {
+  it('says the database is empty after a reset from the Demo data page, while it is', async () => {
+    server.use(http.get('/api/v1/imports/', () => HttpResponse.json(batchPage([]))));
     renderApp('/imports', { state: { reset: { employees: 15000 } } });
 
     expect(
       await screen.findByText('The database is empty. Import base-15000.xlsx to start.'),
     ).toBeInTheDocument();
+  });
+
+  it('drops the reset notice once a batch exists, so Back after the base import shows none', async () => {
+    renderApp('/imports', { state: { reset: { employees: 15000 } } });
+
+    await screen.findByRole('table', { name: 'Imports' });
+
+    expect(screen.queryByText(/The database is empty/)).not.toBeInTheDocument();
+  });
+
+  it('reads the newest batch from page 1 as the upload is sent, whatever page is shown', async () => {
+    POLL.every = 10;
+    POLL.upTo = 2000;
+    let polls = 0;
+    // An older batch of the same name heads page 1 before the upload; the one made comes later.
+    const before = { ...reviewBatch, id: 6, file_name: 'october.csv' };
+    const made = { ...reviewBatch, id: 9, file_name: 'october.csv' };
+    const older = { ...reviewBatch, id: 2, file_name: 'october.csv' };
+    server.use(
+      http.post('/api/v1/imports/', () => HttpResponse.error()),
+      http.get('/api/v1/imports/', ({ request }) => {
+        if (new URL(request.url).searchParams.get('page') === '2') {
+          return HttpResponse.json({ ...batchPage([older]), count: 30 });
+        }
+        polls += 1;
+        return HttpResponse.json(
+          batchPage(polls >= 3 ? [made, before, ...batches] : [before, ...batches]),
+        );
+      }),
+    );
+    const { router } = renderApp('/imports?page=2');
+    await screen.findByRole('table', { name: 'Imports' });
+
+    chooseFile(sheet('october.csv', 'text/csv'));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/imports/9'));
+  });
+
+  it('gives up at once on a cut upload when the newest batch could not be read', async () => {
+    POLL.every = 10;
+    POLL.upTo = 2000;
+    let gets = 0;
+    server.use(
+      http.post('/api/v1/imports/', () => HttpResponse.error()),
+      http.get('/api/v1/imports/', () => {
+        gets += 1;
+        // The page's own list loads; the read as the upload is sent fails.
+        return gets === 2 ? HttpResponse.error() : HttpResponse.json(batchPage());
+      }),
+    );
+    renderApp('/imports');
+    await screen.findByRole('table', { name: 'Imports' });
+
+    chooseFile(sheet('october.csv', 'text/csv'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The server may still be working, or the file was refused; check the batch list.',
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

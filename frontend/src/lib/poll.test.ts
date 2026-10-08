@@ -1,7 +1,9 @@
+import { renderHook } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ApiError } from '../api/client';
-import { mayStillBeRunning, POLL, waitFor } from './poll';
+import { mayStillBeRunning, POLL, useUnmountSignal, waitFor } from './poll';
 
 describe('mayStillBeRunning', () => {
   it('is true for a network error and for the proxy answering 502 or 504, never for the API', () => {
@@ -43,5 +45,31 @@ describe('waitFor', () => {
 
     expect(found).toBeNull();
     expect(calls).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('useUnmountSignal', () => {
+  it('fires on unmount, and survives StrictMode running the cleanup an extra time', () => {
+    const { result, unmount } = renderHook(() => useUnmountSignal(), { wrapper: StrictMode });
+    const signal = result.current();
+
+    expect(signal.aborted).toBe(false);
+    unmount();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it('stops a wait when the signal fires', async () => {
+    POLL.every = 5;
+    POLL.upTo = 10000;
+    const controller = new AbortController();
+    let calls = 0;
+    const waiting = waitFor(async () => {
+      calls += 1;
+      if (calls === 2) controller.abort();
+      return null;
+    }, controller.signal);
+
+    expect(await waiting).toBeNull();
+    expect(calls).toBe(2);
   });
 });
