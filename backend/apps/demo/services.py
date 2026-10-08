@@ -21,7 +21,7 @@ from apps.audit.models import AuditLog
 from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.compensation.validators import template_columns
-from apps.core.dates import months_before, today_utc
+from apps.core.dates import today_utc
 from apps.core.exceptions import Conflict, Forbidden
 from apps.employees.models import Employee
 from apps.imports import services as imports
@@ -108,10 +108,14 @@ SAMPLE_FILES = (
     SampleFile(
         "newhires",
         "newhires.xlsx",
-        "500 new employees with fresh legacy codes who joined in the last three months. Each row "
-        "creates an employee.",
+        "500 new employees with fresh legacy codes who joined between 60 days ago and 14 days "
+        "ahead, the future ones shown as Upcoming until they join. Each row creates an employee.",
         lambda today: dict(
-            effective=today, new=500, stream="newhires", joined_after=months_before(today, 3)
+            effective=today,
+            new=500,
+            stream="newhires",
+            joined_after=files.hire_window(today)[0],
+            joined_until=files.hire_window(today)[1],
         ),
     ),
     SampleFile(
@@ -138,7 +142,9 @@ SAMPLE_FILES = (
     SampleFile(
         "exits",
         "exits.xlsx",
-        "100 employees with their last day today. Each row is an exit.",
+        "100 employees with their last day between 14 days ago and 60 days ahead: the past ones "
+        "leave the counts at once, the future ones are scheduled exits and stay active until the "
+        "day. Each row is an exit.",
         lambda today: dict(effective=today, exits=100, share=3),
     ),
     SampleFile(

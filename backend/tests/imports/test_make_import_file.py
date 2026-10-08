@@ -1,6 +1,7 @@
 """make_import_file writes template-shaped sheets that name employees by legacy_code (D48)."""
 
 import csv
+import random
 import re
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -18,17 +19,22 @@ from apps.employees import services as employees
 from apps.employees.models import Employee
 from apps.imports.applier import approve
 from apps.imports.management.commands.make_import_file import (
+    EXIT_SPREAD,
+    HIRE_SPREAD,
     base_rows,
     new_rows,
     profile_codes,
+    spread_day,
     write_file,
 )
 from apps.imports.parser import XLSX_TYPE
 from apps.imports.services import stage_upload
 from seed import profiles
-from seed.generator import generate, ordered_entries
+from seed.generator import draw_career, generate, ordered_entries
 from seed.lookups import ensure_lookups
 from tests.factories import EmployeeFactory
+
+TODAY = date(2026, 10, 7)
 
 pytestmark = pytest.mark.django_db
 
@@ -160,7 +166,7 @@ def test_new_alone_invents_employees_with_unused_legacy_codes(thirty, tmp_path):
     assert "wrote 3 rows" in out
     codes = [row["legacy_code"] for row in rows]
     assert len(set(codes)) == 3 and not set(codes) & taken_codes()
-    assert all(row["effective_from"] is None for row in rows)
+    assert all(row["effective_from"] == row["joining_date"] for row in rows)
 
 
 def test_a_new_row_is_paid_as_today_beside_todays_level():
@@ -351,19 +357,44 @@ def test_promotions_move_one_level_with_the_designation_and_12_to_20_percent(thi
     assert rows_of_xlsx(path)[1] == []
 
 
-def test_exits_set_the_last_date_on_the_day_and_change_nothing_else(thirty, tmp_path):
+def test_exits_spread_the_last_day_around_today_and_change_nothing_else(thirty, tmp_path):
+    """D72: each last day is drawn from 14 days before today to 60 days after, on or after the
+    person's joining date and their open record's start, so every row passes the exit rules.
+    Past ones leave the counts at once, future ones are scheduled exits."""
     path = tmp_path / "exits.xlsx"
 
-    run(path, exits=3, effective=date(2026, 10, 7))
+    run(path, exits=20)
 
     _, rows = rows_of_xlsx(path)
-    assert len(rows) == 3
-    for row in rows:
+    assert len(rows) == 20
+    last_days = [row["last_date"].date() for row in rows]
+    assert all(TODAY - timedelta(days=14) <= day <= TODAY + timedelta(days=60) for day in last_days)
+    assert min(last_days) < TODAY < max(last_days)
+    for row, last_day in zip(rows, last_days, strict=True):
         employee = by_code(row)
         bonus, lines = current_pay(employee)
-        assert employee.last_date is None and row["last_date"] == datetime(2026, 10, 7)
+        assert employee.last_date is None and employee.joining_date <= last_day
+        assert compensation.current_record(employee, TODAY).effective_from <= last_day
         assert row["effective_from"] is None and row["bonus_annual"] == bonus
         assert {code: Decimal(row[code]) for code in lines} == lines
+    batch = stage_upload(
+        SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
+    )
+    assert (batch.total_rows, batch.error_rows) == (20, 0)
+
+
+def test_the_spreads_reach_both_ends(thirty):
+    """The exits' draw and the generator's joining date each include the end days (D72)."""
+    rng = random.Random("ends")
+    exits = {spread_day(rng, TODAY, EXIT_SPREAD) for _ in range(5000)}
+    after = TODAY + timedelta(days=HIRE_SPREAD[0] - 1)
+    until = TODAY + timedelta(days=HIRE_SPREAD[1])
+    hires = {
+        draw_career(rng, 1, None, joined_after=after, end=until).joining_date for _ in range(5000)
+    }
+
+    assert (min(exits), max(exits)) == (TODAY - timedelta(days=14), TODAY + timedelta(days=60))
+    assert (min(hires), max(hires)) == (TODAY - timedelta(days=60), TODAY + timedelta(days=14))
 
 
 def test_a_share_keeps_to_its_ids_and_passes_over_anyone_revised_on_or_after_the_date(
@@ -385,20 +416,29 @@ def test_a_share_keeps_to_its_ids_and_passes_over_anyone_revised_on_or_after_the
     assert len(picked) == 5
 
 
-def test_new_hires_join_within_the_window_and_today_ends_their_careers(thirty, tmp_path):
-    """Today is 7 October 2026, so a hire of the last three months joined from 8 July, the day
-    after 7 July, as the Last 3 months preset starts (D69, D72)."""
+def test_new_hires_join_within_the_window_with_their_record_at_joining(thirty, tmp_path):
+    """Today is 7 October 2026: joined after 7 August, the day after the bound (D69), and by 21
+    October, the future ones Upcoming until they join, and every row passes the create rules
+    (D72)."""
     path = tmp_path / "newhires.xlsx"
 
-    run(path, new=5, joined_after=date(2026, 7, 7))
+    run(path, new=30, joined_after=date(2026, 8, 7), joined_until=date(2026, 10, 21))
 
     _, rows = rows_of_xlsx(path)
-    assert len(rows) == 5
+    assert len(rows) == 30
+    joined = [row["joining_date"].date() for row in rows]
+    assert all(date(2026, 8, 8) <= day <= date(2026, 10, 21) for day in joined)
+    assert min(joined) < TODAY < max(joined)
     for row in rows:
-        assert datetime(2026, 7, 8) <= row["joining_date"] <= datetime(2026, 10, 7)
-        assert row["effective_from"] is None and row["last_date"] is None
+        assert row["effective_from"] == row["joining_date"] and row["last_date"] is None
         assert re.fullmatch(r"HR-\d{5}", row["legacy_code"])
         assert row["legacy_code"] not in taken_codes()
+    batch = stage_upload(
+        SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
+    )
+    assert (batch.total_rows, batch.error_rows) == (30, 0)
+    approve(batch, actor=None)
+    assert Employee.objects.filter(joining_date__gt=TODAY).exists()
 
 
 def test_the_same_database_seed_and_options_give_the_same_file(thirty, tmp_path):
@@ -484,19 +524,24 @@ def test_a_joining_window_that_ends_before_it_starts_is_a_command_error(thirty, 
         run(tmp_path / "late.xlsx", new=1, joined_after=date(2027, 1, 1))
 
 
-def test_exits_pass_over_anyone_with_a_record_dated_after_the_last_day(thirty, tmp_path):
-    """A scheduled revision must be cancelled before an exit, so the file never names them."""
-    first = Employee.objects.order_by("pk").first()
+def test_exits_pass_over_a_scheduled_revision_and_a_record_newer_than_the_last_day(
+    thirty, tmp_path
+):
+    """A scheduled revision must be cancelled before an exit, so the file never names them, and
+    someone whose open record started after their drawn last day waits for another draw."""
+    first, second = Employee.objects.order_by("pk")[:2]
     bonus, lines = current_pay(first)
     compensation.revise(first, RecordInput(date(2026, 11, 1), bonus, "", lines))
+    bonus, lines = current_pay(second)
+    compensation.revise(second, RecordInput(TODAY, bonus, "", lines))
     path = tmp_path / "exits.xlsx"
 
-    run(path, exits=3, effective=date(2026, 10, 7))
+    run(path, exits=10)
 
     _, rows = rows_of_xlsx(path)
-    assert [by_code(row).pk for row in rows] == [
-        e.pk for e in Employee.objects.filter(last_date=None).order_by("pk")[1:4]
-    ]
+    picked = {by_code(row).pk: row["last_date"].date() for row in rows}
+    assert first.pk not in picked
+    assert second.pk not in picked or picked[second.pk] >= TODAY
 
 
 def test_a_raise_builds_on_a_revision_already_scheduled(thirty, tmp_path):

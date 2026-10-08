@@ -3,10 +3,10 @@
 (SPEC section 11, D72).
 
 Writes a template-shaped .xlsx or .csv: N invented new employees, N existing employees with a
-raise of 3 to 8%, N with 5 to 15% of base added to their bonus, N promoted one level, N exited
-on the effective date, N planted errors, every existing employee unchanged, or with `--base` the
-seed's whole organisation from the generator alone, no database read. Used by /perf-timing, the
-step 5 sample and the Demo data page's files.
+raise of 3 to 8%, N with 5 to 15% of base added to their bonus, N promoted one level, N exited on
+a last day spread around the generation day, N planted errors, every existing employee unchanged,
+or with `--base` the seed's whole organisation from the generator alone, no database read. Used
+by /perf-timing, the step 5 sample and the Demo data page's files.
 
 Rows name employees by legacy_code (D48): an existing employee's own, a fresh unused HR- code for
 a new joiner. An employee created in the app has none and is never written. A revision file takes
@@ -52,6 +52,11 @@ ERROR_KINDS = (
     "wrong_component",
 )
 SHARES = 5  # employee id modulo this is a file's share of the directory (D72)
+# Days from the generation day a last day and a joining date are drawn from, both ends in (D72):
+# a past last day leaves the counts at once, a future one is a scheduled exit, and a future
+# joiner shows as Upcoming until the day.
+EXIT_SPREAD = (-14, 60)
+HIRE_SPREAD = (-60, 14)
 # In basis points, drawn whole, so no float enters the money arithmetic (rule 2).
 RAISE_RANGE = (300, 800)
 BONUS_RANGE = (500, 1500)
@@ -72,6 +77,18 @@ def whole(value: Decimal) -> Decimal:
 def proportion(rng: random.Random, low: int, high: int) -> Decimal:
     """A share of base between `low` and `high` basis points."""
     return Decimal(rng.randint(low, high)) / BASIS_POINTS
+
+
+def spread_day(rng: random.Random, today: date, spread: tuple[int, int]) -> date:
+    """A day drawn from `today` plus the spread's ends, both included."""
+    return today + timedelta(days=rng.randint(*spread))
+
+
+def hire_window(today: date) -> tuple[date, date]:
+    """The joining dates a newhires file draws from: the day before the first, since the bound
+    is exclusive, and the last."""
+    first, last = HIRE_SPREAD
+    return today + timedelta(days=first - 1), today + timedelta(days=last)
 
 
 def pay_of(employees: Iterable[Employee], on: date | None) -> dict[int, tuple[Decimal, dict]]:
@@ -224,10 +241,34 @@ def promotion_rows(employees: list[Employee], effective: date, seed: int) -> lis
     return rows
 
 
-def exit_rows(employees: list[Employee], on: date, last_date: date) -> list[dict]:
-    """`last_date` on the day given, nothing else changed."""
-    pay = pay_of(employees, on)
-    return [employee_row(e, *pay[e.pk], last_date=last_date) for e in employees]
+def pick_exits(
+    employees: list[Employee], today: date, count: int, seed: int
+) -> list[tuple[Employee, date]]:
+    """Each employee in id order draws a last day from `EXIT_SPREAD`, and is kept when their
+    joining date and their open record's start are on or before it, so the row passes the exit
+    rules, until `count` are picked. The caller passes nobody with a record dated after today, as
+    a scheduled revision must be cancelled before an exit."""
+    rng = random.Random(f"exits-{seed}")
+    starts = dict(
+        CompensationRecord.objects.filter(
+            employee__in=employees, cancelled_at__isnull=True, effective_to__isnull=True
+        ).values_list("employee_id", "effective_from")
+    )
+    picked: list[tuple[Employee, date]] = []
+    for employee in employees:
+        if len(picked) == count:
+            break
+        last_day = spread_day(rng, today, EXIT_SPREAD)
+        start = starts.get(employee.pk)
+        if start is not None and employee.joining_date <= last_day and start <= last_day:
+            picked.append((employee, last_day))
+    return picked
+
+
+def exit_rows(exits: list[tuple[Employee, date]], on: date) -> list[dict]:
+    """Each with their own `last_date`, nothing else changed."""
+    pay = pay_of([employee for employee, _ in exits], on)
+    return [employee_row(e, *pay[e.pk], last_date=last_day) for e, last_day in exits]
 
 
 def new_rows(
@@ -241,11 +282,11 @@ def new_rows(
     joined_after: date | None = None,
     end: date | None = None,
 ) -> list[dict]:
-    """`count` invented employees with fresh legacy codes, joined after `joined_after` when given,
-    their careers ending at `end`, today when given, else the seed's reference date. The codes
-    come from `stream`, `offset` of them passed over, and the email numbers start that far past
-    `start_number`: fix-me's joiners follow newhires' 500, so the two files made from one database
-    share no code and no email (D72)."""
+    """`count` invented employees with fresh legacy codes, joined after `joined_after` when given
+    and by `end`, the seed's reference date when not given, their careers drawn to that day and
+    their first record dated at joining. The codes come from `stream`, `offset` of them passed
+    over, and the email numbers start that far past `start_number`: fix-me's joiners follow
+    newhires' 500, so the two files made from one database share no code and no email (D72)."""
     rows = []
     codes = legacy_codes(offset + count, f"{stream}-{seed}", taken)[offset:]
     people = generate(
@@ -272,7 +313,7 @@ def new_rows(
                 "gender": identity["gender"],
                 "joining_date": identity["joining_date"],
                 "last_date": identity["last_date"],
-                "effective_from": None,
+                "effective_from": identity["joining_date"],
                 "bonus_annual": latest.bonus_annual,
                 **latest.lines,
             }
@@ -404,6 +445,7 @@ def generated_rows(
     errors: int = 0,
     everyone: bool = False,
     joined_after: date | None = None,
+    joined_until: date | None = None,
     stream: str = "import",
     offset: int = 0,
 ) -> list[dict]:
@@ -426,12 +468,10 @@ def generated_rows(
         )
         rows += promotion_rows(picked, effective, seed)
     if exits:
-        # Nobody with a record dated after the last day: a scheduled revision would have to be
-        # cancelled first, and a future joiner cannot leave before joining.
-        picked = current_employees(
-            share=share, revisable_on=effective + timedelta(days=1), limit=exits
-        )
-        rows += exit_rows(picked, today, effective)
+        # Nobody with a record dated after today: a scheduled revision would have to be cancelled
+        # first, and a future joiner cannot leave before joining.
+        candidates = current_employees(share=share, revisable_on=today + timedelta(days=1))
+        rows += exit_rows(pick_exits(candidates, today, exits, seed), today)
     if new:
         taken = set(
             Employee.objects.exclude(legacy_code=None).values_list("legacy_code", flat=True)
@@ -445,7 +485,7 @@ def generated_rows(
             stream=stream,
             offset=offset,
             joined_after=joined_after,
-            end=today,
+            end=joined_until or today,
         )
     plant_errors(rows, errors)
     return rows
@@ -467,6 +507,7 @@ class Command(BaseCommand):
         parser.add_argument("--effective", type=date.fromisoformat, default=None)
         parser.add_argument("--share", type=int, choices=range(SHARES), default=None)
         parser.add_argument("--joined-after", type=date.fromisoformat, default=None)
+        parser.add_argument("--joined-until", type=date.fromisoformat, default=None)
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--stream", default="import", help="the joiners' stream, by name")
         parser.add_argument("--offset", type=int, default=0, help="joiners of the stream to skip")
@@ -474,7 +515,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         path = Path(options["out"])
         # call_command passes a date option as given, a string or a date.
-        for name in ("effective", "joined_after"):
+        for name in ("effective", "joined_after", "joined_until"):
             if isinstance(options[name], str):
                 options[name] = date.fromisoformat(options[name])
         if options["base"]:
@@ -496,6 +537,7 @@ class Command(BaseCommand):
                     errors=options["errors"],
                     everyone=options["all"],
                     joined_after=options["joined_after"],
+                    joined_until=options["joined_until"],
                     stream=options["stream"],
                     offset=options["offset"],
                 )

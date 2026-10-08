@@ -176,11 +176,11 @@ def test_the_file_list_and_a_generated_download_run_a_fixed_number_of_queries(
     api, seeded, django_assert_num_queries
 ):
     """The user from the token and the employee count for the list. For a generated file, the
-    count, the share's employees with their country and department, their latest and current
-    records and the lines, and the component codes."""
+    count, the share's employees with their country and department, their open records for the
+    exit rules, their latest and current records and the lines, and the component codes."""
     with django_assert_num_queries(2):
         listed = api.get(FILES)
-    with django_assert_num_queries(7):
+    with django_assert_num_queries(8):
         exits = api.get(f"{FILES}exits/")
 
     assert listed.status_code == 200 and exits.status_code == 200

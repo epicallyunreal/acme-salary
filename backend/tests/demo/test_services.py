@@ -1,6 +1,6 @@
 """The demo reset and the sample files (SPEC F9, D72), without HTTP."""
 
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from itertools import combinations
 from pathlib import Path
@@ -173,9 +173,9 @@ def rows_of(data: bytes) -> tuple[list, list[dict]]:
 
 
 def test_generated_files_come_from_the_live_tables_in_the_templates_shape(seeded):
-    """Seven employees on 7 October 2026: exits takes those on staff of share 3, fix-me the
-    raises of share 4 with 20 new joiners and its planted errors, newhires 500 who joined in the
-    last three months."""
+    """Seven employees on 7 October 2026: exits takes those on staff of share 3 whose drawn last
+    day, 14 days before to 60 after, they can leave on, fix-me the raises of share 4 with 20 new
+    joiners and its planted errors, newhires 500 who joined between 60 days ago and 14 ahead."""
     assert all(f["available"] for f in services.sample_files_payload()["files"])
     columns = template_columns(database_codes())
     on_staff = {e.pk: e for e in Employee.objects.filter(last_date=None)}
@@ -186,8 +186,11 @@ def test_generated_files_come_from_the_live_tables_in_the_templates_shape(seeded
     assert [Employee.objects.get(legacy_code=r["legacy_code"]).pk % 5 for r in rows] == [3] * len(
         rows
     )
-    assert rows and all(r["last_date"].date() == TODAY for r in rows)
-    assert len(rows) == sum(pk % 5 == 3 for pk in on_staff)
+    assert all(
+        TODAY - timedelta(days=14) <= r["last_date"].date() <= TODAY + timedelta(days=60)
+        for r in rows
+    )
+    assert len(rows) <= sum(pk % 5 == 3 for pk in on_staff)
 
     _, fixme = services.sample_file("fix-me", today=TODAY)
     header, rows = rows_of(fixme)
@@ -198,7 +201,9 @@ def test_generated_files_come_from_the_live_tables_in_the_templates_shape(seeded
     _, hires = services.sample_file("newhires", today=TODAY)
     _, rows = rows_of(hires)
     assert len(rows) == 500
-    assert all(date(2026, 7, 7) <= r["joining_date"].date() <= TODAY for r in rows)
+    joined = [r["joining_date"].date() for r in rows]
+    assert all(date(2026, 8, 8) <= day <= date(2026, 10, 21) for day in joined)
+    assert min(joined) < TODAY < max(joined)
     assert len({r["legacy_code"] for r in rows}) == 500
 
 
@@ -231,6 +236,8 @@ def test_the_six_files_from_one_database_touch_no_one_twice_and_import_in_turn(l
         assert picked and all(pk % 5 == share for pk in picked), name
     assert all(r["effective_from"].date() == date(2027, 4, 1) for r in rows["april-raises"])
     assert all(r["effective_from"].date() == TODAY for r in rows["diwali-bonus"])
+    last_days = [r["last_date"].date() for r in rows["exits"]]
+    assert all(TODAY - timedelta(days=14) <= day <= TODAY + timedelta(days=60) for day in last_days)
     assert len(rows["newhires"]) == 500
     assert len(rows["fix-me"]) == sum(pk % 5 == 4 for pk in on_staff) + 20
 
@@ -243,6 +250,12 @@ def test_the_six_files_from_one_database_touch_no_one_twice_and_import_in_turn(l
         approve(batch, actor=None)
     assert Employee.objects.count() == 50 + 500 + 20
     assert Employee.objects.exclude(last_date=None).count() == 10 + len(rows["exits"])
+    # A past last day has left the counts, a future one is on staff until the day, and a future
+    # joiner is Upcoming until theirs.
+    past, future = [d for d in last_days if d < TODAY], [d for d in last_days if d > TODAY]
+    assert Employee.objects.filter(last_date__lt=TODAY).count() == 10 + len(past)
+    assert Employee.objects.filter(last_date__gt=TODAY).count() == len(future)
+    assert Employee.objects.filter(joining_date__gt=TODAY).exists()
 
     for name, (file_name, data) in made.items():
         again = imports.stage_upload(upload(file_name, data), actor=None)

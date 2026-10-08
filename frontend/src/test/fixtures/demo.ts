@@ -16,7 +16,7 @@ export const sampleFiles: SampleFiles = {
       name: 'newhires',
       file_name: 'newhires.xlsx',
       description:
-        '500 new employees with fresh legacy codes who joined in the last three months. Each row creates an employee.',
+        '500 new employees with fresh legacy codes who joined between 60 days ago and 14 days ahead, the future ones shown as Upcoming until they join. Each row creates an employee.',
       available: true,
     },
     {
@@ -43,7 +43,8 @@ export const sampleFiles: SampleFiles = {
     {
       name: 'exits',
       file_name: 'exits.xlsx',
-      description: '100 employees with their last day today. Each row is an exit.',
+      description:
+        '100 employees with their last day between 14 days ago and 60 days ahead: the past ones leave the counts at once, the future ones are scheduled exits and stay active until the day. Each row is an exit.',
       available: true,
     },
     {
