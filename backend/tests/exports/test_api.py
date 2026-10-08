@@ -11,8 +11,11 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from django.test import override_settings
 from openpyxl import load_workbook
 
+from apps.exports import tables
+from apps.insights import queries
 from tests.factories import CompensationRecordFactory, EmployeeFactory, country, department
 from tests.insights.fixture import build_fixture, in_lines
 
@@ -142,10 +145,10 @@ def test_the_reporting_column_is_headed_with_its_currency(api, asha):
     assert rows[1][9:12] == [2000000, 200000, 20000]
 
 
-def test_the_json_names_each_value_and_the_filters_applied(api, asha):
-    body = json_body(
-        api.get(EMPLOYEES, {"file": "json", "search": "asha", "country": "IN", "page": 2})
-    )
+def test_the_json_names_each_value_and_the_filters_it_applied(api, asha):
+    """The pages and a parameter the export does not read are not shown as applied (D60)."""
+    query = {"search": "asha", "country": "IN", "page": 2, "page_size": 5, "evil": "1"}
+    body = json_body(api.get(EMPLOYEES, {**query, "file": "json"}))
 
     assert body == {
         "generated_at": "2026-10-07T09:00:00+00:00",
@@ -200,11 +203,49 @@ def test_an_employee_with_no_live_record_is_exported_without_amounts(api, people
     assert row[15:] == ["", ""]
 
 
+def test_the_directory_export_shows_each_record_as_on_its_reporting_date(api, people):
+    """On 1 January 2027 U1's scheduled revision to 130,000 is current; U2 has none."""
+    query = {"file": "json", "country": "US", "level": "1", "on": "2027-01-01"}
+    body = json_body(api.get(EMPLOYEES, query))
+
+    assert body["filters"] == {"country": "US", "level": "1", "on": "2027-01-01", "currency": "USD"}
+    assert [
+        (row["full_name"], row["gross_local"], row["effective_from"], row["version"])
+        for row in body["rows"]
+    ] == [("U1", "130000.00", "2027-01-01", 2), ("U2", "110000.00", "2024-01-01", 1)]
+
+
+def test_a_missing_rate_is_a_400_before_the_csv_starts(api, people):
+    """The fixture has no rate for SGD. Found on a row, it would cut the CSV off after its 200."""
+    singapore = EmployeeFactory(country=country("SG"), email="sg@acme.example")
+    CompensationRecordFactory(employee=singapore, effective_from=date(2024, 1, 1))
+
+    response = api.get(EMPLOYEES, {"file": "csv"})
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"currency": ["no exchange rate from SGD to USD"]},
+    )
+
+
+def test_a_row_that_fails_fails_before_the_csv_starts(api, people, monkeypatch):
+    """The first rows are read before the 200 goes out, so a failure is an error response."""
+
+    def broken(*args):
+        raise RuntimeError("row")
+
+    monkeypatch.setattr(tables, "directory_row", broken)
+
+    with pytest.raises(RuntimeError):
+        api.get(EMPLOYEES, {"file": "csv"})
+
+
 def test_the_directory_export_reads_in_a_fixed_number_of_queries(
     api, people, django_assert_num_queries
 ):
-    """The user, the rates, the employees and their records: one prefetch a chunk of 1,000."""
-    with django_assert_num_queries(4):
+    """The user, the rates, the currencies of the live records, the employees and their records:
+    one prefetch a chunk of 1,000."""
+    with django_assert_num_queries(5):
         rows = csv_rows(api.get(EMPLOYEES, {"file": "csv"}))
 
     assert len(rows) == 31
@@ -219,10 +260,13 @@ def test_the_directory_export_reads_in_a_fixed_number_of_queries(
         ("CSV", "text/csv; charset=utf-8"),
     ],
 )
+@override_settings(TIME_ZONE="Asia/Kolkata")
 def test_the_file_is_an_attachment_stamped_in_utc(api, people, file, content_type):
+    """SPEC F6: CSV streams, XLSX and JSON are built whole."""
     response = api.get(EMPLOYEES, {"file": file})
 
     assert response.status_code == 200
+    assert response.streaming is (file.lower() == "csv")
     assert response["Content-Type"] == content_type
     assert response["Content-Disposition"] == (
         f'attachment; filename="acme-employees-20261007-0900.{file.lower()}"'
@@ -243,15 +287,32 @@ def test_the_file_is_an_attachment_stamped_in_utc(api, people, file, content_typ
             {"file": "csv", "level": "9"},
             {"level": ["Select a valid choice. 9 is not one of the available choices."]},
         ),
+        (
+            {"file": "csv", "designation": ",".join(["Engineer"] * 21)},
+            {"designation": ["designation accepts at most 20 titles"]},
+        ),
     ],
 )
-def test_a_bad_parameter_is_the_directorys_400(api, people, params, errors):
+def test_a_bad_parameter_is_the_directorys_400(api, lookups, params, errors):
     response = api.get(EMPLOYEES, params)
 
     assert (response.status_code, response.json()) == (400, errors)
 
 
 # The insights
+
+
+def test_every_insight_has_an_export_table():
+    """An insight added later cannot 404 on its export alone."""
+    assert set(tables.INSIGHT_TABLES) == set(queries.INSIGHTS)
+
+
+@pytest.mark.parametrize("name", sorted(queries.INSIGHTS))
+def test_every_insight_table_ends_with_reason_currency_and_rates(api, people, name):
+    """SPEC F6 and D60, for the insights promoted after step 7 as well."""
+    (header, *_) = csv_rows(api.get(INSIGHT.format(name), {"file": "csv"}))
+
+    assert header[-3:] == ["Reason", "Currency", "Rates"]
 
 
 def test_the_summary_is_one_row_with_its_currency_and_rates(api, people):
@@ -279,8 +340,6 @@ def test_a_summary_under_five_says_why_its_figures_are_missing(api, people):
 
     assert rows == [
         [
-            "Currency",
-            "Rates",
             "Headcount",
             "Total cost",
             "Mean gross",
@@ -288,8 +347,10 @@ def test_a_summary_under_five_says_why_its_figures_are_missing(api, people):
             "Countries",
             "Departments",
             "Reason",
+            "Currency",
+            "Rates",
         ],
-        ["USD", RATES, "1", "", "", "", "1", "1", "fewer than 5 people"],
+        ["1", "", "", "", "1", "1", "fewer than 5 people", "USD", RATES],
     ]
 
 
@@ -317,12 +378,23 @@ def test_by_country_lists_every_country_with_the_withheld_ones_saying_why(api, p
     ]
 
 
-def test_by_department_says_why_and_leaves_nobody_without_a_reason(api, people):
-    body = json_body(
-        api.get(INSIGHT.format("by-department"), {"file": "json", "department": "finance,legal"})
-    )
+def test_by_department_shows_its_figures_and_says_why_any_are_missing(api, people):
+    """Engineering is the fifteen of tests/insights; Finance is G1 alone and Legal has nobody."""
+    query = {"file": "json", "department": "engineering,finance,legal"}
+    body = json_body(api.get(INSIGHT.format("by-department"), query))
 
     assert body["rows"] == [
+        {
+            "department_code": "engineering",
+            "department": "Engineering",
+            "headcount": 15,
+            "total_cost": "1219200.00",
+            "mean_gross": "71500.00",
+            "median_gross": "87500.00",
+            "reason": None,
+            "currency": "USD",
+            "rates": RATES,
+        },
         {
             "department_code": "finance",
             "department": "Finance",
@@ -394,35 +466,38 @@ def test_a_distribution_without_bands_is_one_row_of_its_headcount(
     ]
 
 
-@pytest.mark.parametrize("file", ["csv", "json"])
-def test_a_level_under_twenty_carries_its_headcount_and_empty_figures(api, people, file):
+LEVEL_HEADER = [
+    "Level",
+    "Headcount",
+    "p10",
+    "p25",
+    "Median",
+    "p75",
+    "p90",
+    "Reason",
+    "Currency",
+    "Rates",
+]
+
+
+def test_a_level_under_twenty_carries_its_headcount_and_empty_figures(api, people):
     """D59: no level of the fixture reaches twenty, so every level is its headcount alone, as the
     card shows it."""
-    response = api.get(INSIGHT.format("by-level"), {"file": file})
-    headcounts = [4, 6, 5, 5, 4, 3]
+    rows = csv_rows(api.get(INSIGHT.format("by-level"), {"file": "csv"}))
 
-    if file == "csv":
-        rows = csv_rows(response)
-        assert rows[0] == [
-            "Level",
-            "Headcount",
-            "p10",
-            "p25",
-            "Median",
-            "p75",
-            "p90",
-            "Reason",
-            "Currency",
-            "Rates",
-        ]
-        assert rows[1:] == [
-            [str(level), str(count), "", "", "", "", "", "fewer than 20 people", "USD", RATES]
-            for level, count in enumerate(headcounts, start=1)
-        ]
-    else:
-        assert json_body(response)["rows"][0] == {
-            "level": 1,
-            "headcount": 4,
+    assert rows == [LEVEL_HEADER] + [
+        [str(level), str(count), "", "", "", "", "", "fewer than 20 people", "USD", RATES]
+        for level, count in enumerate([4, 6, 5, 5, 4, 3], start=1)
+    ]
+
+
+def test_a_withheld_level_is_null_in_json(api, people):
+    rows = json_body(api.get(INSIGHT.format("by-level"), {"file": "json"}))["rows"]
+
+    assert rows == [
+        {
+            "level": level,
+            "headcount": count,
             "p10": None,
             "p25": None,
             "median": None,
@@ -432,6 +507,34 @@ def test_a_level_under_twenty_carries_its_headcount_and_empty_figures(api, peopl
             "currency": "USD",
             "rates": RATES,
         }
+        for level, count in enumerate([4, 6, 5, 5, 4, 3], start=1)
+    ]
+
+
+def test_a_level_of_twenty_exports_p10_to_p90(api, lookups):
+    """D59's twenty Dutch salaries of 50,000 to 97,500 USD at level 1, nineteen at level 2: the
+    figures of tests/insights, by the inclusive method."""
+    build_fixture()
+    for step in range(20):
+        CompensationRecordFactory(
+            employee=EmployeeFactory(country=country("NL"), level=1),
+            lines={"BASE": Decimal(40_000 + 2_000 * step)},
+            effective_from=date(2024, 1, 1),
+        )
+    for _ in range(19):
+        CompensationRecordFactory(
+            employee=EmployeeFactory(country=country("NL"), level=2),
+            lines={"BASE": Decimal(60_000)},
+            effective_from=date(2024, 1, 1),
+        )
+
+    rows = csv_rows(api.get(INSIGHT.format("by-level"), {"file": "csv", "country": "NL"}))
+
+    assert rows[1:3] == [
+        ["1", "20", "54750.00", "61875.00", "73750.00", "85625.00", "92750.00", "", "USD", RATES],
+        ["2", "19", "", "", "", "", "", "fewer than 20 people", "USD", RATES],
+    ]
+    assert [row[1] for row in rows[3:]] == ["0", "0", "0", "0"]
 
 
 def test_the_gender_gap_is_one_row_per_group_and_gender(api, people):
@@ -461,6 +564,23 @@ def test_the_gender_gap_is_one_row_per_group_and_gender(api, people):
     assert rows[1:] == group("IN", "India") + group("", "Overall")
 
 
+def test_the_overall_gender_rows_have_no_country_code(api, people):
+    query = {"file": "json", "country": "IN"}
+    overall = json_body(api.get(INSIGHT.format("gender-gap"), query))["rows"][4]
+
+    assert overall == {
+        "country_code": None,
+        "country": "Overall",
+        "gender": "female",
+        "headcount": 6,
+        "median_gross": "25000.00",
+        "gap_pct": "-11.1",
+        "reason": None,
+        "currency": "USD",
+        "rates": RATES,
+    }
+
+
 def test_a_small_gender_group_repeats_the_cards_reason(api, people):
     """The US has four women: no gap, `group too small` on each of its rows."""
     rows = csv_rows(api.get(INSIGHT.format("gender-gap"), {"file": "csv", "country": "US"}))
@@ -485,10 +605,18 @@ def test_local_currency_names_the_currency_and_no_rate_month(api, people):
     )
 
 
-def test_every_insight_filter_reaches_the_export(api, people):
+def test_include_exited_reaches_the_insight_export(api, people):
     body = json_body(api.get(INSIGHT.format("summary"), {"file": "json", "include_exited": "true"}))
 
     assert body["rows"][0]["headcount"] == 29
+
+
+def test_on_reaches_the_insight_export(api, people):
+    """On 1 January 2027 U1 is paid 130,000 and D5 has joined: 28 people (tests/insights)."""
+    body = json_body(api.get(INSIGHT.format("summary"), {"file": "json", "on": "2027-01-01"}))
+
+    assert body["filters"] == {"on": "2027-01-01", "currency": "USD"}
+    assert (body["rows"][0]["headcount"], body["rows"][0]["total_cost"]) == (28, "2618450.00")
 
 
 def test_an_insight_file_is_named_after_the_insight(api, people):
@@ -501,13 +629,13 @@ def test_an_insight_file_is_named_after_the_insight(api, people):
 
 
 @pytest.mark.parametrize("file", ["csv", "pdf"])
-def test_an_unknown_insight_is_a_404_before_anything_else(api, people, file):
+def test_an_unknown_insight_is_a_404_before_anything_else(api, lookups, file):
     response = api.get(INSIGHT.format("top-earners"), {"file": file})
 
     assert (response.status_code, response.json()) == (404, {"detail": "Not found."})
 
 
-def test_a_bad_insight_filter_is_the_insights_400(api, people):
+def test_a_bad_insight_filter_is_the_insights_400(api, lookups):
     response = api.get(INSIGHT.format("summary"), {"file": "csv", "country": "XX"})
 
     assert (response.status_code, response.json()) == (

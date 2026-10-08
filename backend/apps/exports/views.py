@@ -1,10 +1,12 @@
 """GET /api/v1/exports/employees/ and /exports/insights/<name>/ (SPEC F6, section 8).
 
 Each view parses what the directory or the insight endpoint parses, through the same code, and
-hands the table to a writer. CSV streams. XLSX and JSON are built in memory (DESIGN 1.7).
+hands the table to a writer. CSV streams. XLSX and JSON are built whole before they are sent
+(DESIGN 1.7).
 """
 
 from datetime import date
+from itertools import chain, islice
 
 from django.http import Http404, HttpResponse, QueryDict, StreamingHttpResponse
 from django.utils import timezone
@@ -21,8 +23,9 @@ CONTENT_TYPES = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "json": "application/json",
 }
-# Parameters a JSON file's filters leave out: the format, and the pages an export ignores.
-NOT_FILTERS = ("file", "page", "page_size")
+# What each export reads besides `on` and `currency`, and so what its JSON file says it applied.
+DIRECTORY_FILTERS = (*DirectoryMixin.filterset_class.base_filters, "search")
+INSIGHT_FILTERS = ("country", "department", "include_exited")
 
 
 def parse_file(value: str | None) -> str:
@@ -34,10 +37,11 @@ def parse_file(value: str | None) -> str:
     raise Invalid({"file": [f"{message}, got {clip(value)}" if value else message]})
 
 
-def applied(params: QueryDict, on: date, currency: str) -> dict:
-    """The query parameters as given, with the reporting date and currency as applied, so a JSON
-    file says what its figures are in when the request left them to their defaults (D60)."""
-    given = {key: params.get(key) for key in params if key not in NOT_FILTERS}
+def applied(params: QueryDict, keys: tuple[str, ...], on: date, currency: str) -> dict:
+    """The filters the export read, as given, with the reporting date and currency as applied, so
+    a JSON file says what its figures are in when the request left them to their defaults (D60).
+    A parameter the export does not read is left out rather than shown as applied."""
+    given = {key: params.get(key) for key in keys if key in params}
     return {**given, "on": on, "currency": currency}
 
 
@@ -48,8 +52,12 @@ def respond(table: tables.Table, file: str, what: str, filters: dict):
         "Content-Disposition": f'attachment; filename="acme-{what}-{stamp:%Y%m%d-%H%M}.{file}"'
     }
     if file == "csv":
+        # The first rows are read before the 200 goes out, so a query that fails is an error
+        # response rather than a file cut off part way.
+        rows = iter(table.rows)
+        first = list(islice(rows, writers.BATCH))
         return StreamingHttpResponse(
-            writers.csv_stream(table.header, table.rows),
+            writers.csv_stream(table.header, chain(first, rows)),
             content_type=CONTENT_TYPES[file],
             headers=headers,
         )
@@ -68,7 +76,8 @@ class ExportEmployeesView(DirectoryMixin, GenericAPIView):
         on, currency, rates = self.reporting()
         employees = self.filter_queryset(self.get_queryset())
         table = tables.directory_table(employees, on=on, rates=rates, currency=currency)
-        return respond(table, file, "employees", applied(request.query_params, on, currency))
+        filters = applied(request.query_params, DIRECTORY_FILTERS, on, currency)
+        return respond(table, file, "employees", filters)
 
 
 class ExportInsightView(APIView):
@@ -80,6 +89,5 @@ class ExportInsightView(APIView):
         file = parse_file(request.query_params.get("file"))
         payload, filters = answer(name, request.query_params)
         table = tables.INSIGHT_TABLES[name](payload)
-        return respond(
-            table, file, name, applied(request.query_params, filters.on, filters.currency)
-        )
+        given = applied(request.query_params, INSIGHT_FILTERS, filters.on, filters.currency)
+        return respond(table, file, name, given)

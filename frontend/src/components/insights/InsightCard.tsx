@@ -11,7 +11,7 @@ interface InsightCardProps {
   /** What failed to load, for the error state: "the payroll by country". */
   what: string;
   query: Pick<UseQueryResult, 'isPending' | 'isError' | 'refetch'>;
-  /** The export menu goes here (step 7). */
+  /** The card's export menu (SPEC F6). */
   actions?: ReactNode;
   /** Spans both columns of the grid. */
   wide?: boolean;

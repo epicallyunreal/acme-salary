@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,6 +63,8 @@ describe('ExportMenu', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Export summary' }));
+    // The menu is named by its trigger, so six of them on the dashboard are told apart.
+    expect(screen.getByRole('menu', { name: 'Export summary' })).toBeInTheDocument();
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       'CSV',
       'Excel (.xlsx)',
@@ -169,30 +171,37 @@ describe('Export menus on the pages', () => {
     ]);
   });
 
-  it('exports the summary from the rate month line above the key figures', async () => {
+  it("exports the summary with the dashboard's filters", async () => {
     const user = userEvent.setup();
     const saved = catchSaves();
-    renderApp('/');
+    const asked = recordRequests();
+    renderApp('/?department=engineering');
 
     await user.click(await screen.findByRole('button', { name: 'Export summary' }));
     await user.click(screen.getByRole('menuitem', { name: 'Excel (.xlsx)' }));
 
     await waitFor(() => expect(saved).toEqual(['acme-summary-20261007-0900.xlsx']));
+    expect(asked).toEqual([
+      '/api/v1/exports/insights/summary/?currency=usd&department=engineering&file=xlsx Bearer access-1',
+    ]);
   });
 
-  it('every card on the dashboard has its own export menu', async () => {
+  it.each([
+    ['Where does payroll go, by country?', 'Export payroll by country', 'by-country'],
+    ['Which departments cost most and pay most?', 'Export payroll by department', 'by-department'],
+    ['How are salaries distributed?', 'Export salary distribution', 'distribution'],
+    ['What does each level pay?', 'Export pay by level', 'by-level'],
+    ['Is there a gender pay gap?', 'Export gender pay gap', 'gender-gap'],
+  ])('the card "%s" exports its own table', async (question, label, name) => {
+    const user = userEvent.setup();
+    const saved = catchSaves();
     renderApp('/');
 
-    for (const name of [
-      'Export summary',
-      'Export payroll by country',
-      'Export payroll by department',
-      'Export salary distribution',
-      'Export pay by level',
-      'Export gender pay gap',
-    ]) {
-      expect(await screen.findByRole('button', { name })).toBeInTheDocument();
-    }
+    const card = await screen.findByRole('region', { name: question });
+    await user.click(within(card).getByRole('button', { name: label }));
+    await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
+
+    await waitFor(() => expect(saved).toEqual([`acme-${name}-20261007-0900.csv`]));
   });
 
   it('a failed download says so on the page it was asked from', async () => {

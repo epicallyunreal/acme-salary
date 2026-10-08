@@ -5,12 +5,8 @@ import type { InsightName, InsightParams, ListParams } from './types';
 
 export type ExportFile = 'csv' | 'xlsx' | 'json';
 
-/** The formats every export menu offers (SPEC F6). */
-export const EXPORT_FILES: readonly { file: ExportFile; label: string }[] = [
-  { file: 'csv', label: 'CSV' },
-  { file: 'xlsx', label: 'Excel (.xlsx)' },
-  { file: 'json', label: 'JSON' },
-];
+/** The formats every export offers, in menu order (SPEC F6). */
+export const EXPORT_FILES: readonly ExportFile[] = ['csv', 'xlsx', 'json'];
 
 /** Every employee the directory's filters, search and sort leave, not just the page on screen
  * (SPEC F6). The file is fetched with the bearer token and saved from a blob. */

@@ -3,11 +3,14 @@
 from django.db.models import Q
 from django_filters import ChoiceFilter, DateFilter, FilterSet, NumberFilter, OrderingFilter
 
+from apps.core.exceptions import Invalid
 from apps.core.filters import BoundedSearchFilter, CharInFilter, ChoiceInFilter
 from apps.employees.models import Employee
 from apps.employees.queries import STATUSES, gross_bound, parse_employee_code
 
 STATUS_CHOICES = [(status, status) for status in STATUSES]
+# Each title is one more OR, and SQLite refuses an expression deeper than 1,000 with a 500 (D61).
+MAX_DESIGNATIONS = 20
 
 
 class StableOrderingFilter(OrderingFilter):
@@ -50,6 +53,9 @@ class DirectoryFilterSet(FilterSet):
 
     def filter_designation(self, queryset, name, values):
         """Each title exactly, in any case: `product manager` finds `Product Manager`."""
+        if len(values) > MAX_DESIGNATIONS:
+            message = f"designation accepts at most {MAX_DESIGNATIONS} titles"
+            raise Invalid({"designation": [message]})
         matching = Q()
         for value in values:
             matching |= Q(designation__iexact=value)

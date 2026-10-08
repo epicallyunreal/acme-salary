@@ -43,6 +43,10 @@ INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
 EXPORT_FILES = ("csv", "xlsx", "json")
 
 
+# ru_maxrss is bytes on macOS and kilobytes on Linux.
+RSS_SCALE = 1 if sys.platform == "darwin" else 1024
+
+
 def git_short_sha() -> str:
     try:
         return subprocess.run(
@@ -185,21 +189,24 @@ class Command(BaseCommand):
 
     def time_export(self) -> None:
         """The unfiltered directory in each format: rows, size, wall time and how far it raised
-        the process's peak memory. SPEC F6 asks for all 10,000 rows."""
+        the process's peak memory. SPEC F6 asks for every row, so a short file is an error."""
+        from apps.employees.models import Employee
+
         client = api_client()
-        # ru_maxrss is bytes on macOS and kilobytes on Linux.
-        scale = 1 if sys.platform == "darwin" else 1024
         for file in EXPORT_FILES:
-            peak_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+            peak_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
             started = time.perf_counter()
             response = client.get(f"/api/v1/exports/employees/?file={file}")
             body = b"".join(response.streaming_content) if response.streaming else response.content
             elapsed = time.perf_counter() - started
-            peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+            peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
             if response.status_code != 200:
                 raise CommandError(f"the {file} export answered {response.status_code}")
+            rows = exported_rows(file, body)
+            if rows != Employee.objects.count():
+                raise CommandError(f"the {file} export holds {rows:,} rows, not every employee")
             self.stdout.write(
-                f"export, employees as {file}: {exported_rows(file, body):,} rows, "
+                f"export, employees as {file}: {rows:,} rows, "
                 f"{len(body) / 2**20:.1f} MB in {elapsed:.1f} s, "
                 f"peak memory up {(peak_after - peak_before) / 2**20:.0f} MB"
             )
@@ -212,8 +219,6 @@ class Command(BaseCommand):
         from django.db import transaction
 
         client = api_client()
-        # ru_maxrss is bytes on macOS and kilobytes on Linux.
-        scale = 1 if sys.platform == "darwin" else 1024
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / "import.xlsx"
             call_command(
@@ -224,12 +229,12 @@ class Command(BaseCommand):
                 seed=seed,
                 stdout=io.StringIO(),
             )
-            peak_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+            peak_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
             with transaction.atomic(), path.open("rb") as handle:
                 started = time.perf_counter()
                 response = client.post("/api/v1/imports/", {"file": handle})
                 staging = time.perf_counter() - started
-                peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * scale
+                peak_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
                 if response.status_code != 201:
                     raise CommandError(
                         f"staging answered {response.status_code}: {response.content[:300]}"

@@ -10,6 +10,7 @@ from typing import Any
 
 from django.db.models import QuerySet
 
+from apps.compensation.models import CompensationRecord
 from apps.core import fx
 from apps.employees.models import Employee
 from apps.employees.queries import pick_shown
@@ -60,7 +61,13 @@ def directory_table(
 ) -> Table:
     """SPEC F6's seventeen columns for every employee the directory's filters, search and ordering
     leave, the pages ignored. The amounts are the shown record's: current on `on`, else the latest.
-    The rows are read a chunk at a time as a writer asks for them."""
+    The rows are read a chunk at a time as a writer asks for them.
+
+    Every currency a live record is in must have a rate before the first row is read: a CSV has
+    sent its 200 by the time a row fails, and would end cut off instead of answering 400."""
+    live = CompensationRecord.objects.filter(cancelled_at__isnull=True).order_by()
+    for code in live.values_list("currency_code", flat=True).distinct():
+        rates.rate(code, currency)
 
     def rows() -> Iterator[tuple[Any, ...]]:
         for employee in employees.iterator(chunk_size=CHUNK):
@@ -104,13 +111,12 @@ def withheld(headcount: int, figure: Any, need: int) -> str | None:
     return f"fewer than {need} people" if headcount and figure is None else None
 
 
-def context(payload: dict) -> tuple[str, str]:
+def currency_and_rates(payload: dict) -> tuple[str, str]:
+    """The last two columns of every insight table: the reporting currency and the rate month."""
     return payload["currency"], payload["rate_month"]["label"]
 
 
 SUMMARY_COLUMNS = (
-    ("Currency", "currency"),
-    ("Rates", "rates"),
     ("Headcount", "headcount"),
     ("Total cost", "total_cost"),
     ("Mean gross", "mean_gross"),
@@ -118,12 +124,13 @@ SUMMARY_COLUMNS = (
     ("Countries", "countries"),
     ("Departments", "departments"),
     ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
 )
 
 
 def summary_table(payload: dict) -> Table:
     row = (
-        *context(payload),
         payload["headcount"],
         payload["total_cost"],
         payload["mean_gross"],
@@ -131,6 +138,7 @@ def summary_table(payload: dict) -> Table:
         payload["countries"],
         payload["departments"],
         withheld(payload["headcount"], payload["total_cost"], SMALL_GROUP),
+        *currency_and_rates(payload),
     )
     return table(SUMMARY_COLUMNS, [row])
 
@@ -158,7 +166,7 @@ def by_country_table(payload: dict) -> Table:
             row["median_gross"],
             row["share_pct"],
             withheld(row["headcount"], row["total_cost"], SMALL_GROUP),
-            *context(payload),
+            *currency_and_rates(payload),
         )
         for row in payload["rows"]
     ]
@@ -188,7 +196,7 @@ def by_department_table(payload: dict) -> Table:
             row["mean_gross"],
             row["median_gross"],
             withheld(row["headcount"], row["total_cost"], SMALL_GROUP),
-            *context(payload),
+            *currency_and_rates(payload),
         )
         for row in payload["rows"]
     ]
@@ -213,10 +221,18 @@ def distribution_table(payload: dict) -> Table:
         headcount = payload["headcount"]
         reason = withheld(headcount, payload["bands"], SPREAD_GROUP)
         return table(
-            DISTRIBUTION_COLUMNS, [(None, None, None, headcount, reason, *context(payload))]
+            DISTRIBUTION_COLUMNS,
+            [(None, None, None, headcount, reason, *currency_and_rates(payload))],
         )
     rows = [
-        (band["index"] + 1, band["from"], band["to"], band["count"], None, *context(payload))
+        (
+            band["index"] + 1,
+            band["from"],
+            band["to"],
+            band["count"],
+            None,
+            *currency_and_rates(payload),
+        )
         for band in payload["bands"]
     ]
     return table(DISTRIBUTION_COLUMNS, rows)
@@ -247,7 +263,7 @@ def by_level_table(payload: dict) -> Table:
             row["p75"],
             row["p90"],
             withheld(row["headcount"], row["median"], SPREAD_GROUP),
-            *context(payload),
+            *currency_and_rates(payload),
         )
         for row in payload["rows"]
     ]
@@ -291,7 +307,7 @@ def gender_gap_table(payload: dict) -> Table:
                     median,
                     row["gap_pct"],
                     row["reason"],
-                    *context(payload),
+                    *currency_and_rates(payload),
                 )
             )
     return table(GENDER_GAP_COLUMNS, rows)

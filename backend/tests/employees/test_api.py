@@ -332,6 +332,7 @@ CHOICE = "Select a valid choice. {} is not one of the available choices."
         ({"level": "7"}, CHOICE.format("7")),
         ({"level": "99999999999999999999999"}, CHOICE.format("99999999999999999999999")),
         ({"search": " ".join(["a"] * 11)}, "search accepts at most 10 words"),
+        ({"designation": ",".join(["Engineer"] * 21)}, "designation accepts at most 20 titles"),
     ],
 )
 def test_bad_filter_values_are_400_per_field(api, cast, params, message):
@@ -339,6 +340,13 @@ def test_bad_filter_values_are_400_per_field(api, cast, params, message):
 
     assert response.status_code == 400
     assert response.json() == {next(iter(params)): [message]}
+
+
+def test_twenty_titles_are_one_filter(api, cast):
+    """D61: each title is one more OR, and past a thousand SQLite answers with a 500."""
+    response = api.get(LIST, {"designation": ",".join(["Engineer"] * 20)})
+
+    assert response.status_code == 200
 
 
 def test_gross_range_includes_a_figure_that_rounds_onto_the_bound(api, rates):

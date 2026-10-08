@@ -1,5 +1,6 @@
 """The CSV, XLSX and JSON writers (SPEC F6, DESIGN 1.7), without HTTP."""
 
+import csv
 import io
 import json
 from datetime import UTC, date, datetime
@@ -10,6 +11,8 @@ from openpyxl import load_workbook
 
 from apps.exports import writers
 
+# Spelt by code point, so no invisible character sits in this file.
+REPLACEMENT = chr(0xFFFD)
 HEADER = ("Full name", "Level", "Gross", "Gap %", "Joining date", "Last date")
 ROW = ('=HYPERLINK("http://x")', 3, Decimal("1595000.00"), Decimal("-11.1"), date(2020, 1, 1), None)
 
@@ -30,23 +33,36 @@ def csv_text(header, rows):
     return b"".join(writers.csv_stream(header, rows)).decode()
 
 
-def test_csv_starts_with_a_byte_order_mark_then_the_header():
+def test_csv_starts_with_a_byte_order_mark_then_the_quoted_header():
     text = csv_text(HEADER, [])
 
-    assert text == "﻿Full name,Level,Gross,Gap %,Joining date,Last date\r\n"
+    assert writers.BOM == chr(0xFEFF)
+    assert (
+        text == writers.BOM + '"Full name","Level","Gross","Gap %","Joining date","Last date"\r\n'
+    )
 
 
-def test_csv_escapes_formulas_and_writes_numbers_dates_and_blanks_plainly():
+def test_csv_escapes_formulas_quotes_every_field_and_writes_numbers_and_dates_plainly():
     text = csv_text(HEADER, [ROW])
 
-    assert text.splitlines()[1] == '"\'=HYPERLINK(""http://x"")",3,1595000.00,-11.1,2020-01-01,'
+    assert text.splitlines()[1] == (
+        '"\'=HYPERLINK(""http://x"")","3","1595000.00","-11.1","2020-01-01",""'
+    )
+
+
+def test_csv_quotes_a_semicolon_so_no_cell_can_start_after_it():
+    """Excel set to split on semicolons would read `=1+1` as a cell of its own."""
+    (_, line) = csv_text(("Full name",), [("Ann;=1+1;x",)]).splitlines()
+
+    assert line == '"Ann;=1+1;x"'
 
 
 def test_csv_streams_a_hundred_rows_at_a_time():
     chunks = list(writers.csv_stream(("n",), [(n,) for n in range(250)]))
 
     assert len(chunks) == 4
-    assert b"".join(chunks).decode().splitlines()[1:] == [str(n) for n in range(250)]
+    rows = list(csv.reader(io.StringIO(b"".join(chunks).decode().removeprefix(writers.BOM))))
+    assert rows[1:] == [[str(n)] for n in range(250)]
 
 
 def sheet_of(content: bytes):
@@ -73,11 +89,19 @@ def test_xlsx_keeps_a_formula_as_text_and_numbers_and_dates_typed():
     assert left.value is None
 
 
-def test_xlsx_replaces_a_control_character_it_cannot_hold():
-    """openpyxl refuses a whole workbook over one such character."""
-    (cell,) = sheet_of(writers.xlsx_bytes(("Full name",), [("Asha\x0bRao",)], sheet="employees"))[2]
+@pytest.mark.parametrize("bad", [chr(0x0B), chr(0x01), chr(0xFFFE), chr(0xFFFF)])
+def test_xlsx_replaces_a_character_xml_cannot_hold(bad):
+    """openpyxl refuses a workbook over a control character, and writes U+FFFE and U+FFFF into
+    one that will not open."""
+    (cell,) = sheet_of(writers.xlsx_bytes(("Full name",), [(f"Asha{bad}Rao",)], sheet="x"))[2]
 
-    assert cell.value == "Asha�Rao"
+    assert cell.value == f"Asha{REPLACEMENT}Rao"
+
+
+def test_xlsx_keeps_tabs_and_line_breaks():
+    (cell,) = sheet_of(writers.xlsx_bytes(("Note",), [("a\tb\nc",)], sheet="x"))[2]
+
+    assert cell.value == "a\tb\nc"
 
 
 def test_json_holds_the_stamp_the_filters_and_one_object_per_row():

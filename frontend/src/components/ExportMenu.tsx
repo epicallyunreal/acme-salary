@@ -15,8 +15,12 @@ import { type MouseEvent, useId, useState } from 'react';
 
 import { EXPORT_FILES, type ExportFile } from '../api/exports';
 
+/** What each format is called in the menu. */
+const FORMATS: Record<ExportFile, string> = { csv: 'CSV', xlsx: 'Excel (.xlsx)', json: 'JSON' };
+
 interface ExportMenuProps {
-  /** The menu's accessible name, and the kebab's tooltip: "Export summary". */
+  /** The trigger's accessible name, which also names its menu, and the kebab's tooltip:
+   * "Export summary". */
   label: string;
   /** What a failure names: "Could not export the summary." */
   what: string;
@@ -29,6 +33,7 @@ interface ExportMenuProps {
  * trigger shows a spinner meanwhile and ignores a second click; it keeps its focus throughout. */
 export function ExportMenu({ label, what, variant = 'icon', onExport }: ExportMenuProps) {
   const menuId = useId();
+  const triggerId = useId();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -37,6 +42,8 @@ export function ExportMenu({ label, what, variant = 'icon', onExport }: ExportMe
     if (!busy) setAnchor(event.currentTarget);
   };
   const choose = (file: ExportFile) => {
+    // A second click can land while the menu fades out.
+    if (busy) return;
     setAnchor(null);
     setBusy(true);
     onExport(file)
@@ -44,6 +51,7 @@ export function ExportMenu({ label, what, variant = 'icon', onExport }: ExportMe
       .finally(() => setBusy(false));
   };
   const trigger = {
+    id: triggerId,
     'aria-label': label,
     'aria-haspopup': 'menu' as const,
     'aria-expanded': anchor ? true : undefined,
@@ -79,10 +87,11 @@ export function ExportMenu({ label, what, variant = 'icon', onExport }: ExportMe
         onClose={() => setAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ list: { 'aria-labelledby': triggerId } }}
       >
-        {EXPORT_FILES.map(({ file, label: format }) => (
+        {EXPORT_FILES.map((file) => (
           <MenuItem key={file} onClick={() => choose(file)}>
-            {format}
+            {FORMATS[file]}
           </MenuItem>
         ))}
       </Menu>

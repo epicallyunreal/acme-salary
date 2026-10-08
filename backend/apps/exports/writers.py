@@ -9,6 +9,7 @@ amount stays a number. JSON holds values, not cells, and is written as it is (D6
 import csv
 import io
 import json
+import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
@@ -16,15 +17,17 @@ from itertools import batched
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 
 from apps.core.money import render, to_str
 
 FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
 # Excel reads a CSV as UTF-8 only when it starts with a byte order mark.
-BOM = "﻿"
+BOM = "\ufeff"
 # Rows per chunk of a streamed CSV, as Django's own streaming example batches them.
 BATCH = 100
+# What XML 1.0 cannot hold: the C0 controls but tab, newline and carriage return, and U+FFFE and
+# U+FFFF. openpyxl refuses the first and writes the last two into a file that will not open.
+XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
 
 
 def escape_cell(value: Any) -> Any:
@@ -47,8 +50,9 @@ def _csv_cell(value: Any) -> Any:
 
 def csv_stream(header: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterator[bytes]:
     """The header, then the rows a hundred at a time, so a whole directory never sits in memory.
-    Dates are ISO text and an empty value an empty cell."""
-    writer = csv.writer(_Echo())
+    Dates are ISO text and an empty value an empty cell. Every field is quoted, so text holding
+    a semicolon cannot start a formula in a spreadsheet that splits on semicolons."""
+    writer = csv.writer(_Echo(), quoting=csv.QUOTE_ALL)
     yield (BOM + writer.writerow(header)).encode()
     for batch in batched(rows, BATCH, strict=False):  # the last batch may be short
         yield "".join(
@@ -57,16 +61,17 @@ def csv_stream(header: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterator
 
 
 def _xlsx_cell(value: Any) -> Any:
-    """XML cannot hold most control characters, and openpyxl refuses the whole workbook over one,
-    so each is replaced by U+FFFD, which shows where something was."""
+    """Each character XML cannot hold becomes U+FFFD, which shows where something was."""
     if isinstance(value, str):
-        return ILLEGAL_CHARACTERS_RE.sub("�", escape_cell(value))
+        return XML_ILLEGAL.sub("\ufffd", escape_cell(value))
     return value
 
 
 def xlsx_bytes(header: Sequence[str], rows: Iterable[Sequence[Any]], *, sheet: str) -> bytes:
-    """A one-sheet workbook in openpyxl's write-only mode, which writes each row as it comes.
-    Amounts and levels are numbers and dates are dates."""
+    """A one-sheet workbook in openpyxl's write-only mode, amounts and levels as numbers and dates
+    as dates. The mode spools the sheet to a temporary file it removes on save, so the rows are
+    read first: a row that fails then fails before any file holds pay."""
+    rows = list(rows)
     workbook = Workbook(write_only=True)
     worksheet = workbook.create_sheet(title=sheet)
     worksheet.append(list(header))
