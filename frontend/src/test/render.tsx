@@ -49,9 +49,13 @@ export function renderWithProviders(
 
 /** Renders the real route table in memory, starting at `initialEntry`, the way the app runs.
  * `gate` adds the SessionGate, so the refresh on load runs first. */
-export function renderApp(initialEntry = '/', { gate = false } = {}) {
+export function renderApp(
+  initialEntry = '/',
+  { gate = false, state }: { gate?: boolean; state?: unknown } = {},
+) {
   const client = createTestQueryClient();
-  const router = createMemoryRouter(routes, { initialEntries: [initialEntry] });
+  const entry = state === undefined ? initialEntry : { pathname: initialEntry, state };
+  const router = createMemoryRouter(routes, { initialEntries: [entry] });
   redirectToLoginOnSecond401(router, client);
   const app = <RouterProvider router={router} />;
   const utils = render(

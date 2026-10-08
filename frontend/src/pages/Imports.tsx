@@ -1,5 +1,5 @@
-import { LinearProgress } from '@mui/material';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Alert, LinearProgress } from '@mui/material';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 
 import { useImportList } from '../api/imports';
 import { BatchList } from '../components/imports/BatchList';
@@ -16,10 +16,17 @@ export function Imports() {
   const page = Math.max(1, Math.floor(Number(searchParams.get('page'))) || 1);
   const imports = useImportList(page);
   const navigate = useNavigate();
+  // Arrived from the Demo data page's reset (D72): the state says what to do next.
+  const reset = (useLocation().state as { reset?: unknown } | null)?.reset;
 
   return (
     <>
       <PageHeader title="Imports" actions={<TemplateMenu />} />
+      {reset ? (
+        <Alert severity="success" role="status" sx={{ mb: 4 }}>
+          The database is empty. Import base-15000.xlsx to start.
+        </Alert>
+      ) : null}
       <UploadDropzone onUploaded={(batch) => navigate(`/imports/${batch.id}`)} />
       {imports.isError ? (
         <ErrorState what="the imports" onRetry={() => void imports.refetch()} />

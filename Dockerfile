@@ -17,12 +17,15 @@ ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     PYTHONUNBUFFERED=1 \
     DJANGO_SETTINGS_MODULE=acme_salary.settings.prod \
     SPA_DIR=/app/spa \
+    SAMPLE_DATA_DIR=/app/sample-data \
     PATH=/app/.venv/bin:$PATH
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
 RUN uv sync --frozen --no-dev
 COPY backend/ ./
 COPY --from=web /web/dist /app/spa
+# The Demo data page's committed base file (SPEC F9, D72).
+COPY sample-data/base-15000.xlsx /app/sample-data/
 # Pre-compress the bundle so WhiteNoise serves gzip and brotli variants.
 RUN python -m whitenoise.compress /app/spa
 COPY entrypoint.sh /app/entrypoint.sh

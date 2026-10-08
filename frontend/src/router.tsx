@@ -3,6 +3,7 @@ import { createBrowserRouter, type RouteObject } from 'react-router';
 import { AppShell } from './components/layout/AppShell';
 import { RequireAuth } from './components/layout/RequireAuth';
 import { Dashboard } from './pages/Dashboard';
+import { DemoData } from './pages/DemoData';
 import { EmployeeDetail } from './pages/EmployeeDetail';
 import { Employees } from './pages/Employees';
 import { ImportReview } from './pages/ImportReview';
@@ -26,6 +27,7 @@ export const routes: RouteObject[] = [
           { path: '/employees/:id', element: <EmployeeDetail /> },
           { path: '/imports', element: <Imports /> },
           { path: '/imports/:id', element: <ImportReview /> },
+          { path: '/demo', element: <DemoData /> },
           { path: '*', element: <NotFound /> },
         ],
       },

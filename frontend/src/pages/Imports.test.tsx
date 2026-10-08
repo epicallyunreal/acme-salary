@@ -240,4 +240,12 @@ describe('Imports', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
   });
+
+  it('says the database is empty after a reset from the Demo data page', async () => {
+    renderApp('/imports', { state: { reset: { employees: 15000 } } });
+
+    expect(
+      await screen.findByText('The database is empty. Import base-15000.xlsx to start.'),
+    ).toBeInTheDocument();
+  });
 });

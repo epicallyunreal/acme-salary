@@ -577,6 +577,35 @@ export interface InsightPayloads {
   'cost-mix': CostMixInsight;
 }
 
+// Demo data (SPEC F9, D72)
+
+export interface SampleFile {
+  name: string;
+  file_name: string;
+  description: string;
+  available: boolean;
+}
+
+export interface SampleFiles {
+  employees: number;
+  files: SampleFile[];
+}
+
+/** What a reset deletes, the live counts before and the counts deleted after. */
+export interface ResetCounts {
+  employees: number;
+  compensation_records: number;
+  compensation_lines: number;
+  import_batches: number;
+  import_rows: number;
+  audit_entries: number;
+}
+
+export interface ResetInput {
+  password: string;
+  confirm: string;
+}
+
 export interface ExchangeRates {
   on: string;
   rates: { from_currency: string; to_currency: string; rate: string; effective_from: string }[];

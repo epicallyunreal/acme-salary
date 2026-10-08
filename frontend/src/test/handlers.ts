@@ -3,6 +3,7 @@ import { http, HttpResponse } from 'msw/http';
 import { auditPage, employeeDetails, histories } from './fixtures/detail';
 import { employeePage } from './fixtures/employees';
 import { batches, batchPage, reviewBatch, reviewRows, rowsPage } from './fixtures/imports';
+import { resetCounts, sampleFiles } from './fixtures/demo';
 import { exchangeRates, insightFor } from './fixtures/insights';
 import { componentsFor, countries, departments } from './fixtures/meta';
 
@@ -226,6 +227,28 @@ export const exportHandlers = [
   ),
 ];
 
+export const demoHandlers = [
+  http.get('/api/v1/admin/sample-files/', ({ request }) => authenticated(request, sampleFiles)),
+  http.get('/api/v1/admin/sample-files/:name/', ({ request, params }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const file = sampleFiles.files.find((candidate) => candidate.name === params.name);
+    if (!file) return notFound('sample file');
+    return new HttpResponse(new Blob(['xlsx']), {
+      headers: { 'Content-Disposition': `attachment; filename="${file.file_name}"` },
+    });
+  }),
+  http.get('/api/v1/admin/reset-demo/', ({ request }) => authenticated(request, resetCounts)),
+  http.post('/api/v1/admin/reset-demo/', async ({ request }) => {
+    if (!hasAccessToken(request)) return unauthorized();
+    const body = (await request.json()) as { password?: string; confirm?: string };
+    const errors: Record<string, string[]> = {};
+    if (body.password !== HR_PASSWORD) errors.password = ['password did not match'];
+    if (body.confirm !== 'RESET') errors.confirm = ['type RESET to confirm'];
+    if (Object.keys(errors).length) return HttpResponse.json(errors, { status: 403 });
+    return HttpResponse.json(resetCounts);
+  }),
+];
+
 export const handlers = [
   http.get('/healthz', () => HttpResponse.json({ status: 'ok' })),
   ...authHandlers,
@@ -234,4 +257,5 @@ export const handlers = [
   ...importHandlers,
   ...insightHandlers,
   ...exportHandlers,
+  ...demoHandlers,
 ];

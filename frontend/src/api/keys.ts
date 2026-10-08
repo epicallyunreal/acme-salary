@@ -32,6 +32,10 @@ export const keys = {
     one: (name: InsightName, params: InsightParams, control: InsightControl = {}) =>
       ['insights', name, params, control] as const,
   },
+  demo: {
+    files: ['demo', 'files'] as const,
+    counts: ['demo', 'counts'] as const,
+  },
   imports: {
     all: ['imports'] as const,
     lists: ['imports', 'list'] as const,
