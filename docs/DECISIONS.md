@@ -584,6 +584,14 @@ Decision: From and To apply on Enter, on leaving the field, or 600 ms after the 
 
 Consequences: each is a few lines in `PeriodControl.tsx`, `useDashboardFilters.ts`, `KpiRow.tsx`, `RateMonthLabel.tsx`, `TrendCard.tsx` or `Dashboard.tsx`, and the step 9 close report lists them for the owner to confirm or change.
 
+## D67. The numbered pages' details, defaults taken while the owner was away
+
+Context: as for D66, the owner was offline on 8 October, and DESIGN section 6 fixed the pager's shape but left these details open.
+
+Decision: Go to page empties once it has jumped, and a number past either end goes to the first or the last page. It is hidden below 600 px wide, where MUI X already hides Rows per page, so a phone's footer keeps to the page numbers. The page buttons keep MUI's own names, `Go to page 4`, and `page 5` for the current one, and at either end MUI shows more neighbours so the pager keeps its width. The import review now passes the grid one empty sort model for every render, since a new one read as a sort change and sent the grid back to page 1 after every page change.
+
+Consequences: a few lines in `PageNumbers.tsx` and `ImportReview.tsx`, listed in the step 9 close report for the owner to confirm or change.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

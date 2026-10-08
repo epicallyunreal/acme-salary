@@ -10,6 +10,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
+import type { GridSortModel } from '@mui/x-data-grid';
 import { Link, useParams, useSearchParams } from 'react-router';
 
 import { ApiError } from '../api/client';
@@ -28,6 +29,10 @@ import { PageHeader } from '../components/layout/PageHeader';
 import { StatusChip } from '../components/layout/StatusChip';
 import { DEFAULT_PAGE_SIZE, PAGE_SIZES } from '../lib/constants';
 import { formatDate, formatDateTime } from '../lib/dates';
+
+// The review keeps the sheet's order. One empty sort model serves every render, since a new one
+// reads to the grid as a sort change, which takes it back to its first page.
+const NO_SORT: GridSortModel = [];
 
 const STATUSES = [
   ['', 'All'],
@@ -272,7 +277,7 @@ function ReviewPage({ batchId }: { batchId: number }) {
           onPaginationModelChange={(model) =>
             view.set({ page: model.page + 1, pageSize: model.pageSize })
           }
-          sortModel={[]}
+          sortModel={NO_SORT}
           onSortModelChange={() => undefined}
           getRowHeight={() => 'auto'}
           emptyMessage={

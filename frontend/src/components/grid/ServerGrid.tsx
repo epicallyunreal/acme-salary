@@ -16,6 +16,7 @@ import {
 
 import { PAGE_SIZES } from '../../lib/constants';
 import { EmptyState } from '../layout/EmptyState';
+import { PageNumbers } from './PageNumbers';
 
 declare module '@mui/x-data-grid' {
   interface NoRowsOverlayPropsOverrides {
@@ -85,7 +86,7 @@ function togglable(columns: GridColDef[]): string[] {
 /**
  * A DataGrid with everything server-side (DESIGN section 6): the page, sort and filters live in
  * the URL, the grid only reports what the user did. The grid's own filter panel is off, the
- * FilterBar is the one place to filter.
+ * FilterBar is the one place to filter. The pager numbers its pages (D64).
  */
 export function ServerGrid<Row extends GridValidRowModel>({
   rows,
@@ -125,6 +126,7 @@ export function ServerGrid<Row extends GridValidRowModel>({
       slotProps={{
         noRowsOverlay: { message: emptyMessage },
         columnsManagement: { getTogglableColumns: togglable },
+        basePagination: { material: { ActionsComponent: PageNumbers } },
       }}
       disableVirtualization={inTests}
       getRowHeight={getRowHeight}

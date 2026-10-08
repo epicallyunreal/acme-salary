@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import type { ImportBatch } from '../api/types';
+import type { ImportBatch, ImportRow } from '../api/types';
 import { setSession } from '../lib/auth';
 import { reviewBatch, reviewRows, rowsPage } from '../test/fixtures/imports';
 import { renderApp } from '../test/render';
@@ -11,6 +11,19 @@ import { server } from '../test/setup';
 
 /** The review batch with its error row skipped: nothing stands in the way of approve. */
 const READY: ImportBatch = { ...reviewBatch, error_rows: 0, skipped_rows: 2 };
+
+/** 250 rows, ten pages of 25, each a copy of a review row under a name of its own. */
+const MANY_ROWS: ImportRow[] = Array.from({ length: 250 }, (_, index) => {
+  const source = reviewRows[index % reviewRows.length];
+  const name = `Person ${index + 1}`;
+  return {
+    ...source,
+    id: 1000 + index,
+    row_number: index + 2,
+    full_name: name,
+    raw: { ...source.raw, full_name: name },
+  };
+});
 
 function rowOf(text: string): HTMLElement {
   const row = screen.getByText(text).closest('[role="row"]');
@@ -57,6 +70,43 @@ describe('ImportReview', () => {
     expect(
       within(rowOf('No Code')).getByRole('button', { name: 'Unskip row 5' }),
     ).toBeInTheDocument();
+  });
+
+  it('numbers its pages and jumps to the one typed, or the nearest there is, in the URL', async () => {
+    const user = userEvent.setup();
+    const asked: (string | null)[] = [];
+    server.use(
+      http.get('/api/v1/imports/3/rows/', ({ request }) => {
+        const url = new URL(request.url);
+        asked.push(url.searchParams.get('page'));
+        return HttpResponse.json(rowsPage(url, MANY_ROWS));
+      }),
+    );
+    const { router } = renderApp('/imports/3?page=4');
+    await screen.findByText('Person 76');
+
+    const pager = screen.getByRole('navigation', { name: 'pagination navigation' });
+    expect(
+      within(pager)
+        .getAllByRole('button')
+        .map((button) => button.getAttribute('aria-label')),
+    ).toEqual([
+      'Go to previous page',
+      'Go to page 1',
+      'Go to page 2',
+      'Go to page 3',
+      'page 4',
+      'Go to page 5',
+      'Go to page 10',
+      'Go to next page',
+    ]);
+    expect(within(pager).getByText('…')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Go to page'), '12{Enter}');
+
+    await screen.findByText('Person 226');
+    expect(router.state.location.search).toBe('?page=10');
+    expect(asked).toEqual(['4', '10']);
   });
 
   it('filters the rows by status through the API and keeps the filter in the URL', async () => {

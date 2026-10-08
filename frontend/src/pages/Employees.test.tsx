@@ -25,6 +25,23 @@ function sixtyRows(params: URLSearchParams) {
   };
 }
 
+/** 10,000 employees, as many pages as the page size makes, each row a copy of the fixture. */
+function tenThousandRows(params: URLSearchParams) {
+  const page = Number(params.get('page') ?? '1');
+  const pageSize = Number(params.get('page_size') ?? '25');
+  const first = (page - 1) * pageSize;
+  return {
+    count: 10000,
+    next: first + pageSize < 10000 ? 'next' : null,
+    previous: page > 1 ? 'prev' : null,
+    results: Array.from({ length: Math.min(pageSize, 10000 - first) }, (_, index) => ({
+      ...employees[index % employees.length],
+      id: first + index + 1,
+      employee_code: `ACME-${first + index + 1}`,
+    })),
+  };
+}
+
 /** Replaces the directory handler with one that records every query string it receives. */
 function recordRequests({ rows = 4 } = {}) {
   const seen: URLSearchParams[] = [];
@@ -32,10 +49,19 @@ function recordRequests({ rows = 4 } = {}) {
     http.get('/api/v1/employees/', ({ request }) => {
       const params = new URL(request.url).searchParams;
       seen.push(params);
+      if (rows === 10000) return HttpResponse.json(tenThousandRows(params));
       return HttpResponse.json(rows === 60 ? sixtyRows(params) : employeePage);
     }),
   );
   return seen;
+}
+
+/** The labels of the pager's buttons, in order. */
+function pageButtons(): (string | null)[] {
+  const pager = screen.getByRole('navigation', { name: 'pagination navigation' });
+  return within(pager)
+    .getAllByRole('button')
+    .map((button) => button.getAttribute('aria-label'));
 }
 
 /** A column header by its title. A sortable one's name ends with its sort button's label. */
@@ -158,6 +184,80 @@ describe('Employees', () => {
       page: '3',
       country: 'IN',
     });
+  });
+
+  it('numbers the pages: the first, the last, and the current one with its neighbours', async () => {
+    recordRequests({ rows: 10000 });
+    const user = userEvent.setup();
+    const { router } = renderApp('/employees?page=5');
+
+    await screen.findByText('ACME-101');
+    expect(screen.getByText('101–125 of 10,000')).toBeInTheDocument();
+    expect(pageButtons()).toEqual([
+      'Go to previous page',
+      'Go to page 1',
+      'Go to page 4',
+      'page 5',
+      'Go to page 6',
+      'Go to page 400',
+      'Go to next page',
+    ]);
+    expect(screen.getByRole('button', { name: 'page 5' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getAllByText('…')).toHaveLength(2);
+
+    await user.click(screen.getByRole('button', { name: 'Go to page 400' }));
+
+    await screen.findByText('ACME-9976');
+    expect(router.state.location.search).toBe('?page=400');
+    // At either end the pager shows more neighbours, so it keeps its width.
+    expect(pageButtons()).toEqual([
+      'Go to previous page',
+      'Go to page 1',
+      'Go to page 396',
+      'Go to page 397',
+      'Go to page 398',
+      'Go to page 399',
+      'page 400',
+      'Go to next page',
+    ]);
+    expect(screen.getByRole('button', { name: 'Go to next page' })).toBeDisabled();
+  });
+
+  it('jumps to the page typed on Enter, or the nearest there is', async () => {
+    const seen = recordRequests({ rows: 10000 });
+    const user = userEvent.setup();
+    const { router } = renderApp('/employees');
+    await screen.findByText('ACME-1');
+
+    await user.type(screen.getByLabelText('Go to page'), '37{Enter}');
+
+    await screen.findByText('ACME-901');
+    expect(router.state.location.search).toBe('?page=37');
+    expect(seen.at(-1)?.get('page')).toBe('37');
+    expect(screen.getByLabelText('Go to page')).toHaveValue(null);
+
+    await user.type(screen.getByLabelText('Go to page'), '999{Enter}');
+
+    await screen.findByText('ACME-9976');
+    expect(router.state.location.search).toBe('?page=400');
+
+    await user.type(screen.getByLabelText('Go to page'), '0{Enter}');
+
+    await screen.findByText('ACME-1');
+    expect(router.state.location.search).toBe('');
+  });
+
+  it('numbers the pages for the rows per page the URL holds', async () => {
+    // jsdom applies no media query, so MUI X keeps its Rows per page select hidden here, as on a
+    // phone. The size it sets is read from the URL like the page.
+    const seen = recordRequests({ rows: 10000 });
+    renderApp('/employees?page_size=100&page=2');
+
+    await screen.findByText('ACME-101');
+    expect([seen[0].get('page'), seen[0].get('page_size')]).toEqual(['2', '100']);
+    expect(screen.getByText('101–200 of 10,000')).toBeInTheDocument();
+    expect(pageButtons()).toContain('Go to page 100');
+    expect(pageButtons()).not.toContain('Go to page 400');
   });
 
   it('sends the URL state to the API and a filter change goes back to page 1', async () => {
