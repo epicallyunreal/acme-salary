@@ -177,22 +177,35 @@ class Career:
         return max([1, *(level for level, point in self.points.items() if experience >= point)])
 
 
-def draw_career(rng: random.Random, level: int, last_date: date | None) -> Career:
+def draw_career(
+    rng: random.Random,
+    level: int,
+    last_date: date | None,
+    *,
+    joined_after: date | None = None,
+    end: date | None = None,
+) -> Career:
     """Experience at the last review, then a joining date that fits it, then the promotion
-    points either side of it, so the level path ends at `level` (D64).
+    points either side of it, so the level path ends at `level` (D64). `joined_after` bounds
+    the joining date below, for a new hire of the last months (D72), and `end` is the last day
+    the career is drawn to, the reference date unless given.
 
     The last review is the latest 1 April on or before the end (the reference date, or the last
     day), unless they joined after it, or in the six months before it, when it is the joining
     date (D70). Years at ACME never exceed total experience, and a leaver stays at least 30 days.
     """
-    end = last_date or profiles.REFERENCE_DATE
+    end = last_date or end or profiles.REFERENCE_DATE
     april = last_april(end)
     low, high = experience_range(level)
     if last_date is not None:
         low = max(low, profiles.MIN_TENURE_DAYS - (end - april).days)
     experience = low + rng.randrange(high - low + 1)
     earliest = max(profiles.HISTORY_START, april - timedelta(days=experience))
+    if joined_after is not None:
+        earliest = max(earliest, joined_after)
     latest = end - timedelta(days=profiles.MIN_TENURE_DAYS) if last_date else end
+    if earliest > latest:
+        raise ValueError(f"nobody can join after {joined_after} and be on staff by {end}")
     joining_date = earliest + timedelta(days=rng.randrange((latest - earliest).days + 1))
     schedule = reviews(joining_date, end)
     review = schedule[-1]
@@ -265,7 +278,14 @@ class People:
                 faker.seed_instance(seed)
                 self.fakers[spec.faker_locale] = faker
 
-    def person(self, last_date: date | None, level_weights: list[float]) -> BulkEntry:
+    def person(
+        self,
+        last_date: date | None,
+        level_weights: list[float],
+        *,
+        joined_after: date | None = None,
+        end: date | None = None,
+    ) -> BulkEntry:
         rng = self.rng
         number = self.number
         self.number += 1
@@ -283,7 +303,7 @@ class People:
         email = f"{ascii_slug(first)}.{ascii_slug(last)}.{number}@{profiles.EMAIL_DOMAIN}"
 
         level = rng.choices(profiles.LEVELS, level_weights)[0]
-        career = draw_career(rng, level, last_date)
+        career = draw_career(rng, level, last_date, joined_after=joined_after, end=end)
         noise = dec(rng.lognormvariate(0, profiles.NOISE_SIGMA))
         bonus_share = Decimal("0")
         if rng.random() < country.bonus_probability:
@@ -294,7 +314,7 @@ class People:
         }
 
         # One record at joining and one at every review since, every one kept (D64, D70).
-        end = last_date or profiles.REFERENCE_DATE
+        end = last_date or end or profiles.REFERENCE_DATE
         review_days = reviews(career.joining_date, end)
         levels = [career.level_on(day) for day in review_days]
         if levels[-1] != level:
@@ -407,12 +427,22 @@ def leavers(allocation: list[tuple[date, int]], seed: int, start_number: int) ->
 
 
 def generate(
-    active: int, seed: int, *, exited: int = 0, start_number: int = 1
+    active: int,
+    seed: int,
+    *,
+    exited: int = 0,
+    start_number: int = 1,
+    joined_after: date | None = None,
+    end: date | None = None,
 ) -> Iterator[BulkEntry]:
     """`active` people on staff on the reference date, then `exited` who left before it, each
-    month's leavers in proportion to the headcount then, none in their first 30 days (D64)."""
+    month's leavers in proportion to the headcount then, none in their first 30 days (D64).
+    `joined_after` and `end` bound those who stay, for a file of new hires (D72)."""
     people = People(seed, start_number)
-    staying = [people.person(None, LEVEL_WEIGHTS) for _ in range(active)]
+    staying = [
+        people.person(None, LEVEL_WEIGHTS, joined_after=joined_after, end=end)
+        for _ in range(active)
+    ]
     yield from staying
     if not exited:
         return

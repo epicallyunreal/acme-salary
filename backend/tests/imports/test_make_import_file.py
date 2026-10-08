@@ -2,8 +2,8 @@
 
 import csv
 import re
-from datetime import date, datetime
-from decimal import ROUND_HALF_UP, Decimal
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from io import StringIO
 
 import pytest
@@ -13,10 +13,17 @@ from openpyxl import load_workbook
 
 from apps.compensation import services as compensation
 from apps.compensation.services import RecordInput, bulk_apply
-from apps.compensation.validators import IDENTITY_COLUMNS
+from apps.compensation.validators import IDENTITY_COLUMNS, template_columns
 from apps.employees import services as employees
 from apps.employees.models import Employee
-from apps.imports.management.commands.make_import_file import new_rows
+from apps.imports.applier import approve
+from apps.imports.management.commands.make_import_file import (
+    base_rows,
+    new_rows,
+    profile_codes,
+    write_file,
+)
+from apps.imports.parser import XLSX_TYPE
 from apps.imports.services import stage_upload
 from seed import profiles
 from seed.generator import generate, ordered_entries
@@ -56,10 +63,30 @@ def run(path, **options) -> str:
     return out.getvalue()
 
 
-def current_base(employee: Employee) -> Decimal:
+def current_pay(employee: Employee) -> tuple[Decimal, dict[str, Decimal]]:
     on = profiles.REFERENCE_DATE
     record = compensation.current_record(employee, on) or compensation.latest_record(employee)
-    return record.lines.get(component__code="BASE").annual_amount
+    lines = {
+        line.component.code: line.annual_amount for line in record.lines.select_related("component")
+    }
+    return record.bonus_annual, lines
+
+
+def current_base(employee: Employee) -> Decimal:
+    return current_pay(employee)[1]["BASE"]
+
+
+def by_code(row: dict) -> Employee:
+    return Employee.objects.get(legacy_code=row["legacy_code"])
+
+
+def factor_of(row: dict, lines: dict[str, Decimal]) -> Decimal:
+    """The raise a row carries, read from BASE, with every other component scaled the same way
+    up to rounding to whole units."""
+    factor = Decimal(row["BASE"]) / lines["BASE"]
+    for code, amount in lines.items():
+        assert abs(Decimal(row[code]) - amount * factor) <= 1, code
+    return factor
 
 
 def taken_codes() -> set[str]:
@@ -93,13 +120,14 @@ def test_all_writes_every_employee_with_raises_errors_and_new_rows(thirty, tmp_p
     # Existing rows run in id order and carry each employee's own legacy_code.
     employees = list(Employee.objects.order_by("pk"))
     assert [row["legacy_code"] for row in rows[3:30]] == [e.legacy_code for e in employees[3:30]]
-    raised = (current_base(employees[3]) * Decimal("1.05")).quantize(1, rounding=ROUND_HALF_UP)
-    assert rows[3]["BASE"] == raised
-    # Seed 42 is fixed, so the raised row is known by name too.
+    # A raise is 3 to 8% drawn from the seed, rounded to whole units (D72).
+    factor = Decimal(rows[3]["BASE"]) / current_base(employees[3])
+    assert Decimal("1.03") <= factor <= Decimal("1.0801")
+    # Seed 42 is fixed, so the raised row is known by name and amount too.
     assert (rows[3]["legacy_code"], rows[3]["full_name"], rows[3]["BASE"]) == (
         "HR-90977",
         "Charan Chahal",
-        1586025,
+        1605208,
     )
     # New joiners get fresh HR- codes that no employee holds.
     fresh = [row["legacy_code"] for row in rows[30:]]
@@ -257,3 +285,177 @@ def test_the_whole_organisation_leavers_included_stages_with_no_errors(db, tmp_p
 def test_the_output_extension_must_be_xlsx_or_csv(thirty, tmp_path):
     with pytest.raises(CommandError, match="must end in .xlsx or .csv"):
         run(tmp_path / "import.txt", all=True)
+
+
+# The Demo data page's files (D72)
+
+
+def test_raises_are_3_to_8_percent_with_every_component_scaled_and_dated_effective(
+    thirty, tmp_path
+):
+    path = tmp_path / "raises.xlsx"
+
+    run(path, raises=5, effective=date(2027, 4, 1))
+
+    _, rows = rows_of_xlsx(path)
+    factors = set()
+    for row in rows:
+        bonus, lines = current_pay(by_code(row))
+        factor = factor_of(row, lines)
+        assert Decimal("1.03") - 1 / lines["BASE"] <= factor <= Decimal("1.08") + 1 / lines["BASE"]
+        assert (row["effective_from"], row["bonus_annual"]) == (datetime(2027, 4, 1), bonus)
+        factors.add(factor)
+    assert len(rows) == 5 and len(factors) > 1
+
+
+def test_bonus_rows_add_5_to_15_percent_of_base_to_the_bonus_and_nothing_else(thirty, tmp_path):
+    path = tmp_path / "bonus.xlsx"
+
+    run(path, bonus=5, effective=date(2026, 10, 7))
+
+    _, rows = rows_of_xlsx(path)
+    assert len(rows) == 5
+    for row in rows:
+        bonus, lines = current_pay(by_code(row))
+        added = Decimal(row["bonus_annual"]) - bonus
+        assert lines["BASE"] * Decimal("0.05") - 1 <= added <= lines["BASE"] * Decimal("0.15") + 1
+        assert {code: Decimal(row[code]) for code in lines} == lines
+        assert row["effective_from"] == datetime(2026, 10, 7)
+
+
+def test_promotions_move_one_level_with_the_designation_and_12_to_20_percent(thirty, tmp_path):
+    """Identity and amounts in one row, and nobody at L6, who has nowhere to go (D72)."""
+    path = tmp_path / "promotions.xlsx"
+    specs = {spec.code: spec for spec in profiles.DEPARTMENTS}
+
+    run(path, promotions=5, effective=date(2026, 10, 7))
+
+    _, rows = rows_of_xlsx(path)
+    assert len(rows) == 5
+    for row in rows:
+        employee = by_code(row)
+        _, lines = current_pay(employee)
+        factor = factor_of(row, lines)
+        assert employee.level < 6 and row["level"] == employee.level + 1
+        assert row["designation"] == profiles.designation(
+            specs[employee.department.code], row["level"]
+        )
+        assert Decimal("1.12") - 1 / lines["BASE"] <= factor <= Decimal("1.20") + 1 / lines["BASE"]
+        assert row["effective_from"] == datetime(2026, 10, 7)
+    Employee.objects.update(level=6)
+    run(path, promotions=5, effective=date(2026, 10, 7))
+    assert rows_of_xlsx(path)[1] == []
+
+
+def test_exits_set_the_last_date_on_the_day_and_change_nothing_else(thirty, tmp_path):
+    path = tmp_path / "exits.xlsx"
+
+    run(path, exits=3, effective=date(2026, 10, 7))
+
+    _, rows = rows_of_xlsx(path)
+    assert len(rows) == 3
+    for row in rows:
+        employee = by_code(row)
+        bonus, lines = current_pay(employee)
+        assert employee.last_date is None and row["last_date"] == datetime(2026, 10, 7)
+        assert row["effective_from"] is None and row["bonus_annual"] == bonus
+        assert {code: Decimal(row[code]) for code in lines} == lines
+
+
+def test_a_share_keeps_to_its_ids_and_passes_over_anyone_revised_on_or_after_the_date(
+    thirty, tmp_path
+):
+    """D72: employee id modulo 5 is the share, and a file regenerated after its import moves on
+    to the next people instead of erroring on those just revised."""
+    share = [e for e in Employee.objects.order_by("pk") if e.pk % 5 == 2]
+    bonus, lines = current_pay(share[0])
+    doubled = {code: amount * 2 for code, amount in lines.items()}
+    compensation.revise(share[0], RecordInput(date(2027, 4, 1), bonus, "", doubled))
+    path = tmp_path / "share.xlsx"
+
+    run(path, raises=10, share=2, effective=date(2027, 4, 1))
+
+    _, rows = rows_of_xlsx(path)
+    picked = [by_code(row).pk for row in rows]
+    assert picked == [e.pk for e in share[1:]]
+    assert len(picked) == 5
+
+
+def test_new_hires_join_within_the_window_and_today_ends_their_careers(thirty, tmp_path):
+    """Today is 7 October 2026, so a hire of the last three months joined from 7 July (D72)."""
+    path = tmp_path / "newhires.xlsx"
+
+    run(path, new=5, joined_after=date(2026, 7, 7))
+
+    _, rows = rows_of_xlsx(path)
+    assert len(rows) == 5
+    for row in rows:
+        assert datetime(2026, 7, 7) <= row["joining_date"] <= datetime(2026, 10, 7)
+        assert row["effective_from"] is None and row["last_date"] is None
+        assert re.fullmatch(r"HR-\d{5}", row["legacy_code"])
+        assert row["legacy_code"] not in taken_codes()
+
+
+def test_the_same_database_seed_and_options_give_the_same_file(thirty, tmp_path):
+    first, again = tmp_path / "a.xlsx", tmp_path / "b.xlsx"
+    options = dict(raises=3, bonus=3, promotions=3, exits=3, new=3, effective=date(2026, 10, 7))
+
+    run(first, **options)
+    run(again, **options)
+
+    assert rows_of_xlsx(first) == rows_of_xlsx(again)
+    assert len(rows_of_xlsx(first)[1]) == 15
+
+
+def test_base_rows_are_the_seed_in_joining_order_and_build_an_empty_database(db, tmp_path):
+    """D72 at small scale: each row the seed's own code, current or last pay and effective_from
+    at joining. Into an empty database every row creates, the leavers exited; staged again, every
+    row is a no-op."""
+    ensure_lookups()
+    rows = base_rows(20, 10, 42)
+    entries = ordered_entries(20, 42, exited=10)
+    for row, entry in zip(rows, entries, strict=True):
+        assert row["legacy_code"] == entry.identity["legacy_code"]
+        assert row["effective_from"] == row["joining_date"] == entry.identity["joining_date"]
+        assert row["last_date"] == entry.identity["last_date"]
+        assert {code: row[code] for code in entry.records[-1].lines} == entry.records[-1].lines
+    assert sum(row["last_date"] is not None for row in rows) == 10
+    path = tmp_path / "base.xlsx"
+    write_file(path, template_columns(profile_codes()), rows)
+
+    batch = stage_upload(
+        SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
+    )
+    assert (batch.total_rows, batch.error_rows, batch.created_rows) == (30, 0, 0)
+    approve(batch, actor=None)
+    again = stage_upload(
+        SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
+    )
+
+    assert Employee.objects.count() == 30
+    assert Employee.objects.exclude(last_date=None).count() == 10
+    for employee in Employee.objects.all():
+        (record,) = employee.compensation_records.all()
+        assert record.effective_from == employee.joining_date
+        if employee.last_date is not None:
+            assert record.effective_to == employee.last_date + timedelta(days=1)
+    assert (again.total_rows, again.noop_rows, again.error_rows) == (30, 30, 0)
+
+
+def test_a_generated_file_imported_twice_is_a_no_op_scheduled_raises_included(thirty, tmp_path):
+    """D72: the second import of a bonus file repeats the current record, and of a raises file
+    dated 1 April next repeats the scheduled revision the first made."""
+    bonus, raises = tmp_path / "bonus.xlsx", tmp_path / "raises.xlsx"
+    run(bonus, bonus=4, share=0, effective=date(2026, 10, 7))
+    run(raises, raises=4, share=1, effective=date(2027, 4, 1))
+
+    for path in (bonus, raises):
+        first = stage_upload(
+            SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
+        )
+        assert (first.total_rows, first.error_rows, first.noop_rows) == (4, 0, 0)
+        approve(first, actor=None)
+        again = stage_upload(
+            SimpleUploadedFile(path.name, path.read_bytes(), content_type=XLSX_TYPE), actor=None
+        )
+        assert (again.total_rows, again.noop_rows) == (4, 4)
