@@ -40,9 +40,14 @@ export function useUrlFilters() {
     [setSearchParams],
   );
 
+  // Clear filters clears the filters and the search alone: the sort and the page size stay, and
+  // the page goes back to the first (D63).
   const reset = useCallback(() => {
-    setSearchParams(toSearchParams({ ...DEFAULT_STATE, page_size: state.page_size }));
-  }, [setSearchParams, state.page_size]);
+    setSearchParams((current) => {
+      const { ordering, page_size } = fromSearchParams(current);
+      return toSearchParams({ ...DEFAULT_STATE, ordering, page_size });
+    });
+  }, [setSearchParams]);
 
   return { state, set, reset };
 }

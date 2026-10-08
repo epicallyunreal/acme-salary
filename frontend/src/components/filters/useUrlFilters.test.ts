@@ -53,13 +53,19 @@ describe('useUrlFilters', () => {
     expect(result.current.state.ordering).toBe('-gross');
   });
 
-  it('resets every filter but keeps the page size', () => {
+  it('resets the filters and the search, keeps the sort and the page size, and goes to page 1', () => {
     const { result } = renderHook(() => useUrlFilters(), {
-      wrapper: wrapperAt('/employees?country=IN&search=rao&page_size=100&page=2'),
+      wrapper: wrapperAt(
+        '/employees?country=IN&search=rao&currency=eur&page_size=100&page=2&ordering=-gross',
+      ),
     });
 
     act(() => result.current.reset());
 
-    expect(result.current.state).toEqual({ ...DEFAULT_STATE, page_size: 100 });
+    expect(result.current.state).toEqual({
+      ...DEFAULT_STATE,
+      page_size: 100,
+      ordering: '-gross',
+    });
   });
 });

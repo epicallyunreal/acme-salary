@@ -298,6 +298,20 @@ describe('Employees', () => {
     expect(router.state.location.search).toBe('?ordering=-employee_code');
   });
 
+  it('clears the filters and the search but keeps the sort and the page size', async () => {
+    recordRequests({ rows: 60 });
+    const { router } = renderApp(
+      '/employees?country=IN&search=rao&ordering=-gross&page_size=50&page=2',
+    );
+    const user = userEvent.setup();
+    await screen.findByText('ACME-51');
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(router.state.location.search).toBe('?page_size=50&ordering=-gross'));
+    expect(screen.getByLabelText('Search')).toHaveValue('');
+  });
+
   it('opens nothing from a click on the rest of the row', async () => {
     const { router } = renderApp('/employees');
     const user = userEvent.setup();
