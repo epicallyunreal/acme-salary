@@ -204,7 +204,8 @@ export const insightHandlers = [
   http.get('/api/v1/insights/:name/', ({ request, params }) => {
     if (!hasAccessToken(request)) return unauthorized();
     const exited = new URL(request.url).searchParams.get('include_exited') === 'true';
-    const payload = insightFor(String(params.name), exited);
+    const view = new URL(request.url).searchParams.get('view');
+    const payload = insightFor(String(params.name), exited, view);
     return payload ? HttpResponse.json(payload) : notFound('insight');
   }),
 ];

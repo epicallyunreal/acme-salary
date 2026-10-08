@@ -157,9 +157,25 @@ def test_trend_names_the_measure_its_card_draws(api, people, given, measure):
             {"view": "net"},
             {"view": ["view must be cost or take_home, got net"]},
         ),
+        (
+            "gender-gap",
+            {"view": "pie"},
+            {"view": ["view must be pay_gap, bonus, quartiles or by_level, got pie"]},
+        ),
     ],
 )
 def test_a_control_value_outside_its_list_is_a_400(api, people, name, params, errors):
     response = api.get(URL.format(name), params)
 
     assert (response.status_code, response.json()) == (400, errors)
+
+
+@pytest.mark.parametrize("view", ["pay_gap", "bonus", "quartiles", "by_level"])
+def test_each_gender_view_runs_a_fixed_number_of_queries(
+    api, people, django_assert_num_queries, view
+):
+    """The user, the countries, the departments, the rates and one list of values (D62)."""
+    with django_assert_num_queries(5):
+        response = api.get(URL.format("gender-gap"), {"view": view})
+
+    assert (response.status_code, response.json()["view"]) == (200, view)

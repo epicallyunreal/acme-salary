@@ -49,6 +49,14 @@ INSIGHT_NAMES = (
     "cost-mix",
 )
 INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
+# A card control that changes what an insight computes is timed as well (D62).
+INSIGHT_CONTROLS = (
+    ("by-tenure", "level=3"),
+    ("cost-mix", "view=take_home"),
+    ("gender-gap", "view=bonus"),
+    ("gender-gap", "view=quartiles"),
+    ("gender-gap", "view=by_level"),
+)
 
 # The unfiltered directory is exported once in each format (SPEC F6).
 EXPORT_FILES = ("csv", "xlsx", "json")
@@ -186,13 +194,15 @@ class Command(BaseCommand):
         """p50 / p95 of the slowest insight and filter; every one is printed."""
         client = api_client()
         worst = (0.0, 0.0)
-        for name in INSIGHT_NAMES:
+        cases = [(name, "") for name in INSIGHT_NAMES] + list(INSIGHT_CONTROLS)
+        for name, control in cases:
             for label, query in INSIGHT_FILTERS.items():
-                samples = time_requests(client, f"/api/v1/insights/{name}/?{query}", repeats)
+                path = f"/api/v1/insights/{name}/?{'&'.join(q for q in (query, control) if q)}"
+                samples = time_requests(client, path, repeats)
                 p50, p95 = percentile(samples, 0.5), percentile(samples, 0.95)
                 self.stdout.write(
-                    f"insight {name}, {label}: p50 {p50:.0f} ms, p95 {p95:.0f} ms "
-                    f"({repeats} requests)"
+                    f"insight {name}{f' {control}' if control else ''}, {label}: p50 {p50:.0f} ms, "
+                    f"p95 {p95:.0f} ms ({repeats} requests)"
                 )
                 if p95 > worst[1]:
                     worst = (p50, p95)

@@ -284,13 +284,23 @@ GENDER_GAP_COLUMNS = (
 
 
 def gender_gap_table(payload: dict) -> Table:
+    """The table of the view the card picked (D62)."""
+    views = {"bonus": bonus_table, "quartiles": quartiles_table, "by_level": level_gaps_table}
+    return views.get(payload.get("view"), pay_gap_table)(payload)
+
+
+def group_of(row: dict) -> tuple[str | None, str]:
+    group = row["country"]
+    return (group["code"], group["name"]) if group else (None, OVERALL)
+
+
+def pay_gap_table(payload: dict) -> Table:
     """One row per group and gender: female and male with their medians, other and undisclosed
-    counted and never given one (SPEC section 9). The group's gap and its reason, `group too
-    small` as the card says, repeat on each of its rows."""
+    counted and never given one (SPEC section 9). The group's gap and its reason, as the card
+    words it, repeat on each of its rows."""
     rows = []
     for row in payload["rows"]:
-        group = row["country"]
-        code, name = (group["code"], group["name"]) if group else (None, OVERALL)
+        code, name = group_of(row)
         genders = (
             ("female", row["female"]["headcount"], row["female"]["median_gross"]),
             ("male", row["male"]["headcount"], row["male"]["median_gross"]),
@@ -311,6 +321,134 @@ def gender_gap_table(payload: dict) -> Table:
                 )
             )
     return table(GENDER_GAP_COLUMNS, rows)
+
+
+BONUS_COLUMNS = (
+    ("Country code", "country_code"),
+    ("Country", "country"),
+    ("Gender", "gender"),
+    ("Headcount", "headcount"),
+    ("Receiving", "receiving"),
+    ("Receiving %", "receiving_pct"),
+    ("Mean bonus", "mean_bonus"),
+    ("Median bonus", "median_bonus"),
+    ("Mean gap %", "mean_gap_pct"),
+    ("Median gap %", "median_gap_pct"),
+    ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
+)
+
+
+def bonus_table(payload: dict) -> Table:
+    """One row per group and gender, the group's gaps and reason on each of its rows."""
+    rows = []
+    for row in payload["rows"]:
+        code, name = group_of(row)
+        sides = [(gender, row[gender]) for gender in ("female", "male")]
+        sides += [("other", {"headcount": row["other_count"]})]
+        sides += [("undisclosed", {"headcount": row["undisclosed_count"]})]
+        for gender, side in sides:
+            rows.append(
+                (
+                    code,
+                    name,
+                    gender,
+                    side["headcount"],
+                    side.get("receiving"),
+                    side.get("receiving_pct"),
+                    side.get("mean_bonus"),
+                    side.get("median_bonus"),
+                    row["mean_gap_pct"],
+                    row["median_gap_pct"],
+                    row["reason"],
+                    *currency_and_rates(payload),
+                )
+            )
+    return table(BONUS_COLUMNS, rows)
+
+
+QUARTILE_COLUMNS = (
+    ("Quartile", "quartile"),
+    ("Headcount", "headcount"),
+    ("Women", "female"),
+    ("Men", "male"),
+    ("Other", "other"),
+    ("Undisclosed", "undisclosed"),
+    ("Women %", "female_pct"),
+    ("Men %", "male_pct"),
+    ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
+)
+
+
+def quartiles_table(payload: dict) -> Table:
+    """One row per quartile, lowest first, or one row of the headcount when withheld."""
+    if payload["quartiles"] is None:
+        empty = (None,) * 6
+        row = (None, payload["headcount"], *empty, payload["reason"], *currency_and_rates(payload))
+        return table(QUARTILE_COLUMNS, [row])
+    rows = [
+        (
+            q["quartile"],
+            q["headcount"],
+            q["female"],
+            q["male"],
+            q["other"],
+            q["undisclosed"],
+            q["female_pct"],
+            q["male_pct"],
+            None,
+            *currency_and_rates(payload),
+        )
+        for q in payload["quartiles"]
+    ]
+    return table(QUARTILE_COLUMNS, rows)
+
+
+LEVEL_GAP_COLUMNS = (
+    ("Country code", "country_code"),
+    ("Country", "country"),
+    ("Level", "level"),
+    ("Women", "women"),
+    ("Women mean", "women_mean"),
+    ("Women median", "women_median"),
+    ("Men", "men"),
+    ("Men mean", "men_mean"),
+    ("Men median", "men_median"),
+    ("Mean gap %", "mean_gap_pct"),
+    ("Median gap %", "median_gap_pct"),
+    ("Flag", "flag"),
+    ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
+)
+FLAG = "5% or more, the threshold in EU Directive 2023/970 Article 10"
+
+
+def level_gaps_table(payload: dict) -> Table:
+    """One row per country and level, a flagged gap named in the card's words (D62)."""
+    rows = [
+        (
+            row["country"]["code"],
+            row["country"]["name"],
+            row["level"],
+            row["female"]["headcount"],
+            row["female"]["mean_gross"],
+            row["female"]["median_gross"],
+            row["male"]["headcount"],
+            row["male"]["mean_gross"],
+            row["male"]["median_gross"],
+            row["mean_gap_pct"],
+            row["median_gap_pct"],
+            FLAG if row["flagged"] else None,
+            row["reason"],
+            *currency_and_rates(payload),
+        )
+        for row in payload["rows"]
+    ]
+    return table(LEVEL_GAP_COLUMNS, rows)
 
 
 TREND_COLUMNS = (

@@ -463,13 +463,91 @@ export interface CostMixInsight extends InsightHeader {
   rows: MixRow[];
 }
 
+export type GenderView = 'pay_gap' | 'bonus' | 'quartiles' | 'by_level';
+
+export interface PayGapInsight extends InsightHeader {
+  view: 'pay_gap';
+  rows: GapRow[];
+}
+
+export interface BonusSide {
+  headcount: number;
+  /** `null` with the group's reason when there are fewer than 5 women or men in it. */
+  receiving: number | null;
+  receiving_pct: string | null;
+  /** `null` too when fewer than 5 women or men receive one. */
+  mean_bonus: string | null;
+  median_bonus: string | null;
+}
+
+export interface BonusRow {
+  country: { code: string; name: string } | null;
+  female: BonusSide;
+  male: BonusSide;
+  other_count: number;
+  undisclosed_count: number;
+  mean_gap_pct: string | null;
+  median_gap_pct: string | null;
+  reason: string | null;
+}
+
+export interface BonusInsight extends InsightHeader {
+  view: 'bonus';
+  rows: BonusRow[];
+}
+
+export interface Quartile {
+  quartile: number;
+  headcount: number;
+  female: number;
+  male: number;
+  other: number;
+  undisclosed: number;
+  female_pct: string;
+  male_pct: string;
+}
+
+export interface QuartilesInsight extends InsightHeader {
+  view: 'quartiles';
+  headcount: number;
+  /** `null` under 20 people, or under 5 women or men, with the reason. */
+  quartiles: Quartile[] | null;
+  reason: string | null;
+}
+
+export interface LevelSide {
+  headcount: number;
+  mean_gross: string | null;
+  median_gross: string | null;
+}
+
+export interface LevelGapRow {
+  country: { code: string; name: string };
+  level: number;
+  female: LevelSide;
+  male: LevelSide;
+  mean_gap_pct: string | null;
+  median_gap_pct: string | null;
+  /** A mean gap of 5% or more either way, EU Directive 2023/970 Article 10's threshold. */
+  flagged: boolean;
+  reason: string | null;
+}
+
+export interface LevelGapsInsight extends InsightHeader {
+  view: 'by_level';
+  rows: LevelGapRow[];
+}
+
+/** The gender gap on annual pay, in the view the card's control picks (D62). */
+export type GenderGapInsight = PayGapInsight | BonusInsight | QuartilesInsight | LevelGapsInsight;
+
 export interface InsightPayloads {
   summary: SummaryInsight;
   'by-country': InsightHeader & { rows: CountryRow[] };
   'by-department': InsightHeader & { rows: DepartmentRow[] };
   distribution: DistributionInsight;
   'by-level': InsightHeader & { rows: LevelRow[] };
-  'gender-gap': InsightHeader & { rows: GapRow[] };
+  'gender-gap': GenderGapInsight;
   trend: TrendInsight;
   'cost-bridge': CostBridgeInsight;
   'by-tenure': ByTenureInsight;

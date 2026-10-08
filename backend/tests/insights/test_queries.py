@@ -770,10 +770,14 @@ def test_a_level_of_twenty_shows_p10_to_p90_and_one_of_nineteen_its_headcount(pe
 
 # gender-gap
 
-SMALL = "group too small"
+WOMEN = "fewer than 5 women"
+MEN = "fewer than 5 men"
+BOTH = "fewer than 5 women and fewer than 5 men"
 
 
-def gap(code, name, women, women_median, men, men_median, pct=None, other=0, undisclosed=0):
+def gap(
+    code, name, women, women_median, men, men_median, pct=None, other=0, undisclosed=0, reason=None
+):
     return {
         "country": {"code": code, "name": name} if code else None,
         "female": {"headcount": women, "median_gross": women_median},
@@ -781,13 +785,13 @@ def gap(code, name, women, women_median, men, men_median, pct=None, other=0, und
         "other_count": other,
         "undisclosed_count": undisclosed,
         "gap_pct": pct,
-        "reason": None if pct is not None else SMALL,
+        "reason": reason,
     }
 
 
 NOBODY_ELSE = [
-    gap("NL", "Netherlands", 0, None, 0, None),
-    gap("SG", "Singapore", 0, None, 0, None),
+    gap("NL", "Netherlands", 0, None, 0, None, reason=BOTH),
+    gap("SG", "Singapore", 0, None, 0, None, reason=BOTH),
 ]
 
 
@@ -797,11 +801,11 @@ NOBODY_ELSE = [
         (
             {},
             [
-                gap("DE", "Germany", 2, None, 2, None),
+                gap("DE", "Germany", 2, None, 2, None, reason=BOTH),
                 gap("IN", "India", 6, "25000.00", 6, "22500.00", "-11.1"),
                 *NOBODY_ELSE,
-                gap("GB", "United Kingdom", 1, None, 0, None),
-                gap("US", "United States", 4, None, 6, "125000.00"),
+                gap("GB", "United Kingdom", 1, None, 0, None, reason=BOTH),
+                gap("US", "United States", 4, None, 6, "125000.00", reason=WOMEN),
                 gap(None, None, 13, "62500.00", 14, "100000.00", "37.5"),
             ],
         ),
@@ -815,44 +819,44 @@ NOBODY_ELSE = [
         (
             {"department": ["engineering"]},
             [
-                gap("DE", "Germany", 2, None, 2, None),
-                gap("IN", "India", 3, None, 3, None),
+                gap("DE", "Germany", 2, None, 2, None, reason=BOTH),
+                gap("IN", "India", 3, None, 3, None, reason=BOTH),
                 *NOBODY_ELSE,
-                gap("GB", "United Kingdom", 0, None, 0, None),
-                gap("US", "United States", 0, None, 5, "120000.00"),
+                gap("GB", "United Kingdom", 0, None, 0, None, reason=BOTH),
+                gap("US", "United States", 0, None, 5, "120000.00", reason=WOMEN),
                 gap(None, None, 5, "22500.00", 10, "105000.00", "78.6"),
             ],
         ),
         (
             {"include_exited": True},
             [
-                gap("DE", "Germany", 2, None, 2, None),
+                gap("DE", "Germany", 2, None, 2, None, reason=BOTH),
                 gap("IN", "India", 7, "22500.00", 6, "22500.00", "0.0"),
                 *NOBODY_ELSE,
-                gap("GB", "United Kingdom", 1, None, 0, None),
-                gap("US", "United States", 4, None, 7, "120000.00"),
+                gap("GB", "United Kingdom", 1, None, 0, None, reason=BOTH),
+                gap("US", "United States", 4, None, 7, "120000.00", reason=WOMEN),
                 gap(None, None, 14, "50000.00", 15, "100000.00", "50.0"),
             ],
         ),
         (
             {"on": NEW_YEAR},
             [
-                gap("DE", "Germany", 2, None, 3, None),
+                gap("DE", "Germany", 2, None, 3, None, reason=BOTH),
                 gap("IN", "India", 6, "25000.00", 6, "22500.00", "-11.1"),
                 *NOBODY_ELSE,
-                gap("GB", "United Kingdom", 1, None, 0, None),
-                gap("US", "United States", 4, None, 6, "130000.00"),
+                gap("GB", "United Kingdom", 1, None, 0, None, reason=BOTH),
+                gap("US", "United States", 4, None, 6, "130000.00", reason=WOMEN),
                 gap(None, None, 13, "62500.00", 15, "110000.00", "43.2"),
             ],
         ),
         (
             {"currency": "eur"},
             [
-                gap("DE", "Germany", 2, None, 2, None),
+                gap("DE", "Germany", 2, None, 2, None, reason=BOTH),
                 gap("IN", "India", 6, "20000.00", 6, "18000.00", "-11.1"),
                 *NOBODY_ELSE,
-                gap("GB", "United Kingdom", 1, None, 0, None),
-                gap("US", "United States", 4, None, 6, "100000.00"),
+                gap("GB", "United Kingdom", 1, None, 0, None, reason=BOTH),
+                gap("US", "United States", 4, None, 6, "100000.00", reason=WOMEN),
                 gap(None, None, 13, "50000.00", 14, "80000.00", "37.5"),
             ],
         ),
@@ -872,10 +876,10 @@ def test_gender_gap(people, given, rows):
 
 def test_a_gap_needs_five_of_each_gender(people):
     """Seven women and four men in Sales and Customer Support: the men's median and the gap are
-    withheld (SPEC section 9, either gender under five)."""
+    withheld, and the reason names the men (SPEC section 9, D62)."""
     rows = insight("gender-gap", department=["sales", "customer-support"])["rows"]
 
-    assert rows[-1] == gap(None, None, 7, "160000.00", 4, None)
+    assert rows[-1] == gap(None, None, 7, "160000.00", 4, None, reason=MEN)
 
 
 def test_other_and_undisclosed_are_counted_never_given_a_median(people):
@@ -1184,4 +1188,150 @@ def test_cost_mix_take_home_splits_gross_into_net_and_each_deduction(people):
             10,
             [segment("NET", "Net pay", "80.0"), segment("TAX", "Income tax", "20.0")],
         ),
+    ]
+
+
+# gender-gap's views (D62), in the Netherlands' own currency so no rate is needed
+
+NL_LOCAL = {"country": ["NL"], "currency": "local"}
+
+
+def hire_nl(gender, gross, *, level=1, bonus=0):
+    CompensationRecordFactory(
+        employee=EmployeeFactory(country=country("NL"), gender=gender, level=level),
+        lines={"BASE": Decimal(gross)},
+        bonus_annual=Decimal(bonus),
+        effective_from=date(2024, 1, 1),
+    )
+
+
+def bonus_side(headcount, receiving, pct, mean_bonus, median_bonus):
+    return {
+        "headcount": headcount,
+        "receiving": receiving,
+        "receiving_pct": pct,
+        "mean_bonus": mean_bonus,
+        "median_bonus": median_bonus,
+    }
+
+
+def test_the_bonus_view_compares_who_receives_one_and_how_much(lookups):
+    """Five of six women receive 1,000 to 5,000, mean and median 3,000. All six men receive
+    2,000 to 7,000, mean 4,500 and median (4,000 + 5,000) / 2 = 4,500. Both gaps are
+    (4,500 - 3,000) / 4,500 = 33.3% of men's bonus. Overall is the same group."""
+    for bonus in (1000, 2000, 3000, 4000, 5000, 0):
+        hire_nl("female", 50_000, bonus=bonus)
+    for bonus in (2000, 3000, 4000, 5000, 6000, 7000):
+        hire_nl("male", 50_000, bonus=bonus)
+    netherlands = {
+        "country": {"code": "NL", "name": "Netherlands"},
+        "female": bonus_side(6, 5, "83.3", "3000.00", "3000.00"),
+        "male": bonus_side(6, 6, "100.0", "4500.00", "4500.00"),
+        "other_count": 0,
+        "undisclosed_count": 0,
+        "mean_gap_pct": "33.3",
+        "median_gap_pct": "33.3",
+        "reason": None,
+    }
+
+    result = insight("gender-gap", control={"view": "bonus"}, **NL_LOCAL)
+
+    assert (result["view"], result["rows"]) == (
+        "bonus",
+        [netherlands, {**netherlands, "country": None}],
+    )
+
+
+def test_a_bonus_gap_needs_five_of_each_with_a_bonus(lookups):
+    """Three of six women receive a bonus: the shares show, the amounts and gaps do not."""
+    for bonus in (1000, 2000, 3000, 0, 0, 0):
+        hire_nl("female", 50_000, bonus=bonus)
+    for bonus in (2000, 3000, 4000, 5000, 6000, 7000):
+        hire_nl("male", 50_000, bonus=bonus)
+
+    (row, _) = insight("gender-gap", control={"view": "bonus"}, **NL_LOCAL)["rows"]
+
+    assert row["female"] == bonus_side(6, 3, "50.0", None, None)
+    assert row["male"] == bonus_side(6, 6, "100.0", None, None)
+    assert (row["mean_gap_pct"], row["reason"]) == (None, "fewer than 5 women with a bonus")
+
+
+def test_the_quartiles_rank_everyone_and_break_a_tie_by_employee_id(lookups):
+    """22 people cut at 5, 11 and 16. The fifth and sixth both earn 54,000: the woman, hired
+    first, closes the lowest quartile and the man opens the next. Other and undisclosed are in
+    the top quartile and counted beside the women and men."""
+    pay = [50_000, 51_000, 52_000, 53_000, 54_000, 54_000] + [56_000 + 1000 * n for n in range(16)]
+    genders = ["female", "male"] * 10 + ["other", "undisclosed"]
+    for gross, gender in zip(pay, genders, strict=True):
+        hire_nl(gender, gross)
+
+    result = insight("gender-gap", control={"view": "quartiles"}, **NL_LOCAL)
+
+    def quartile(number, headcount, women, men, other, undisclosed, women_pct, men_pct):
+        return {
+            "quartile": number,
+            "headcount": headcount,
+            "female": women,
+            "male": men,
+            "other": other,
+            "undisclosed": undisclosed,
+            "female_pct": women_pct,
+            "male_pct": men_pct,
+        }
+
+    assert (result["headcount"], result["reason"]) == (22, None)
+    assert result["quartiles"] == [
+        quartile(1, 5, 3, 2, 0, 0, "60.0", "40.0"),
+        quartile(2, 6, 3, 3, 0, 0, "50.0", "50.0"),
+        quartile(3, 5, 2, 3, 0, 0, "40.0", "60.0"),
+        quartile(4, 6, 2, 2, 1, 1, "33.3", "33.3"),
+    ]
+
+
+def test_quartiles_need_twenty_people(people):
+    result = insight("gender-gap", control={"view": "quartiles"}, country=["IN"])
+
+    assert (result["headcount"], result["quartiles"], result["reason"]) == (
+        12,
+        None,
+        "fewer than 20 people",
+    )
+
+
+def test_the_by_level_view_flags_a_mean_gap_of_five_percent_either_way(lookups):
+    """Level 1: women 40,000 to 48,000 (mean 44,000), men 44,000 to 52,000 (mean 48,000), a gap
+    of 8.3%, flagged. Level 2: 50,000 against 52,000, 3.8%, not. Level 3: women 60,000, men
+    55,000, -9.1%, flagged as well. Levels 4 to 6 have nobody."""
+    for women, men, level in (
+        ((40_000, 42_000, 44_000, 46_000, 48_000), (44_000, 46_000, 48_000, 50_000, 52_000), 1),
+        ((50_000,) * 5, (52_000,) * 5, 2),
+        ((60_000,) * 5, (55_000,) * 5, 3),
+    ):
+        for gross in women:
+            hire_nl("female", gross, level=level)
+        for gross in men:
+            hire_nl("male", gross, level=level)
+
+    rows = insight("gender-gap", control={"view": "by_level"}, **NL_LOCAL)["rows"]
+
+    def level_row(level, women, men, mean_gap, median_gap, flagged, reason=None):
+        return {
+            "country": {"code": "NL", "name": "Netherlands"},
+            "level": level,
+            "female": dict(zip(("headcount", "mean_gross", "median_gross"), women, strict=True)),
+            "male": dict(zip(("headcount", "mean_gross", "median_gross"), men, strict=True)),
+            "mean_gap_pct": mean_gap,
+            "median_gap_pct": median_gap,
+            "flagged": flagged,
+            "reason": reason,
+        }
+
+    nobody = (0, None, None)
+    assert rows == [
+        level_row(1, (5, "44000.00", "44000.00"), (5, "48000.00", "48000.00"), "8.3", "8.3", True),
+        level_row(2, (5, "50000.00", "50000.00"), (5, "52000.00", "52000.00"), "3.8", "3.8", False),
+        level_row(
+            3, (5, "60000.00", "60000.00"), (5, "55000.00", "55000.00"), "-9.1", "-9.1", True
+        ),
+        *[level_row(level, nobody, nobody, None, None, False, BOTH) for level in (4, 5, 6)],
     ]

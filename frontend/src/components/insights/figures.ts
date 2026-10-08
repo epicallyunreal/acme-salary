@@ -40,3 +40,22 @@ export function count(value: number): string {
  * employed on each date, the one exception to the bar deciding who is counted (D62). */
 export const EMPLOYED_ON_EACH_DATE =
   "Counts people employed on each date; Include exited doesn't apply";
+
+/** A woman's or a man's figure for a table: the amount, `—` for nobody, or `fewer than 5 women`
+ * (or men), the gender gap card's words (D62). */
+export function genderMoney(
+  value: string | null,
+  currency: string,
+  headcount: number,
+  who: 'women' | 'men',
+): string {
+  if (value !== null) return formatMoney(value, currency);
+  return headcount === 0 ? '—' : `fewer than ${SMALL_GROUP} ${who}`;
+}
+
+/** What the gender gap card says of itself (D62). */
+export const GENDER_NOTE =
+  "Follows EU Directive 2023/970 Article 9 and the UK's six gender pay gap measures, on annual pay. Not a statutory filing: no hours, no legal entities.";
+export const GAP_FLAG = '5% or more';
+export const GAP_FLAG_NOTE =
+  '5% or more is the threshold in EU Directive 2023/970 Article 10 for a gap between women and men.';

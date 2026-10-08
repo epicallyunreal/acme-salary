@@ -6,7 +6,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useInsight } from '../../api/insights';
 import { setSession } from '../../lib/auth';
-import { costBridgeShown, distribution, summary } from '../../test/fixtures/insights';
+import {
+  bonusGap,
+  costBridgeShown,
+  distribution,
+  levelGapView,
+  quartileGap,
+  summary,
+} from '../../test/fixtures/insights';
 import { renderWithProviders } from '../../test/render';
 import { server } from '../../test/setup';
 import { DASHBOARD_DEFAULTS } from '../filters/useDashboardFilters';
@@ -235,13 +242,27 @@ describe('insight cards', () => {
     ]);
     expect(await row('Gender pay gap', 'United States')).toEqual([
       '4',
-      UNDER_FIVE,
+      'fewer than 5 women',
       '6',
       'USD 125,000',
       '0',
       '0',
-      'group too small',
+      'fewer than 5 women',
     ]);
+    expect(await row('Gender pay gap', 'Germany')).toEqual([
+      '2',
+      'fewer than 5 women',
+      '2',
+      'fewer than 5 men',
+      '0',
+      '0',
+      'fewer than 5 women and fewer than 5 men',
+    ]);
+    expect(
+      screen.getByText(
+        "Follows EU Directive 2023/970 Article 9 and the UK's six gender pay gap measures, on annual pay. Not a statutory filing: no hours, no legal entities.",
+      ),
+    ).toBeInTheDocument();
     expect(await row('Gender pay gap', 'Overall')).toEqual([
       '13',
       'USD 62,500',
@@ -251,6 +272,68 @@ describe('insight cards', () => {
       '0',
       '37.5%',
     ]);
+  });
+
+  it('the bonus view compares who receives one and the gaps, and says why one is missing', async () => {
+    answer('gender-gap', bonusGap);
+    renderWithProviders(<Gap />);
+
+    const table = await screen.findByRole('table', { name: 'Bonus by gender' });
+    const india = within(table)
+      .getByRole('rowheader', { name: 'India' })
+      .closest('tr') as HTMLElement;
+    expect(
+      within(india)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent),
+    ).toEqual(['5 of 6 (83.3%)', '6 of 6 (100.0%)', '33.3%', '33.3%', '0, 0']);
+    const us = within(table)
+      .getByRole('rowheader', { name: 'United States' })
+      .closest('tr') as HTMLElement;
+    expect(within(us).getAllByRole('cell')[0]).toHaveTextContent('fewer than 5 women');
+  });
+
+  it('the quartiles view gives each quarter of the ranked pay its women and men', async () => {
+    answer('gender-gap', quartileGap);
+    renderWithProviders(<Gap />);
+
+    expect(await row('Pay quartiles by gender', 'Lower quartile')).toEqual([
+      '3 (60.0%)',
+      '2 (40.0%)',
+      '0',
+      '0',
+    ]);
+    expect(await row('Pay quartiles by gender', 'Upper quartile')).toEqual([
+      '2 (33.3%)',
+      '2 (33.3%)',
+      '1',
+      '1',
+    ]);
+  });
+
+  it('the by-level view flags a gap of 5% or more and names the threshold', async () => {
+    answer('gender-gap', levelGapView);
+    renderWithProviders(<Gap />);
+
+    const table = await screen.findByRole('table', { name: 'Gender pay gap by level' });
+    const cells = (name: string) =>
+      within(within(table).getByRole('rowheader', { name }).closest('tr') as HTMLElement)
+        .getAllByRole('cell')
+        .map((cell) => cell.textContent);
+    expect(cells('Netherlands, L1')).toEqual(['5', '5', '8.3%', '8.3%', '5% or more']);
+    expect(cells('Netherlands, L2')).toEqual(['5', '5', '3.8%', '3.8%', '']);
+    expect(cells('Netherlands, L3')).toEqual([
+      '4',
+      '6',
+      'fewer than 5 women',
+      'fewer than 5 women',
+      '',
+    ]);
+    expect(
+      screen.getByText(
+        '5% or more is the threshold in EU Directive 2023/970 Article 10 for a gap between women and men.',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('the trend names its latest month-end and rates, and its gaps, month by month', async () => {

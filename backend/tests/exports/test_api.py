@@ -582,14 +582,14 @@ def test_the_overall_gender_rows_have_no_country_code(api, people):
 
 
 def test_a_small_gender_group_repeats_the_cards_reason(api, people):
-    """The US has four women: no gap, `group too small` on each of its rows."""
+    """The US has four women: no gap, `fewer than 5 women` on each of its rows (D62)."""
     rows = csv_rows(api.get(INSIGHT.format("gender-gap"), {"file": "csv", "country": "US"}))
 
     assert [row[2:7] for row in rows[1:5]] == [
-        ["female", "4", "", "", "group too small"],
-        ["male", "6", "125000.00", "", "group too small"],
-        ["other", "0", "", "", "group too small"],
-        ["undisclosed", "0", "", "", "group too small"],
+        ["female", "4", "", "", "fewer than 5 women"],
+        ["male", "6", "125000.00", "", "fewer than 5 women"],
+        ["other", "0", "", "", "fewer than 5 women"],
+        ["undisclosed", "0", "", "", "fewer than 5 women"],
     ]
 
 
@@ -729,3 +729,43 @@ def test_a_withheld_country_is_one_row_of_its_headcount(api, people):
     rows = csv_rows(api.get(INSIGHT.format("cost-mix"), {"file": "csv", "country": "GB"}))
 
     assert rows[1] == ["GB", "United Kingdom", "1", "", "", "fewer than 5 people", "USD", RATES]
+
+
+@pytest.mark.parametrize("view", ["pay_gap", "bonus", "quartiles", "by_level"])
+def test_each_gender_view_exports_its_table_ending_with_reason_currency_and_rates(
+    api, people, view
+):
+    """D60 and D62, for the view the card's control picked."""
+    response = api.get(INSIGHT.format("gender-gap"), {"file": "json", "view": view})
+    (header, *_) = csv_rows(api.get(INSIGHT.format("gender-gap"), {"file": "csv", "view": view}))
+
+    assert header[-3:] == ["Reason", "Currency", "Rates"]
+    assert json_body(response)["filters"]["view"] == view
+
+
+def test_a_flagged_level_gap_is_named_in_the_cards_words(api, lookups):
+    """Five women at 40,000 and five men at 50,000 in the Netherlands, level 1: a mean gap of
+    20.0% of men's pay, flagged in the card's neutral words (D62)."""
+    for gender, gross in (("female", 40_000), ("male", 50_000)):
+        for _ in range(5):
+            CompensationRecordFactory(
+                employee=EmployeeFactory(country=country("NL"), gender=gender, level=1),
+                lines={"BASE": Decimal(gross)},
+                effective_from=date(2024, 1, 1),
+            )
+    query = {"file": "csv", "view": "by_level", "country": "NL", "currency": "local"}
+
+    rows = csv_rows(api.get(INSIGHT.format("gender-gap"), query))
+
+    assert rows[1][2:12] == [
+        "1",
+        "5",
+        "40000.00",
+        "40000.00",
+        "5",
+        "50000.00",
+        "50000.00",
+        "20.0",
+        "20.0",
+        "5% or more, the threshold in EU Directive 2023/970 Article 10",
+    ]

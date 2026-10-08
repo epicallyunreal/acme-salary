@@ -41,6 +41,8 @@ SPREAD_GROUP = 20  # under twenty, no percentile figures: each would be one pers
 BANDS = 12
 LEVELS = range(1, 7)
 TREND_MONTHS = 24
+# EU Directive 2023/970 Article 10's threshold for a gap between women's and men's pay (D62).
+GAP_FLAG = Decimal(5)
 BRIDGE_MONTHS = 12
 # Tenure bands in completed years (D62): each from its lower bound up to, not including, its upper.
 TENURE_BANDS = (
@@ -436,6 +438,26 @@ def by_level(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
     return {**header(f, rates), "rows": rows}
 
 
+def gender_reason(women: int, men: int, counting: str = "") -> str | None:
+    """Why a gender comparison is withheld, in the card's words (D62): `fewer than 5 women`,
+    `fewer than 5 men`, or both, `counting` saying who is counted, ` with a bonus`."""
+    short = [who for who, n in (("women", women), ("men", men)) if n < SMALL_GROUP]
+    if not short:
+        return None
+    return " and ".join(f"fewer than {SMALL_GROUP} {who}" for who in short) + counting
+
+
+def gap_pct(women: Decimal | None, men: Decimal | None) -> Decimal | None:
+    """The unadjusted gap as a share of men's pay, to one decimal."""
+    if women is None or men is None or not men:
+        return None
+    return q1((men - women) / men * 100)
+
+
+def mean(values: list[Decimal]) -> Decimal | None:
+    return q2(sum(values, Decimal(0)) / len(values)) if values else None
+
+
 def gap_row(country: dict | None, by_gender: dict[str, list[Decimal]]) -> dict:
     """The medians of women and men and the unadjusted gap, each median only for five people or
     more. Other and undisclosed are counted, never given a median."""
@@ -455,27 +477,168 @@ def gap_row(country: dict | None, by_gender: dict[str, list[Decimal]]) -> dict:
         "gap_pct": None,
         "reason": None,
     }
-    if len(female) < SMALL_GROUP or len(male) < SMALL_GROUP:
-        row["reason"] = "group too small"
-    else:
-        women, men = row["female"]["median_gross"], row["male"]["median_gross"]
-        row["gap_pct"] = q1((men - women) / men * 100)
+    row["reason"] = gender_reason(len(female), len(male))
+    if row["reason"] is None:
+        row["gap_pct"] = gap_pct(row["female"]["median_gross"], row["male"]["median_gross"])
     return row
 
 
-def gender_gap(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
-    """Question 6: per country in the filter, in name order, then overall."""
-    values = grosses(f, rates, COUNTRY, GENDER)
-    rows = []
+def groups(
+    f: InsightFilters, lookups: Lookups, values: dict[Any, list[Decimal]]
+) -> list[tuple[dict | None, dict[str, list[Decimal]]]]:
+    """Each country in the filter, in name order, then overall, with its values per gender."""
+    found = []
+    overall: dict[str, list[Decimal]] = {gender: [] for gender in GENDERS}
     for code, country in lookups.countries.items():
         if not f.country or code in f.country:
             by_gender = {gender: values.get((code, gender), []) for gender in GENDERS}
-            rows.append(gap_row({"code": code, "name": country.name}, by_gender))
-    overall: dict[str, list[Decimal]] = {gender: [] for gender in GENDERS}
-    for (_, gender), group in values.items():
-        overall[gender].extend(group)
-    rows.append(gap_row(None, overall))
-    return {**header(f, rates), "rows": rows}
+            found.append(({"code": code, "name": country.name}, by_gender))
+            for gender, group in by_gender.items():
+                overall[gender].extend(group)
+    found.append((None, overall))
+    return found
+
+
+def gender_gap(
+    f: InsightFilters, rates: fx.RateTable, lookups: Lookups, *, view: str = "pay_gap"
+) -> dict:
+    """Question 6, on annual pay, in four views (D62): Pay gap, per country and overall, Bonus,
+    Quartiles and By level. Other and undisclosed are counted beside each. A comparison needs 5
+    women and 5 men, and the quartiles 20 people as well."""
+    if view == "bonus":
+        return {**header(f, rates), "view": view, "rows": bonus_rows(f, rates, lookups)}
+    if view == "quartiles":
+        return {**header(f, rates), "view": view, **pay_quartiles(f, rates)}
+    if view == "by_level":
+        return {**header(f, rates), "view": view, "rows": level_gaps(f, rates, lookups)}
+    values = grosses(f, rates, COUNTRY, GENDER)
+    rows = [gap_row(country, by_gender) for country, by_gender in groups(f, lookups, values)]
+    return {**header(f, rates), "view": view, "rows": rows}
+
+
+def bonus_rows(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> list[dict]:
+    """Bonus: who receives one (a bonus above zero), and the mean and median bonus gap among
+    those who do. The shares need 5 women and 5 men in the group, the gaps 5 of each with a
+    bonus."""
+    convert = Converter(f, rates)
+    values: dict[Any, list[Decimal]] = defaultdict(list)
+    for bonus, currency, country, gender in population(f).values_list(
+        "bonus_annual", "currency_code", COUNTRY, GENDER
+    ):
+        values[(country, gender)].append(q2(bonus * convert.rate(currency)))
+    rows = []
+    for country, by_gender in groups(f, lookups, values):
+        women, men = by_gender["female"], by_gender["male"]
+        paid = {gender: [b for b in by_gender[gender] if b > 0] for gender in ("female", "male")}
+        reason = gender_reason(len(women), len(men))
+        shares = reason is None
+        if shares:
+            reason = gender_reason(len(paid["female"]), len(paid["male"]), " with a bonus")
+        gaps = reason is None
+        female = bonus_side(women, paid["female"], shares=shares, gaps=gaps)
+        male = bonus_side(men, paid["male"], shares=shares, gaps=gaps)
+        rows.append(
+            {
+                "country": country,
+                "female": female,
+                "male": male,
+                "other_count": len(by_gender["other"]),
+                "undisclosed_count": len(by_gender["undisclosed"]),
+                "mean_gap_pct": gap_pct(female["mean_bonus"], male["mean_bonus"]),
+                "median_gap_pct": gap_pct(female["median_bonus"], male["median_bonus"]),
+                "reason": reason,
+            }
+        )
+    return rows
+
+
+def bonus_side(
+    everyone: list[Decimal], receiving: list[Decimal], *, shares: bool, gaps: bool
+) -> dict:
+    """One gender of a group in the Bonus view: the receiving share when the group can be
+    compared, the mean and median bonus when those receiving one can."""
+    return {
+        "headcount": len(everyone),
+        "receiving": len(receiving) if shares else None,
+        "receiving_pct": q1(Decimal(len(receiving)) / len(everyone) * 100) if shares else None,
+        "mean_bonus": mean(receiving) if gaps else None,
+        "median_bonus": median(receiving) if gaps else None,
+    }
+
+
+def pay_side(group: list[Decimal], *, shown: bool) -> dict:
+    """One gender of a country's level in the By level view."""
+    return {
+        "headcount": len(group),
+        "mean_gross": mean(group) if shown else None,
+        "median_gross": median(group) if shown else None,
+    }
+
+
+def pay_quartiles(f: InsightFilters, rates: fx.RateTable) -> dict:
+    """Quartiles: everyone ranked by gross in the reporting currency, ties by employee id, cut at
+    floor(k * n / 4), the lowest quartile first, with each one's women and men. It needs 20
+    people, and 5 women and 5 men. A simplification of the UK method, which splits tied pay
+    across a boundary by gender (D62)."""
+    convert = Converter(f, rates)
+    ranked = sorted(
+        (q2(gross * convert.rate(currency)), employee, gender)
+        for gross, currency, employee, gender in population(f).values_list(
+            "gross_annual", "currency_code", "employee_id", GENDER
+        )
+    )
+    n = len(ranked)
+    women = sum(1 for _, _, gender in ranked if gender == "female")
+    men = sum(1 for _, _, gender in ranked if gender == "male")
+    reason = f"fewer than {SPREAD_GROUP} people" if n < SPREAD_GROUP else gender_reason(women, men)
+    if reason:
+        return {"headcount": n, "quartiles": None, "reason": reason}
+    cuts = [k * n // 4 for k in range(5)]
+    quartiles = []
+    for index in range(4):
+        group = [gender for _, _, gender in ranked[cuts[index] : cuts[index + 1]]]
+        counts = {gender: group.count(gender) for gender in GENDERS}
+        quartiles.append(
+            {
+                "quartile": index + 1,
+                "headcount": len(group),
+                **counts,
+                "female_pct": q1(Decimal(counts["female"]) / len(group) * 100),
+                "male_pct": q1(Decimal(counts["male"]) / len(group) * 100),
+            }
+        )
+    return {"headcount": n, "quartiles": quartiles, "reason": None}
+
+
+def level_gaps(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> list[dict]:
+    """By level: per country in the filter, in name order, and per level 1 to 6, the mean and
+    median gap, each as a share of men's pay, flagged at a mean gap of 5% or more either way
+    (EU Directive 2023/970 Article 10). Each needs 5 women and 5 men in that country and level."""
+    values = grosses(f, rates, COUNTRY, LEVEL, GENDER)
+    rows = []
+    for code, country in lookups.countries.items():
+        if f.country and code not in f.country:
+            continue
+        for level in LEVELS:
+            women = values.get((code, level, "female"), [])
+            men = values.get((code, level, "male"), [])
+            reason = gender_reason(len(women), len(men))
+            female = pay_side(women, shown=reason is None)
+            male = pay_side(men, shown=reason is None)
+            mean_gap = gap_pct(female["mean_gross"], male["mean_gross"])
+            rows.append(
+                {
+                    "country": {"code": code, "name": country.name},
+                    "level": level,
+                    "female": female,
+                    "male": male,
+                    "mean_gap_pct": mean_gap,
+                    "median_gap_pct": gap_pct(female["median_gross"], male["median_gross"]),
+                    "flagged": mean_gap is not None and abs(mean_gap) >= GAP_FLAG,
+                    "reason": reason,
+                }
+            )
+    return rows
 
 
 def trend(
@@ -787,4 +950,5 @@ CONTROLS: dict[str, tuple[str, tuple[str, ...]]] = {
     "trend": ("measure", ("total_cost", "headcount")),
     "by-tenure": ("level", ("all", "1", "2", "3", "4", "5", "6")),
     "cost-mix": ("view", ("cost", "take_home")),
+    "gender-gap": ("view", ("pay_gap", "bonus", "quartiles", "by_level")),
 }

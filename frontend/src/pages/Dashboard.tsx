@@ -30,6 +30,12 @@ const VIEWS = [
   { value: 'cost', label: 'Cost' },
   { value: 'take_home', label: 'Take-home' },
 ] as const;
+const GENDER_VIEWS = [
+  { value: 'pay_gap', label: 'Pay gap' },
+  { value: 'bonus', label: 'Bonus' },
+  { value: 'quartiles', label: 'Quartiles' },
+  { value: 'by_level', label: 'By level' },
+] as const;
 const LEVELS = [
   { value: 'all', label: 'All' },
   { value: '1', label: 'L1' },
@@ -48,6 +54,7 @@ export function Dashboard() {
   const trendControl = controlQuery('trend', controls);
   const tenureControl = controlQuery('tenure', controls);
   const mixControl = controlQuery('mix', controls);
+  const gapControl = controlQuery('gap', controls);
   const summary = useInsight('summary', filters);
   const trend = useInsight('trend', filters, trendControl);
   const costBridge = useInsight('cost-bridge', filters);
@@ -57,7 +64,7 @@ export function Dashboard() {
   const distribution = useInsight('distribution', filters);
   const byLevel = useInsight('by-level', filters);
   const byTenure = useInsight('by-tenure', filters, tenureControl);
-  const genderGap = useInsight('gender-gap', filters);
+  const genderGap = useInsight('gender-gap', filters, gapControl);
   const nobody = summary.data?.headcount === 0;
   // Every insight downloads from where it is shown, with the filters and its control on screen
   // (SPEC F6, D62).
@@ -180,7 +187,22 @@ export function Dashboard() {
             <CardGrid>
               <GenderGapCard
                 query={genderGap}
-                actions={exportMenu('gender-gap', 'Export gender pay gap', 'the gender pay gap')}
+                actions={
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                    <CardControl
+                      label="Gender gap view"
+                      value={controls.gap}
+                      options={GENDER_VIEWS}
+                      onChange={(view) => setControl('gap', view)}
+                    />
+                    {exportMenu(
+                      'gender-gap',
+                      'Export gender pay gap',
+                      'the gender pay gap',
+                      gapControl,
+                    )}
+                  </Stack>
+                }
               />
             </CardGrid>
           </Section>

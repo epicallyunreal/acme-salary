@@ -155,6 +155,10 @@ function gap(
   men: [number, string | null],
   pct: string | null,
 ) {
+  // The card's words for who is short (D62).
+  const short = [women[0] < 5 ? 'fewer than 5 women' : '', men[0] < 5 ? 'fewer than 5 men' : '']
+    .filter(Boolean)
+    .join(' and ');
   return {
     country: code && name ? { code, name } : null,
     female: { headcount: women[0], median_gross: women[1] },
@@ -162,12 +166,13 @@ function gap(
     other_count: 0,
     undisclosed_count: 0,
     gap_pct: pct,
-    reason: pct === null ? 'group too small' : null,
+    reason: pct === null ? short : null,
   };
 }
 
 export const genderGap: InsightPayloads['gender-gap'] = {
   ...USD,
+  view: 'pay_gap',
   rows: [
     gap('DE', 'Germany', [2, null], [2, null], null),
     gap('IN', 'India', [6, '25000.00'], [6, '22500.00'], '-11.1'),
@@ -176,6 +181,139 @@ export const genderGap: InsightPayloads['gender-gap'] = {
     gap('GB', 'United Kingdom', [1, null], [0, null], null),
     gap('US', 'United States', [4, null], [6, '125000.00'], null),
     gap(null, null, [13, '62500.00'], [14, '100000.00'], '37.5'),
+  ],
+};
+
+/** The Bonus view: India's women and men compared, the US with four women. */
+export const bonusGap: InsightPayloads['gender-gap'] = {
+  ...USD,
+  view: 'bonus',
+  rows: [
+    {
+      country: { code: 'IN', name: 'India' },
+      female: {
+        headcount: 6,
+        receiving: 5,
+        receiving_pct: '83.3',
+        mean_bonus: '3000.00',
+        median_bonus: '3000.00',
+      },
+      male: {
+        headcount: 6,
+        receiving: 6,
+        receiving_pct: '100.0',
+        mean_bonus: '4500.00',
+        median_bonus: '4500.00',
+      },
+      other_count: 0,
+      undisclosed_count: 0,
+      mean_gap_pct: '33.3',
+      median_gap_pct: '33.3',
+      reason: null,
+    },
+    {
+      country: { code: 'US', name: 'United States' },
+      female: {
+        headcount: 4,
+        receiving: null,
+        receiving_pct: null,
+        mean_bonus: null,
+        median_bonus: null,
+      },
+      male: {
+        headcount: 6,
+        receiving: null,
+        receiving_pct: null,
+        mean_bonus: null,
+        median_bonus: null,
+      },
+      other_count: 0,
+      undisclosed_count: 0,
+      mean_gap_pct: null,
+      median_gap_pct: null,
+      reason: 'fewer than 5 women',
+    },
+  ],
+};
+
+/** The Quartiles view of 22 people, other and undisclosed in the top quartile. */
+export const quartileGap: InsightPayloads['gender-gap'] = {
+  ...USD,
+  view: 'quartiles',
+  headcount: 22,
+  reason: null,
+  quartiles: [
+    {
+      quartile: 1,
+      headcount: 5,
+      female: 3,
+      male: 2,
+      other: 0,
+      undisclosed: 0,
+      female_pct: '60.0',
+      male_pct: '40.0',
+    },
+    {
+      quartile: 2,
+      headcount: 6,
+      female: 3,
+      male: 3,
+      other: 0,
+      undisclosed: 0,
+      female_pct: '50.0',
+      male_pct: '50.0',
+    },
+    {
+      quartile: 3,
+      headcount: 5,
+      female: 2,
+      male: 3,
+      other: 0,
+      undisclosed: 0,
+      female_pct: '40.0',
+      male_pct: '60.0',
+    },
+    {
+      quartile: 4,
+      headcount: 6,
+      female: 2,
+      male: 2,
+      other: 1,
+      undisclosed: 1,
+      female_pct: '33.3',
+      male_pct: '33.3',
+    },
+  ],
+};
+
+function levelGap(
+  level: number,
+  women: [number, string | null],
+  men: [number, string | null],
+  gap: string | null,
+  flagged: boolean,
+  reason: string | null = null,
+) {
+  return {
+    country: { code: 'NL', name: 'Netherlands' },
+    level,
+    female: { headcount: women[0], mean_gross: women[1], median_gross: women[1] },
+    male: { headcount: men[0], mean_gross: men[1], median_gross: men[1] },
+    mean_gap_pct: gap,
+    median_gap_pct: gap,
+    flagged,
+    reason,
+  };
+}
+
+/** The By level view of the Netherlands: level 1 flagged, level 2 not, level 3 short. */
+export const levelGapView: InsightPayloads['gender-gap'] = {
+  ...USD,
+  view: 'by_level',
+  rows: [
+    levelGap(1, [5, '44000.00'], [5, '48000.00'], '8.3', true),
+    levelGap(2, [5, '50000.00'], [5, '52000.00'], '3.8', false),
+    levelGap(3, [4, null], [6, null], null, false, 'fewer than 5 women'),
   ],
 };
 
@@ -292,8 +430,20 @@ export const costMix: InsightPayloads['cost-mix'] = {
   ],
 };
 
-/** Each insight's payload, by the name in its URL. */
-export function insightFor(name: string, includeExited: boolean): JsonBodyType | undefined {
+/** Each insight's payload, by the name in its URL, the gender card's for the view it asks for. */
+export function insightFor(
+  name: string,
+  includeExited: boolean,
+  view: string | null = null,
+): JsonBodyType | undefined {
+  const genderViews: Record<string, unknown> = {
+    bonus: bonusGap,
+    quartiles: quartileGap,
+    by_level: levelGapView,
+  };
+  if (name === 'gender-gap' && view && view in genderViews) {
+    return genderViews[view] as JsonBodyType;
+  }
   const payloads: Record<string, unknown> = {
     summary: includeExited ? summaryWithExited : summary,
     'by-country': byCountry,

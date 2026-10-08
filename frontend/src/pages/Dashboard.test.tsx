@@ -13,7 +13,7 @@ const QUESTIONS = [
   'Which departments cost most and pay most?',
   'How are salaries distributed?',
   'What does each level pay?',
-  'Is there a gender pay gap?',
+  'Is there a gender pay gap? (on annual pay)',
   'How has total cost moved over two years?',
   'Why did total cost move over the year?',
   'Does pay rise with tenure?',
@@ -41,7 +41,9 @@ function recordRequests() {
       const name = String(params.name);
       const query = new URL(request.url).searchParams;
       (seen[name] ??= []).push(query);
-      return HttpResponse.json(insightFor(name, query.get('include_exited') === 'true'));
+      return HttpResponse.json(
+        insightFor(name, query.get('include_exited') === 'true', query.get('view')),
+      );
     }),
   );
   return seen;
@@ -243,6 +245,23 @@ describe('Dashboard', () => {
     await waitFor(() => expect(seen['cost-mix']).toHaveLength(2));
     expect(seen['cost-mix'][1].get('view')).toBe('take_home');
     expect(router.state.location.search).toBe('?mix.view=take_home');
+  });
+
+  it("the gender card's control switches its view, in the URL", async () => {
+    const user = userEvent.setup();
+    const seen = recordRequests();
+    const { router } = renderApp('/');
+    const control = await screen.findByRole('group', { name: 'Gender gap view' });
+    await waitFor(() => expect(seen['gender-gap']).toHaveLength(1));
+
+    await user.click(within(control).getByRole('button', { name: 'Quartiles' }));
+
+    await waitFor(() => expect(seen['gender-gap']).toHaveLength(2));
+    expect(seen['gender-gap'][1].get('view')).toBe('quartiles');
+    expect(router.state.location.search).toBe('?gap.view=quartiles');
+    expect(
+      await screen.findByRole('table', { name: 'Pay quartiles by gender' }),
+    ).toBeInTheDocument();
   });
 
   it("Clear filters resets the cards' controls with the bar's filters", async () => {

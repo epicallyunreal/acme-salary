@@ -20,6 +20,11 @@ export const DASHBOARD_DEFAULTS: DashboardFilters = {
 export const CARD_CONTROLS = {
   trend: { key: 'trend.measure', param: 'measure', values: ['total_cost', 'headcount'] },
   mix: { key: 'mix.view', param: 'view', values: ['cost', 'take_home'] },
+  gap: {
+    key: 'gap.view',
+    param: 'view',
+    values: ['pay_gap', 'bonus', 'quartiles', 'by_level'],
+  },
   tenure: {
     key: 'tenure.level',
     param: 'level',
