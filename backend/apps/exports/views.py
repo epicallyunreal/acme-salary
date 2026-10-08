@@ -5,7 +5,6 @@ hands the table to a writer. CSV streams. XLSX and JSON are built whole before t
 (DESIGN 1.7).
 """
 
-from datetime import date
 from itertools import chain, islice
 
 from django.http import Http404, HttpResponse, QueryDict, StreamingHttpResponse
@@ -50,12 +49,13 @@ def parse_file(value: str | None) -> str:
     return parse_choice(value, name="file", choices=tuple(CONTENT_TYPES))
 
 
-def applied(params: QueryDict, keys: tuple[str, ...], on: date, currency: str) -> dict:
-    """The filters the export read, as given, with the reporting date and currency as applied, so
-    a JSON file says what its figures are in when the request left them to their defaults (D60).
-    A parameter the export does not read is left out rather than shown as applied."""
+def applied(params: QueryDict, keys: tuple[str, ...], dates: dict, currency: str) -> dict:
+    """The filters the export read, as given, with its dates (`on`, or an insight's `from` and
+    `to`) and currency as applied, so a JSON file says what its figures are in when the request
+    left them to their defaults (D60, D64). A parameter the export does not read is left out
+    rather than shown as applied."""
     given = {key: params.get(key) for key in keys if key in params}
-    return {**given, "on": on, "currency": currency}
+    return {**given, **dates, "currency": currency}
 
 
 def respond(table: tables.Table, file: str, what: str, filters: dict):
@@ -89,7 +89,7 @@ class ExportEmployeesView(DirectoryMixin, GenericAPIView):
         on, currency, rates = self.reporting()
         employees = self.filter_queryset(self.get_queryset())
         table = tables.directory_table(employees, on=on, rates=rates, currency=currency)
-        filters = applied(request.query_params, DIRECTORY_FILTERS, on, currency)
+        filters = applied(request.query_params, DIRECTORY_FILTERS, {"on": on}, currency)
         # The status the rows are in, Active when none was given (D64).
         filters["status"] = request.query_params.get("status") or "active"
         return respond(table, file, "employees", filters)
@@ -104,5 +104,6 @@ class ExportInsightView(APIView):
         file = parse_file(request.query_params.get("file"))
         payload, filters = answer(name, request.query_params)
         table = tables.INSIGHT_TABLES[name](payload)
-        given = applied(request.query_params, read_by(name), filters.on, filters.currency)
+        period = {"from": filters.start, "to": filters.end}
+        given = applied(request.query_params, read_by(name), period, filters.currency)
         return respond(table, file, name, {**given, **control_applied(name, payload)})

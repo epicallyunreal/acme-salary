@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.core import fx
-from apps.core.dates import parse_on
+from apps.core.dates import parse_period
 from apps.core.filters import parse_bool, parse_choice, parse_csv
 from apps.core.money import render
 from apps.insights import queries
@@ -32,11 +32,11 @@ def answer(name: str, params: QueryDict) -> tuple[dict, queries.InsightFilters]:
         country=parse_csv(params.get("country")),
         department=parse_csv(params.get("department")),
         include_exited=parse_bool(params.get("include_exited"), name="include_exited"),
-        on=parse_on(params.get("on")),
+        period=parse_period(params.get("from"), params.get("to")),
         currency=params.get("currency"),
     )
     controls = control(name, params)
-    rates = fx.RateTable.load(filters.on)
+    rates = fx.RateTable.load(filters.end)
     return insight(filters, rates, lookups, **controls), filters
 
 

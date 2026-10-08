@@ -351,9 +351,11 @@ def test_every_insight_table_ends_with_reason_currency_and_rates(api, people, na
 
 
 def test_the_summary_is_one_row_with_its_currency_and_rates(api, people):
+    """The state on `to` and what the period cost: the 27 for 366 days of a 365-day year,
+    2,435,450 x 366 / 365, and X1 until 30 June, 267 days of 132,000 (D64)."""
     body = json_body(api.get(INSIGHT.format("summary"), {"file": "json"}))
 
-    assert body["filters"] == {"on": "2026-10-07", "currency": "USD"}
+    assert body["filters"] == {"from": "2025-10-07", "to": "2026-10-07", "currency": "USD"}
     assert body["rows"] == [
         {
             "currency": "USD",
@@ -364,6 +366,8 @@ def test_the_summary_is_one_row_with_its_currency_and_rates(api, people):
             "median_gross": "75000.00",
             "countries": 4,
             "departments": 4,
+            "people_in_period": 28,
+            "spent_in_period": "2538681.37",
             "reason": None,
         }
     ]
@@ -381,11 +385,13 @@ def test_a_summary_under_five_says_why_its_figures_are_missing(api, people):
             "Median gross",
             "Countries",
             "Departments",
+            "People in period",
+            "Spent in period",
             "Reason",
             "Currency",
             "Rates",
         ],
-        ["1", "", "", "", "1", "1", "fewer than 5 people", "USD", RATES],
+        ["1", "", "", "", "1", "1", "1", "", "fewer than 5 people", "USD", RATES],
     ]
 
 
@@ -633,7 +639,12 @@ def test_local_currency_names_the_currency_and_no_rate_month(api, people):
         api.get(INSIGHT.format("summary"), {"file": "json", "country": "IN", "currency": "local"})
     )
 
-    assert body["filters"] == {"country": "IN", "on": "2026-10-07", "currency": "INR"}
+    assert body["filters"] == {
+        "country": "IN",
+        "from": "2025-10-07",
+        "to": "2026-10-07",
+        "currency": "INR",
+    }
     assert (body["rows"][0]["currency"], body["rows"][0]["rates"]) == (
         "INR",
         "local currency (INR)",
@@ -646,11 +657,11 @@ def test_include_exited_reaches_the_insight_export(api, people):
     assert body["rows"][0]["headcount"] == 29
 
 
-def test_on_reaches_the_insight_export(api, people):
+def test_to_reaches_the_insight_export(api, people):
     """On 1 January 2027 U1 is paid 130,000 and D5 has joined: 28 people (tests/insights)."""
-    body = json_body(api.get(INSIGHT.format("summary"), {"file": "json", "on": "2027-01-01"}))
+    body = json_body(api.get(INSIGHT.format("summary"), {"file": "json", "to": "2027-01-01"}))
 
-    assert body["filters"] == {"on": "2027-01-01", "currency": "USD"}
+    assert body["filters"] == {"from": "2026-01-01", "to": "2027-01-01", "currency": "USD"}
     assert (body["rows"][0]["headcount"], body["rows"][0]["total_cost"]) == (28, "2618450.00")
 
 
@@ -691,7 +702,7 @@ def test_a_withheld_trend_point_says_why(api, people):
     """The United Kingdom is G1 alone."""
     rows = csv_rows(api.get(INSIGHT.format("trend"), {"file": "csv", "country": "GB"}))
 
-    assert rows[-1] == ["2026-09-30", "1", "", "fewer than 5 people", "USD", RATES]
+    assert rows[-1] == ["2026-10-07", "1", "", "fewer than 5 people", "USD", RATES]
 
 
 def test_trend_exports_both_figures_whatever_its_card_draws(api, people):
@@ -700,11 +711,17 @@ def test_trend_exports_both_figures_whatever_its_card_draws(api, people):
     body = json_body(response)
     header = csv_rows(api.get(INSIGHT.format("trend"), {"file": "csv"}))[0]
 
-    assert header == ["Month-end", "Headcount", "Total cost", "Reason", "Currency", "Rates"]
-    assert body["filters"] == {"measure": "headcount", "on": "2026-10-07", "currency": "USD"}
-    assert len(body["rows"]) == 24
+    assert header == ["Date", "Headcount", "Total cost", "Reason", "Currency", "Rates"]
+    assert body["filters"] == {
+        "measure": "headcount",
+        "from": "2025-10-07",
+        "to": "2026-10-07",
+        "currency": "USD",
+    }
+    # 7 October 2025, the twelve month-ends after it and 7 October 2026 (D64).
+    assert len(body["rows"]) == 14
     assert body["rows"][-1] == {
-        "month_end": "2026-09-30",
+        "date": "2026-10-07",
         "headcount": 27,
         "total_cost": "2435450.00",
         "reason": None,
@@ -733,7 +750,12 @@ def test_by_tenure_exports_its_bands_for_the_level_picked(api, people):
     """D62: level 3 of DESIGN 9's fixture, five people joined six years ago."""
     body = json_body(api.get(INSIGHT.format("by-tenure"), {"file": "json", "level": "3"}))
 
-    assert body["filters"] == {"level": "3", "on": "2026-10-07", "currency": "USD"}
+    assert body["filters"] == {
+        "level": "3",
+        "from": "2025-10-07",
+        "to": "2026-10-07",
+        "currency": "USD",
+    }
     assert body["rows"][3] == {
         "tenure": "5 to 10 years",
         "headcount": 5,
@@ -961,11 +983,17 @@ def json_filters(api, name: str, **query) -> dict:
 
 def test_a_file_names_the_control_as_the_insight_applied_it(api, people):
     """D62: the default when none was given, in the list's own spelling when one was."""
-    assert json_filters(api, "by-tenure") == {"level": "all", "on": "2026-10-07", "currency": "USD"}
+    assert json_filters(api, "by-tenure") == {
+        "level": "all",
+        "from": "2025-10-07",
+        "to": "2026-10-07",
+        "currency": "USD",
+    }
     assert json_filters(api, "gender-gap", view=" BONUS ")["view"] == "bonus"
     assert json_filters(api, "summary", include_exited="true") == {
         "include_exited": "true",
-        "on": "2026-10-07",
+        "from": "2025-10-07",
+        "to": "2026-10-07",
         "currency": "USD",
     }
 

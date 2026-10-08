@@ -123,6 +123,8 @@ SUMMARY_COLUMNS = (
     ("Median gross", "median_gross"),
     ("Countries", "countries"),
     ("Departments", "departments"),
+    ("People in period", "people_in_period"),
+    ("Spent in period", "spent_in_period"),
     ("Reason", "reason"),
     ("Currency", "currency"),
     ("Rates", "rates"),
@@ -130,6 +132,12 @@ SUMMARY_COLUMNS = (
 
 
 def summary_table(payload: dict) -> Table:
+    """One row: the state on `to` and what the period cost (D64). With Include exited the
+    headcount can reach five while the period's people do not, and the reason then says so."""
+    spent = payload["spent"]
+    reason = withheld(payload["headcount"], payload["total_cost"], SMALL_GROUP)
+    if reason is None and withheld(spent["headcount"], spent["total_cost"], SMALL_GROUP):
+        reason = f"fewer than {SMALL_GROUP} people in the period"
     row = (
         payload["headcount"],
         payload["total_cost"],
@@ -137,7 +145,9 @@ def summary_table(payload: dict) -> Table:
         payload["median_gross"],
         payload["countries"],
         payload["departments"],
-        withheld(payload["headcount"], payload["total_cost"], SMALL_GROUP),
+        spent["headcount"],
+        spent["total_cost"],
+        reason,
         *currency_and_rates(payload),
     )
     return table(SUMMARY_COLUMNS, [row])
@@ -464,7 +474,7 @@ def level_gaps_table(payload: dict) -> Table:
 
 
 TREND_COLUMNS = (
-    ("Month-end", "month_end"),
+    ("Date", "date"),
     ("Headcount", "headcount"),
     ("Total cost", "total_cost"),
     ("Reason", "reason"),
@@ -474,10 +484,10 @@ TREND_COLUMNS = (
 
 
 def trend_table(payload: dict) -> Table:
-    """One row per month-end, both figures whatever the card draws (D62)."""
+    """One row per date of the period (D64), both figures whatever the card draws (D62)."""
     rows = [
         (
-            point["month_end"],
+            point["date"],
             point["headcount"],
             point["total_cost"],
             withheld(point["headcount"], point["total_cost"], SMALL_GROUP),

@@ -1,13 +1,14 @@
 """The insights against DESIGN section 9's fixture. Every figure below was worked out by hand from
 that table and is written as a literal; none is computed by the code under test."""
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 
 from apps.core import fx
 from apps.core import services as core_services
+from apps.core.dates import parse_period
 from apps.core.exceptions import Invalid
 from apps.core.money import render
 from apps.employees import services as employees
@@ -31,13 +32,16 @@ def people(lookups):
 
 
 def filters(**given) -> queries.InsightFilters:
+    """The filters a request names, its period read as the API reads `from` and `to`, today and
+    the same day a year before when not given (D64)."""
     lookups = queries.Lookups.load()
+    start, end = given.get("from"), given.get("to", TODAY)
     return queries.build_filters(
         lookups,
         country=given.get("country", []),
         department=given.get("department", []),
         include_exited=given.get("include_exited", False),
-        on=given.get("on", TODAY),
+        period=parse_period(start and start.isoformat(), end.isoformat()),
         currency=given.get("currency"),
     )
 
@@ -45,8 +49,15 @@ def filters(**given) -> queries.InsightFilters:
 def insight(name: str, control: dict | None = None, **given) -> dict:
     """An insight for the given filters and, where the card has one, its control (D62)."""
     f = filters(**given)
-    rates, lookups = fx.RateTable.load(f.on), queries.Lookups.load()
+    rates, lookups = fx.RateTable.load(f.end), queries.Lookups.load()
     return render(queries.INSIGHTS[name](f, rates, lookups, **(control or {})))
+
+
+def figures(payload: dict) -> dict:
+    """A payload without the period every insight names, which
+    test_every_insight_names_its_period holds, and without the summary's spend, which the spend
+    tests hold (D64)."""
+    return {key: value for key, value in payload.items() if key not in ("from", "to", "spent")}
 
 
 def country_row(code, name, headcount, total, median, share):
@@ -161,7 +172,7 @@ THE_REST = [
             },
         ),
         (
-            {"on": NEW_YEAR},
+            {"to": NEW_YEAR},
             {
                 "currency": "USD",
                 "rate_month": USD_RATES,
@@ -203,12 +214,12 @@ THE_REST = [
     ids=["no filter", "country", "department", "include_exited", "on", "eur", "local"],
 )
 def test_summary(people, given, expected):
-    assert insight("summary", **given) == expected
+    assert figures(insight("summary", **given)) == expected
 
 
 def test_a_population_under_five_shows_its_headcount_alone(people):
     """D59: a one-person total is that person's cost, read straight off the card."""
-    assert insight("summary", country=["GB"]) == {
+    assert figures(insight("summary", country=["GB"])) == {
         "currency": "USD",
         "rate_month": USD_RATES,
         "headcount": 1,
@@ -264,7 +275,7 @@ def test_a_population_under_five_shows_its_headcount_alone(people):
             ],
         ),
         (
-            {"on": NEW_YEAR},
+            {"to": NEW_YEAR},
             [
                 country_row("US", "United States", 10, "1628000.00", "145000.00", "62.2"),
                 country_row("DE", "Germany", 5, "600000.00", "100000.00", "22.9"),
@@ -347,7 +358,7 @@ def test_by_country(people, given, rows):
             ],
         ),
         (
-            {"on": NEW_YEAR},
+            {"to": NEW_YEAR},
             [
                 department_row(
                     "engineering", "Engineering", 16, "1402200.00", "76718.75", "93750.00"
@@ -402,7 +413,7 @@ def test_a_scheduled_revision_counts_from_its_date_and_not_before(people):
     is not his record today, and is from that day."""
     u1 = people["U1"]
     grosses = [
-        queries.population(filters(on=on)).get(employee=u1).gross_annual
+        queries.population(filters(to=on)).get(employee=u1).gross_annual
         for on in (TODAY, date(2026, 12, 31), NEW_YEAR)
     ]
 
@@ -412,13 +423,13 @@ def test_a_scheduled_revision_counts_from_its_date_and_not_before(people):
 def test_an_exit_counts_on_its_last_date_and_is_gone_the_day_after(people):
     """F3, the insights half (D42): X1 left on 2026-06-30, so that day counts him, the next not."""
     x1 = people["X1"]
-    last_day = filters(on=date(2026, 6, 30))
-    day_after = filters(on=date(2026, 7, 1))
+    last_day = filters(to=date(2026, 6, 30))
+    day_after = filters(to=date(2026, 7, 1))
 
     assert queries.population(last_day).filter(employee=x1).exists()
     assert not queries.population(day_after).filter(employee=x1).exists()
-    assert insight("summary", on=date(2026, 6, 30))["headcount"] == 28
-    assert insight("summary", on=date(2026, 7, 1))["headcount"] == 27
+    assert insight("summary", to=date(2026, 6, 30))["headcount"] == 28
+    assert insight("summary", to=date(2026, 7, 1))["headcount"] == 27
 
 
 def test_an_employee_with_no_live_record_is_never_counted(people):
@@ -434,7 +445,7 @@ def test_an_employee_with_no_live_record_is_never_counted(people):
 
     for on in (TODAY, date(2026, 12, 1)):
         for include_exited in (False, True):
-            f = filters(on=on, include_exited=include_exited)
+            f = filters(to=on, include_exited=include_exited)
             assert not queries.population(f).filter(employee=late).exists()
     assert insight("summary")["headcount"] == 27
     assert insight("summary", include_exited=True)["headcount"] == 29
@@ -459,7 +470,7 @@ def test_include_exited_counts_someone_who_left_once_at_their_last_record(people
 
 def test_nobody_in_the_filters_is_headcount_zero_and_nothing_else(people):
     """The dashboard's empty state reads this: Legal has nobody."""
-    assert insight("summary", department=["legal"]) == {
+    assert figures(insight("summary", department=["legal"])) == {
         "currency": "USD",
         "rate_month": USD_RATES,
         "headcount": 0,
@@ -469,7 +480,9 @@ def test_nobody_in_the_filters_is_headcount_zero_and_nothing_else(people):
         "countries": 0,
         "departments": 0,
     }
-    assert insight("distribution", department=["legal"]) == headcount_only("USD", USD_RATES, 0)
+    assert figures(insight("distribution", department=["legal"])) == headcount_only(
+        "USD", USD_RATES, 0
+    )
     assert insight("by-level", department=["legal"])["rows"] == [
         level(number, 0) for number in range(1, 7)
     ]
@@ -477,7 +490,7 @@ def test_nobody_in_the_filters_is_headcount_zero_and_nothing_else(people):
 
 def test_local_currency_is_labelled_local_even_when_the_toggle_offers_it_too(people):
     """D58: US figures in local currency use no rate, so the label says local, not a rate month."""
-    assert insight("summary", country=["US"], currency="local") == {
+    assert figures(insight("summary", country=["US"], currency="local")) == {
         "currency": "USD",
         "rate_month": {"label": "local currency (USD)", "effective_from": None},
         "headcount": 10,
@@ -494,7 +507,7 @@ def test_the_rates_are_those_of_the_reporting_date(people):
     core_services.set_exchange_rate("INR", "USD", Decimal("0.015"), NEW_YEAR)
 
     today = insight("summary", country=["IN"])
-    new_year = insight("summary", country=["IN"], on=NEW_YEAR)
+    new_year = insight("summary", country=["IN"], to=NEW_YEAR)
 
     assert (today["total_cost"], today["rate_month"]) == ("319200.00", USD_RATES)
     assert new_year["rate_month"] == {"label": "January 2027 rates", "effective_from": "2027-01-01"}
@@ -633,7 +646,7 @@ def spread(currency, rates, headcount, p1, p99, markers, edges, counts):
             ),
         ),
         (
-            {"on": NEW_YEAR},
+            {"to": NEW_YEAR},
             spread(
                 "USD",
                 USD_RATES,
@@ -668,7 +681,7 @@ def spread(currency, rates, headcount, p1, p99, markers, edges, counts):
     ids=["no filter", "country", "department", "include_exited", "on", "eur", "local"],
 )
 def test_distribution(people, given, expected):
-    assert insight("distribution", **given) == expected
+    assert figures(insight("distribution", **given)) == expected
 
 
 def test_a_distribution_needs_twenty_people_and_one_salary_is_one_band(people):
@@ -684,7 +697,7 @@ def test_a_distribution_needs_twenty_people_and_one_salary_is_one_band(people):
             )
 
     hire(queries.SPREAD_GROUP - 1)
-    assert insight("distribution", country=["NL"]) == headcount_only("USD", USD_RATES, 19)
+    assert figures(insight("distribution", country=["NL"])) == headcount_only("USD", USD_RATES, 19)
 
     hire(1)
     result = insight("distribution", country=["NL"])
@@ -727,7 +740,7 @@ def level(number, headcount, *figures):
         ({"country": ["US"]}, [2, 2, 2, 2, 1, 1]),
         ({"department": ["engineering"]}, [3, 4, 3, 2, 2, 1]),
         ({"include_exited": True}, [5, 6, 6, 5, 4, 3]),
-        ({"on": NEW_YEAR}, [4, 6, 6, 5, 4, 3]),
+        ({"to": NEW_YEAR}, [4, 6, 6, 5, 4, 3]),
         ({"currency": "eur"}, [4, 6, 5, 5, 4, 3]),
         ({"country": ["IN"], "currency": "local"}, [2, 2, 2, 2, 2, 2]),
     ],
@@ -840,7 +853,7 @@ NOBODY_ELSE = [
             ],
         ),
         (
-            {"on": NEW_YEAR},
+            {"to": NEW_YEAR},
             [
                 gap("DE", "Germany", 2, None, 3, None, reason=BOTH),
                 gap("IN", "India", 6, "25000.00", 6, "22500.00", "-11.1"),
@@ -915,38 +928,46 @@ def history(lookups):
     return build_history()
 
 
-def point(month_end, headcount, total_cost):
-    return {"month_end": month_end, "headcount": headcount, "total_cost": total_cost}
+def point(day, headcount, total_cost):
+    return {"date": day, "headcount": headcount, "total_cost": total_cost}
 
 
-def test_the_month_ends_are_the_24_in_the_24_months_ending_at_on():
-    ends = queries.month_ends(TODAY)
+def test_a_period_reads_its_first_day_each_month_end_between_and_its_last():
+    """D64: 7 October 2025 to 7 October 2026 is 14 dates."""
+    dates = queries.period_dates(date(2025, 10, 7), TODAY)
 
-    assert (len(ends), ends[0], ends[1], ends[-1]) == (
-        24,
-        date(2024, 10, 31),
-        date(2024, 11, 30),
-        date(2026, 9, 30),
+    assert (len(dates), dates[:2], dates[-2:]) == (
+        14,
+        [date(2025, 10, 7), date(2025, 10, 31)],
+        [date(2026, 9, 30), TODAY],
     )
 
 
-def test_on_a_month_end_the_month_ends_stop_at_on_itself():
-    assert queries.month_ends(date(2026, 10, 31))[::23] == [date(2024, 11, 30), date(2026, 10, 31)]
+def test_a_month_end_first_or_last_day_is_read_once():
+    dates = queries.period_dates(date(2024, 10, 31), date(2026, 9, 30))
+
+    assert (len(dates), dates[0], dates[-1]) == (24, date(2024, 10, 31), date(2026, 9, 30))
+    assert queries.period_dates(TODAY, TODAY) == [TODAY]
 
 
 def test_a_leap_year_keeps_its_29_february():
-    assert date(2024, 2, 29) in queries.month_ends(date(2024, 3, 15))
+    assert queries.period_dates(date(2024, 1, 15), date(2024, 3, 15)) == [
+        date(2024, 1, 15),
+        date(2024, 1, 31),
+        date(2024, 2, 29),
+        date(2024, 3, 15),
+    ]
 
 
-def test_trend_counts_the_people_employed_at_each_month_end_at_one_rate(history):
-    """A4 and A5 are EUR, at 1.25 on every date although 1.10 was in effect until October 2026.
-    X1's last day is 31 March 2025, a month-end, so he counts on it and is gone by 30 April. B1
-    joins in January 2025, J1 to J4 through 2026, J4 on 30 September, a month-end that counts
-    him. Three raises land on 1 April 2026, and J5 joins on 1 October, after the last
-    month-end."""
-    result = insight("trend")
+def test_trend_counts_the_people_employed_on_each_date_at_one_rate(history):
+    """From 31 October 2024 to 7 October 2026. A4 and A5 are EUR, at 1.25 on every date although
+    1.10 was in effect until October 2026. X1's last day is 31 March 2025, a month-end, so he
+    counts on it and is gone by 30 April. B1 joins in January 2025, J1 to J4 through 2026, J4 on
+    30 September, a month-end that counts him. Three raises land on 1 April 2026, and J5 joins on
+    1 October, so the last date, `to`, has 11 people and 733,000, the bridge's end."""
+    result = insight("trend", **{"from": date(2024, 10, 31)})
 
-    assert (result["measure"], result["latest"]) == ("total_cost", "2026-09-30")
+    assert result["measure"] == "total_cost"
     assert result["points"] == [
         point("2024-10-31", 6, "405000.00"),
         point("2024-11-30", 6, "405000.00"),
@@ -972,24 +993,59 @@ def test_trend_counts_the_people_employed_at_each_month_end_at_one_rate(history)
         point("2026-07-31", 9, "598000.00"),
         point("2026-08-31", 9, "598000.00"),
         point("2026-09-30", 10, "688000.00"),
+        point("2026-10-07", 11, "733000.00"),
     ]
 
 
+def test_trend_starts_on_the_first_day_whatever_it_is(history):
+    """15 June 2026 is J3's first day, so she counts on it: 9 people and 598,000, as on 30 June."""
+    points = insight("trend", **{"from": date(2026, 6, 15)})["points"]
+
+    assert points == [
+        point("2026-06-15", 9, "598000.00"),
+        point("2026-06-30", 9, "598000.00"),
+        point("2026-07-31", 9, "598000.00"),
+        point("2026-08-31", 9, "598000.00"),
+        point("2026-09-30", 10, "688000.00"),
+        point("2026-10-07", 11, "733000.00"),
+    ]
+
+
+def test_the_bridge_starts_and_ends_at_trends_first_and_last_points(history):
+    """D64: one period, so the bridge's start and end are trend's first and last points."""
+    period = {"from": date(2026, 6, 15)}
+    points = insight("trend", **period)["points"]
+    parts = {part["part"]: part for part in insight("cost-bridge", **period)["parts"]}
+
+    assert (parts["start"]["people"], parts["start"]["amount"]) == (
+        points[0]["headcount"],
+        points[0]["total_cost"],
+    )
+    assert (parts["end"]["people"], parts["end"]["amount"]) == (
+        points[-1]["headcount"],
+        points[-1]["total_cost"],
+    )
+
+
 def test_a_trend_point_under_five_people_shows_its_headcount_alone(history):
-    """Germany is A4 and A5, and J3 from June 2026."""
+    """Germany is A4 and A5, and J3 from 15 June 2026, over the default 12 months: the first day,
+    eight month-ends to May, four from June and the last day."""
     points = insight("trend", country=["DE"])["points"]
 
-    assert [(p["headcount"], p["total_cost"]) for p in points] == [(2, None)] * 20 + [(3, None)] * 4
+    assert [(p["headcount"], p["total_cost"]) for p in points] == [(2, None)] * 9 + [(3, None)] * 5
 
 
 def test_trend_reads_the_country_and_department_filters(history):
     """US engineering: A1 to A3 and X1 are four, then B1 makes five in January 2025, 100,000 +
     80,000 + 60,000 + 55,000 + 65,000 = 360,000. X1 leaves in March, and J1 makes five again in
     November, 375,000 with J1's 70,000. J2 makes six from February 2026, 425,000, the raises
-    443,000 from April, and J4 seven in September, 533,000. A sales hire is left out."""
+    443,000 from April, J4 seven in September, 533,000, and J5 eight on the last day, 578,000.
+    A sales hire is left out."""
     hire("S1", "US", 1_000_000, dept="sales")
 
-    points = insight("trend", country=["US"], department=["engineering"])["points"]
+    points = insight(
+        "trend", country=["US"], department=["engineering"], **{"from": date(2024, 10, 31)}
+    )["points"]
 
     assert [(p["headcount"], p["total_cost"]) for p in points] == (
         [(4, None)] * 3
@@ -999,6 +1055,7 @@ def test_trend_reads_the_country_and_department_filters(history):
         + [(6, "425000.00")] * 2
         + [(6, "443000.00")] * 5
         + [(7, "533000.00")]
+        + [(8, "578000.00")]
     )
 
 
@@ -1164,6 +1221,74 @@ def test_the_bridge_counts_who_is_employed_on_its_two_dates(lookups):
     people = [p["people"] for p in insight("cost-bridge")["parts"]]
 
     assert people == [6, 1, 1, 5, 6]
+
+
+# The period and what it cost (D64)
+
+
+@pytest.mark.parametrize("name", sorted(queries.INSIGHTS))
+def test_every_insight_names_its_period(people, name):
+    """`to` today and `from` a year before it when not given, else as given."""
+    assert (insight(name)["from"], insight(name)["to"]) == ("2025-10-07", "2026-10-07")
+    given = insight(name, **{"from": date(2026, 4, 1), "to": NEW_YEAR})
+    assert (given["from"], given["to"]) == ("2026-04-01", "2027-01-01")
+
+
+def test_a_year_fraction_counts_each_day_against_its_own_year():
+    assert queries.year_fraction(date(2024, 1, 1), date(2024, 12, 31)) == 1
+    assert queries.year_fraction(date(2025, 1, 1), date(2025, 12, 31)) == 1
+    assert queries.year_fraction(date(2023, 12, 1), date(2024, 1, 31)) == (
+        Decimal(31) / 365 + Decimal(31) / 366
+    )
+
+
+def pay_all_year(name, base, *, raised=None, left=None):
+    """A US employee since 2020 on one BASE line, raised on 1 July 2024 or gone after `left`."""
+    employee = EmployeeFactory(
+        full_name=name, country=country("US"), joining_date=date(2020, 1, 1), last_date=left
+    )
+    first_ends = date(2024, 7, 1) if raised else (left + timedelta(days=1) if left else None)
+    CompensationRecordFactory(
+        employee=employee,
+        lines={"BASE": Decimal(base)},
+        effective_from=date(2020, 1, 1),
+        effective_to=first_ends,
+    )
+    if raised:
+        CompensationRecordFactory(
+            employee=employee, lines={"BASE": Decimal(raised)}, effective_from=date(2024, 7, 1)
+        )
+
+
+YEAR_2024 = {"from": date(2024, 1, 1), "to": date(2024, 12, 31)}
+
+
+def test_spent_in_period_counts_each_day_a_record_was_current(lookups):
+    """2024 has 366 days, so 36,600 a year is 100 a day. Four on 36,600 all year are 146,400.
+    A fifth is raised to 73,200 on 1 July: 182 days at 100 and 184 at 200 are 55,000. A sixth
+    leaves on 31 March, after 91 days, 9,100. 146,400 + 55,000 + 9,100 = 210,500, six people."""
+    for n in range(4):
+        pay_all_year(f"P{n}", 36_600)
+    pay_all_year("Raised", 36_600, raised=73_200)
+    pay_all_year("Left", 36_600, left=date(2024, 3, 31))
+
+    result = insight("summary", **YEAR_2024)
+
+    assert result["spent"] == {"headcount": 6, "total_cost": "210500.00"}
+    assert (result["headcount"], result["total_cost"]) == (5, "219600.00")
+
+
+def test_spent_in_period_is_withheld_under_five_and_ignores_include_exited(lookups):
+    """Four people, one of whom left: the period counts the people employed in it, as trend
+    does, whatever Include exited says (D59, D64)."""
+    for n in range(3):
+        pay_all_year(f"P{n}", 36_600)
+    pay_all_year("Left", 36_600, left=date(2024, 3, 31))
+
+    spent = insight("summary", **YEAR_2024)["spent"]
+
+    assert spent == {"headcount": 4, "total_cost": None}
+    assert insight("summary", include_exited=True, **YEAR_2024)["spent"] == spent
 
 
 # by-tenure (D62)

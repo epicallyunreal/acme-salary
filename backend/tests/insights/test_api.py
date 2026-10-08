@@ -20,6 +20,8 @@ def test_an_insight_answers_with_its_figures_as_text(api, people):
     assert (response.status_code, response.json()) == (
         200,
         {
+            "from": "2025-10-07",
+            "to": "2026-10-07",
             "currency": "EUR",
             "rate_month": {"label": "October 2026 rates", "effective_from": "2026-10-01"},
             "headcount": 27,
@@ -28,6 +30,9 @@ def test_an_insight_answers_with_its_figures_as_text(api, people):
             "median_gross": "60000.00",
             "countries": 4,
             "departments": 4,
+            # The 27 for the period's 366 days of a 365-day year, 1,948,360 x 366 / 365, and X1
+            # until 30 June, 267 days of 105,600: 1,953,697.97 + 77,247.12 (D64).
+            "spent": {"headcount": 28, "total_cost": "2030945.10"},
         },
     )
 
@@ -39,7 +44,7 @@ def test_every_filter_reaches_the_query(api, people):
             "country": "IN",
             "department": "customer-support",
             "include_exited": "true",
-            "on": "2026-10-07",
+            "to": "2026-10-07",
         },
     )
 
@@ -57,7 +62,7 @@ def test_every_filter_reaches_the_query(api, people):
 @pytest.mark.parametrize(
     ("name", "queries"),
     [
-        ("summary", 6),
+        ("summary", 7),
         ("by-country", 6),
         ("by-department", 6),
         ("distribution", 5),
@@ -80,10 +85,10 @@ def test_an_insight_runs_a_fixed_number_of_queries(
     assert response.status_code == 200
 
 
-def test_on_reaches_the_query(api, people):
-    """The frozen today would hide a view that ignores `on`; on 2027-01-01 D5 has joined and U1's
-    revision is current (DESIGN section 9)."""
-    response = api.get(URL.format("summary"), {"on": "2027-01-01"})
+def test_to_reaches_the_query(api, people):
+    """The frozen today would hide a view that ignores `to`; on 2027-01-01 D5 has joined and U1's
+    revision is current (DESIGN section 9, D64)."""
+    response = api.get(URL.format("summary"), {"to": "2027-01-01"})
 
     assert (response.json()["headcount"], response.json()["total_cost"]) == (28, "2618450.00")
 
@@ -113,8 +118,10 @@ def test_an_insight_needs_a_signed_in_user(anon, people):
             {"currency": ["currency=local needs exactly one country in the filter"]},
         ),
         ({"currency": "gbp"}, {"currency": ["currency must be usd, eur or local, got gbp"]}),
-        ({"on": "07/10/2026"}, {"on": ["on must be a date in YYYY-MM-DD form, got 07/10/2026"]}),
-        ({"on": "0001-01-01"}, {"on": ["on must be on or after 1900-01-01, got 0001-01-01"]}),
+        ({"to": "07/10/2026"}, {"to": ["to must be a date in YYYY-MM-DD form, got 07/10/2026"]}),
+        ({"from": "2014-12-31"}, {"from": ["from must be on or after 2015-01-01, got 2014-12-31"]}),
+        ({"to": "2101-01-01"}, {"to": ["to must be on or before 2100-12-31, got 2101-01-01"]}),
+        ({"from": "2026-10-08"}, {"from": ["from must be on or before to"]}),
         (
             {"currency": "g" * 1000},
             {"currency": [f"currency must be usd, eur or local, got {'g' * 63}\u2026"]},
@@ -129,14 +136,17 @@ def test_a_filter_that_names_nothing_is_a_400(api, people, params, errors):
 
 
 @pytest.mark.parametrize("name", ["trend", "cost-bridge"])
-def test_a_year_1_on_is_a_400_where_the_dates_reach_back(api, lookups, name):
-    """D62: two years before 1 January of year 1 is no date at all."""
-    response = api.get(URL.format(name), {"on": "0001-01-01"})
+def test_a_period_before_2015_is_a_400_where_the_dates_reach_back(api, lookups, name):
+    """D64: the period starts no earlier than the seed's first day, and a `to` before 2016 does
+    not pull the default `from` before it."""
+    response = api.get(URL.format(name), {"from": "0001-01-01"})
 
     assert (response.status_code, response.json()) == (
         400,
-        {"on": ["on must be on or after 1900-01-01, got 0001-01-01"]},
+        {"from": ["from must be on or after 2015-01-01, got 0001-01-01"]},
     )
+    early = api.get(URL.format(name), {"to": "2015-06-30"})
+    assert (early.status_code, early.json()["from"]) == (200, "2015-01-01")
 
 
 # Card controls (D62)

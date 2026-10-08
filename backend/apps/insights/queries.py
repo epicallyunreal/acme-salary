@@ -8,9 +8,11 @@ than five people shows its headcount alone, since a one-person total is that per
 spread figures, by-level's p10 to p90 and the distribution's range, bands and markers, need
 twenty: at exactly five, by-level's five figures were every salary in the group.
 
-`trend` and `cost-bridge` read the people employed on each of several dates (`spans`), at the one
-rate effective on `on`, and Include exited does not apply to them (D62). A card may have one
-control of its own (`CONTROLS`), which slices or measures and never decides who is counted.
+Every insight reads a period, `start` to `end`, the API's `from` and `to` (D64). The cards that
+describe who earns what show the state on `end`, and `trend`, `cost-bridge` and the summary's
+spend read the people employed on each date of the period (`spans`), Include exited not applying
+to them (D62). One rate, the one effective on `end`, converts it all. A card may have one control
+of its own (`CONTROLS`), which slices or measures and never decides who is counted.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from django.db.models import Count, F, Q, QuerySet, Sum
 from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core import fx
+from apps.core.dates import last_day, months_before  # noqa: F401 (months_before for callers)
 from apps.core.exceptions import Invalid
 from apps.core.models import Country, Department, SalaryComponent
 from apps.core.money import q1, q2
@@ -40,10 +43,8 @@ SMALL_GROUP = 5  # under five people a group shows its headcount alone (SPEC sec
 SPREAD_GROUP = 20  # under twenty, no percentile figures: each would be one person's pay (D59)
 BANDS = 12
 LEVELS = range(1, 7)
-TREND_MONTHS = 24
 # EU Directive 2023/970 Article 10's threshold for a gap between women's and men's pay (D62).
 GAP_FLAG = Decimal(5)
-BRIDGE_MONTHS = 12
 # Tenure bands in completed years (D62): each from its lower bound up to, not including, its upper.
 TENURE_BANDS = (
     ("under_1", "Under 1 year", 0),
@@ -65,7 +66,8 @@ class InsightFilters:
     country: tuple[str, ...]
     department: tuple[str, ...]
     include_exited: bool
-    on: date
+    start: date  # the period's first day, the API's `from` (D64)
+    end: date  # its last day, `to`, the reporting date of every card that shows a state
     currency: str  # "USD", "EUR", or the one country's local code
     local: bool = False  # currency=local was asked for, so no rate is used
 
@@ -92,7 +94,7 @@ def build_filters(
     country: Sequence[str],
     department: Sequence[str],
     include_exited: bool,
-    on: date,
+    period: tuple[date, date],
     currency: str | None,
 ) -> InsightFilters:
     """The filters a request names. A code that names nothing is refused with section 7's words,
@@ -109,20 +111,21 @@ def build_filters(
         raise Invalid(errors)
     currency_by_country = {code: c.currency_code for code, c in lookups.countries.items()}
     reporting = fx.resolve_reporting_currency(currency, list(country), currency_by_country)
+    start, end = period
     return InsightFilters(
-        country, department, include_exited, on, reporting, fx.asks_local(currency)
+        country, department, include_exited, start, end, reporting, fx.asks_local(currency)
     )
 
 
 def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
-    """SPEC section 9: the record current on `on` of everyone active then, and with
+    """SPEC section 9: the record current on `end` of everyone active then, and with
     `include_exited` the last record of everyone who left before it. Future joiners never.
 
     Live records of one employee never overlap, so at most one is current. An exited employee's
     last record alone ends after `last_date`, at `last_date + 1`. `trend` and `cost-bridge` read
     `spans` instead, the people employed on each date (D62).
     """
-    on = f.on
+    on = f.end
     active = Q(employee__joining_date__lte=on) & (
         Q(employee__last_date__isnull=True) | Q(employee__last_date__gte=on)
     )
@@ -140,30 +143,32 @@ def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
     return records.order_by()
 
 
-# Dates (D62)
+# Dates (D62, D64)
 
 
-def last_day(year: int, month: int) -> date:
-    return date(year, month, calendar.monthrange(year, month)[1])
+def period_dates(start: date, end: date) -> list[date]:
+    """The dates trend reads over a period (D64): `start`, each month-end after it and before
+    `end`, and `end`, oldest first, a month-end `start` or `end` counted once."""
+    dates = [start]
+    month_end = last_day(start.year, start.month)
+    while month_end < end:
+        if month_end > start:
+            dates.append(month_end)
+        following = month_end + timedelta(days=1)
+        month_end = last_day(following.year, following.month)
+    if end > start:
+        dates.append(end)
+    return dates
 
 
-def months_before(day: date, months: int) -> date:
-    """The same day `months` months earlier, or that month's last day when it is shorter, so 29
-    February a year back is 28 February."""
-    year, month = divmod(day.year * 12 + day.month - 1 - months, 12)
-    return date(year, month + 1, min(day.day, calendar.monthrange(year, month + 1)[1]))
-
-
-def month_ends(on: date) -> list[date]:
-    """The 24 month-ends in the 24 months ending at `on`, oldest first: 31 Oct 2024 to 30 Sep 2026
-    for 7 Oct 2026, ending at `on` itself when `on` is a month-end."""
-    latest = on if on == last_day(on.year, on.month) else on.replace(day=1) - timedelta(days=1)
-    months = latest.year * 12 + latest.month - 1
-    ends = []
-    for index in range(months - TREND_MONTHS + 1, months + 1):
-        year, month = divmod(index, 12)
-        ends.append(last_day(year, month + 1))
-    return ends
+def year_fraction(first: date, last: date) -> Decimal:
+    """The days from `first` to `last`, both counted, each as a share of its own calendar year,
+    so a whole year adds up to 1 (D64)."""
+    fraction = Decimal(0)
+    for year in range(first.year, last.year + 1):
+        days = (min(last, date(year, 12, 31)) - max(first, date(year, 1, 1))).days + 1
+        fraction += Decimal(days) / (366 if calendar.isleap(year) else 365)
+    return fraction
 
 
 @dataclass(frozen=True)
@@ -305,7 +310,8 @@ def published(group: Group, values: list[Decimal], *, mean: bool = False) -> dic
 
 
 def header(f: InsightFilters, rates: fx.RateTable) -> dict:
-    """The reporting currency and the month of its rates (D28). Local currency uses no rate."""
+    """The period, the reporting currency and the month of its rates (D28, D64). Local currency
+    uses no rate."""
     if f.local:
         rate_month = {"label": fx.local_label(f.currency), "effective_from": None}
     else:
@@ -313,7 +319,7 @@ def header(f: InsightFilters, rates: fx.RateTable) -> dict:
             "label": rates.month_label(f.currency),
             "effective_from": rates.month_of(f.currency),
         }
-    return {"currency": f.currency, "rate_month": rate_month}
+    return {"from": f.start, "to": f.end, "currency": f.currency, "rate_month": rate_month}
 
 
 def by_cost(row: dict, name: Callable[[dict], str]) -> tuple:
@@ -327,8 +333,8 @@ def by_cost(row: dict, name: Callable[[dict], str]) -> tuple:
 
 
 def summary(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
-    """Question 1: headcount, total cost, mean and median gross, with the countries and
-    departments they span."""
+    """Question 1: headcount, total cost, mean and median gross on `end`, with the countries and
+    departments they span, and what the period cost (D64)."""
     groups = sums(f, rates, COUNTRY, DEPARTMENT)
     everyone = Group()
     for group in groups.values():
@@ -341,7 +347,29 @@ def summary(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
         **published(everyone, values, mean=True),
         "countries": len({country for country, _ in groups}),
         "departments": len({department for _, department in groups}),
+        "spent": spent(f, rates),
     }
+
+
+def spent(f: InsightFilters, rates: fx.RateTable) -> dict:
+    """What the period cost (D64): each record's annual total cost for the days it was current
+    within it, a day costing the annual figure over the days in its calendar year, summed per
+    currency, converted once and quantised once. Everyone employed on any day of the period is
+    counted, as trend counts them, Include exited not applying, and under five the amount is
+    withheld (D59)."""
+    convert = Converter(f, rates)
+    by_currency: dict[str, Decimal] = defaultdict(Decimal)
+    people = set()
+    for span in spans(f, f.start, f.end):
+        first = max(span.first, f.start)
+        last = f.end if span.stop is None else min(span.stop - timedelta(days=1), f.end)
+        if first > last:
+            continue
+        people.add(span.employee)
+        by_currency[span.currency] += span.total_cost * year_fraction(first, last)
+    total = sum((amount * convert.rate(ccy) for ccy, amount in by_currency.items()), Decimal(0))
+    shown = len(people) >= SMALL_GROUP
+    return {"headcount": len(people), "total_cost": q2(total) if shown else None}
 
 
 def by_country(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
@@ -671,11 +699,11 @@ def level_gaps(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict
 def trend(
     f: InsightFilters, rates: fx.RateTable, lookups: Lookups, *, measure: str = "total_cost"
 ) -> dict:
-    """Question 7: headcount and total cost at the 24 month-ends ending at `on`, every month at
-    the rate effective on `on` (D62). A span adds at the first month-end it covers and drops at
-    the first it does not, so one pass over the spans and one over the dates do it. `measure`
-    only picks the card's line, and both figures are always here."""
-    ends = month_ends(f.on)
+    """Question 7: headcount and total cost on the period's first day, each month-end between and
+    its last day, every date at the rate effective on `end` (D62, D64). A span adds at the first
+    date it covers and drops at the first it does not, so one pass over the spans and one over
+    the dates do it. `measure` only picks the card's line, and both figures are always here."""
+    ends = period_dates(f.start, f.end)
     convert = Converter(f, rates)
     people = [0] * (len(ends) + 1)
     costs: dict[str, list[Decimal]] = defaultdict(lambda: [Decimal(0)] * (len(ends) + 1))
@@ -690,7 +718,7 @@ def trend(
     points = []
     headcount = 0
     running: dict[str, Decimal] = defaultdict(Decimal)
-    for index, month_end in enumerate(ends):
+    for index, day in enumerate(ends):
         headcount += people[index]
         for currency, deltas in costs.items():
             running[currency] += deltas[index]
@@ -698,12 +726,12 @@ def trend(
         shown = headcount >= SMALL_GROUP
         points.append(
             {
-                "month_end": month_end,
+                "date": day,
                 "headcount": headcount,
                 "total_cost": q2(total) if shown else None,
             }
         )
-    return {**header(f, rates), "measure": measure, "latest": ends[-1], "points": points}
+    return {**header(f, rates), "measure": measure, "points": points}
 
 
 BRIDGE_PARTS = ("start", "leavers", "joiners", "pay_changes", "end")
@@ -730,10 +758,10 @@ class Bridge:
 
 
 def bridge(f: InsightFilters, rates: fx.RateTable) -> Bridge:
-    """Who was employed a year before `on` and on `on`, and what each cost, at the rate effective
-    on `on` (D62). Leavers count at the start alone, joiners at the end alone, stayers at both."""
-    end = f.on
-    start = months_before(end, BRIDGE_MONTHS)
+    """Who was employed on the period's first day and on its last, and what each cost, at the
+    rate effective on the last (D62, D64), so the start and end are trend's first and last
+    points. Leavers count at the start alone, joiners at the end alone, stayers at both."""
+    start, end = f.start, f.end
     at_start: dict[int, Span] = {}
     at_end: dict[int, Span] = {}
     for span in spans(f, start, end):
@@ -777,8 +805,8 @@ def bridge(f: InsightFilters, rates: fx.RateTable) -> Bridge:
 
 
 def cost_bridge(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
-    """Question 8: start, minus leavers, plus joiners, plus pay changes, end, over the 12 months
-    ending at `on` (D62). Start and end need five people each. When leavers, joiners or stayers
+    """Question 8: start, minus leavers, plus joiners, plus pay changes, end, over the period
+    (D62, D64). Start and end need five people each. When leavers, joiners or stayers
     number 1 to 4, the changes with people in them show their people alone, since any one could
     be worked out from the others: the short one says why and the rest name it. A part with
     nobody shows 0.00, which gives nothing away."""
@@ -825,7 +853,7 @@ def tenure_band(years: int) -> str:
 def by_tenure(
     f: InsightFilters, rates: fx.RateTable, lookups: Lookups, *, level: str = "all"
 ) -> dict:
-    """Question 9: median gross by completed years of service at `on`, or at the last date for
+    """Question 9: median gross by completed years of service at `end`, or at the last date for
     someone who left, within one level or all of them (D62). Under five people a band shows its
     headcount alone."""
     convert = Converter(f, rates)
@@ -836,7 +864,7 @@ def by_tenure(
     for gross, currency, joined, left in records.values_list(
         "gross_annual", "currency_code", "employee__joining_date", "employee__last_date"
     ):
-        until = min(f.on, left) if left else f.on
+        until = min(f.end, left) if left else f.end
         band = tenure_band(completed_years(joined, until))
         values[band].append(q2(gross * convert.rate(currency)))
     rows = [

@@ -15,13 +15,14 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.test import Client
 
+from apps.core.dates import months_before, today_utc
 from apps.insights.queries import CONTROLS
 
 CASES = ("directory", "insights", "import", "export", "seed")
@@ -57,6 +58,23 @@ INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
 INSIGHT_CONTROLS = tuple(
     (name, f"{key}={value}") for name, (key, values) in CONTROLS.items() for value in values[1:]
 )
+# The insights whose work grows with the period are timed on each preset and the longest range
+# as well (D64); the rest read the state on its last day.
+PERIOD_INSIGHTS = ("summary", "trend", "cost-bridge")
+
+
+def period_cases(today: date) -> dict[str, str]:
+    """The dashboard's presets besides the default, and 1 January 2015 to today, as `from` and
+    `to` (D64)."""
+    fy = date(today.year if (today.month, today.day) >= (4, 1) else today.year - 1, 4, 1)
+    return {
+        "last 3 months": f"from={months_before(today, 3)}",
+        "last 6 months": f"from={months_before(today, 6)}",
+        "FY to date": f"from={fy}",
+        "last FY": f"from={date(fy.year - 1, 4, 1)}&to={fy - timedelta(days=1)}",
+        "since 2015": "from=2015-01-01",
+    }
+
 
 # The unfiltered directory is exported once in each format (SPEC F6).
 EXPORT_FILES = ("csv", "xlsx", "json")
@@ -209,6 +227,16 @@ class Command(BaseCommand):
                 self.stdout.write(
                     f"insight {name}{f' {control}' if control else ''}, {label}: p50 {p50:.0f} ms, "
                     f"p95 {p95:.0f} ms ({repeats} requests)"
+                )
+                if p95 > worst[1]:
+                    worst = (p50, p95)
+        for label, query in period_cases(today_utc()).items():
+            for name in PERIOD_INSIGHTS:
+                samples = time_requests(client, f"/api/v1/insights/{name}/?{query}", repeats)
+                p50, p95 = percentile(samples, 0.5), percentile(samples, 0.95)
+                self.stdout.write(
+                    f"insight {name}, {label}: p50 {p50:.0f} ms, p95 {p95:.0f} ms "
+                    f"({repeats} requests)"
                 )
                 if p95 > worst[1]:
                     worst = (p50, p95)
