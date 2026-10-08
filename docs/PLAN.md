@@ -304,25 +304,57 @@ Plugin skills and connectors: `/add-endpoint` for the three routes, `/add-valida
 
 ## Step 11. Hardening
 
-Goal: the measured numbers are in `docs/PERFORMANCE.md`, every page has its error and empty states, keyboard and labels pass, and the README carries demo credentials and how the app was built.
+Goal: the measured numbers are in `docs/PERFORMANCE.md`, every page has its error and empty states, keyboard and labels pass, the security audit's leads are triaged and the fixable ones fixed with their tests as guards, the guardrails fail closed, the image runs unprivileged and CI audits the dependencies, and the README carries the live URL, the tour, how to run and test, the operator notes and how the app was built.
 
-Files to change: `apps/core/management/commands/timing.py` (complete, printing the PERFORMANCE row), `docs/PERFORMANCE.md`, `Dockerfile` and `entrypoint.sh` (an unprivileged user for the app, root kept only to own `/data`, the security reviewer's step 1 note), the pages and components listed in DESIGN 6's state table, `README.md` ("Run", "Test", "Demo credentials", "How this was built"), `.env.example` final, `docs/DECISIONS.md`. From the step 10 review (D72): the sample files' row builders move out of `make_import_file` into a module of their own that the command and `demo/services.py` both call, since a service importing a management command module is against rule 1.
+Additions of 9 October (D73), on top of the plan as approved. The Cloudflare security-audit run on 678cbb7, static only, is at `~/security-audit-skill/acme-audit/run-1/`: `REPORT.md`, `NEEDS-VALIDATION.md` and `tests/security/`, ten pytest leads marked `xfail(strict=True)`, where XFAIL means the weakness is present and XPASS that it is absent or fixed. Nothing was confirmed and 14 leads need validation. `REPORT.md` is copied to `docs/reviews/security-audit-2026-10-08.md` with a triage table at the top, lead by lead: fixed (commit), already fixed (D68), or accepted (reason). The tests are copied to `backend/tests/security/` and run; where a lead is fixed or already fixed the xfail comes off so the test guards it, where it is accepted the marker stays with a reason naming the review.
 
-Tests: the empty and error states of each page (fixture handlers returning empty results and 500), a keyboard test on each dialog (focus moves into the dialog and returns on close), labels present on every input (`getByLabelText` for each form field), no new backend tests beyond any fix a missed target forces.
+Fixed:
+
+1. Login throttle: `NUM_PROXIES` from the environment, default 1, `docker-compose.yml` setting 0 since nothing proxies there, and compose publishing `127.0.0.1:8000:8000`. `LoginRateThrottle.get_ident` unmaps an IPv4-mapped IPv6 address (`address.ipv4_mapped`) before the /64 grouping.
+2. Refresh rotation: inside one `transaction.atomic()`, the presented token's `OutstandingToken` row is re-checked for a `BlacklistedToken` before the blacklisting and the new pair, so two simultaneous presentations cannot both succeed.
+3. `make_import_file` writes CSV cells through `exports.writers.escape_cell`.
+4. The refresh endpoint: throttle scope `refresh` and `JSONParser` only.
+5. Error text: the `Unknown country_code` 404, django-filter's invalid-choice message and the JSON export's `filters` object go through `clip()`, and `ImportBatch.error_summary` stores a fixed user-facing sentence, the traceback being logged already. Numeric cells are capped in length at read time, which closes the level-cell lead (proposed in the report, the owner's confirmation on arrival).
+6. `safeNext` returns `/` when the resolved path starts with `//`, with the three dot-segment inputs added to `navigation.test.ts`.
+7. The prod settings require `DATABASE_PATH`, and the test settings' `SECRET_KEY` joins the refused placeholders.
+8. `XFrameOptionsMiddleware` above WhiteNoise, and the preflight caps zip entries.
+9. Dockerfile: an unprivileged user, root keeping `/data`, and only the runtime directories copied, no `backend/tests` and no `.env.example`. CI: `persist-credentials: false` on checkout, actions pinned by commit SHA, and `npm audit --omit=dev` plus `uvx pip-audit` on the locked runtime dependencies, failing on any known vulnerability (both clean on 8 October).
+10. Hooks: `git_guard` also blocks `reset --soft`, `--keep` and mixed resets and the shell-valid spellings the audit lists. `pre_commit_gate` detects a commit behind any global git option, treats pytest exit 5 as a failure, adds `tsc -b`, and exits 2 on any exception, since today only `TimeoutExpired` is caught and a broken venv binary would silently disable the gate. `session_start` reads the approval from line 3 only. `post_edit` passes `--` before paths and picks the latest review by file name. `/finish-step` gets `disable-model-invocation`. Each with its test from `tests/security/` or a new one.
+11. `security-reviewer.md`: the row limit is 15,000 (done in step 9), and it gains secrets in git history, the dependency audits, the Dockerfile's `USER` and the live headers when deployed. After the deploy the live headers are checked from the laptop (CSP, `frame-ancestors`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS) and recorded. The gunicorn timeout stays at 600 s (D72).
+
+Accepted and recorded in the review document: slow-header starvation (Fly's proxy fronts the live app, compose is local), CSV semicolon splitting (the writer escapes the standard triggers, this needs a specific Excel locale), the three settings-level guardrail leads (the `.claude` rules protect one developer from the agent's mistakes on his own machine, not a security boundary, as the 6 October spec review says, and the gate is the owner approving each step), the deferred PBKDF2 aggregate cost, the dependency check (settled by the audits above), and the password-change lead, met by the operator note below (`changepassword` then `revoke_sessions`).
+
+README, in this order, replacing "Demo credentials":
+
+12. The live URL. How to sign in: the login is in the submission email, not in the public repository, since anyone could otherwise change the demo data. A 3-minute tour, Demo data page included. What was built beyond the brief and why, in three lines pointing to REQUIREMENTS' clarifications table. The seed in brief (10,000 on staff and 5,000 leavers, the experience ladder, the 1 April 2020 reporting cut-off, gender with no effect on pay). Run and test. Operator notes (rotating the HR password is `changepassword` then `revoke_sessions`, and `reset_demo`). The architecture diagram from SPEC. Links to the documents.
+13. "How this was built" in a few lines, linking `docs/AI-WORKFLOW.md`, which holds the loop as a diagram (spec, review, plan, build, hooks and gate, four reviewers, owner approval, commit, and a separate read-only watcher), what the `.claude` folder holds, and what went wrong (the plugin that took over the sessions, a test claimed but missing, the blockers the reviewers caught, and the security audit's finding that the guardrails are advisory), with a marked section left for the decision rows the owner writes.
+
+Leftovers:
+
+14. The search-debounce tests use fake timers, so every test is deterministic.
+15. If the production build still warns about chunk size, the bundle is split by route.
+
+Files to change: `apps/core/management/commands/timing.py` (complete, printing the PERFORMANCE row), `docs/PERFORMANCE.md`, `Dockerfile`, `entrypoint.sh`, `docker-compose.yml`, `.github/workflows/ci.yml`, `acme_salary/settings/base.py`, `prod.py` and `test.py`, `apps/accounts/views.py`, `serializers.py` and `services.py`, `apps/imports/parser.py`, `applier.py` and `management/commands/make_import_file.py`, `apps/core/views.py`, `apps/imports/template.py` and the export views, `frontend/src/lib/navigation.ts`, `.claude/hooks/*.py`, `.claude/skills/finish-step/SKILL.md`, `.claude/agents/security-reviewer.md`, `backend/tests/security/`, `docs/reviews/security-audit-2026-10-08.md`, the pages and components listed in DESIGN 6's state table, `README.md`, `docs/AI-WORKFLOW.md`, `.env.example` final, `docs/DECISIONS.md`. From the step 10 review (D72): the sample files' row builders move out of `make_import_file` into a module of their own that the command and `demo/services.py` both call, since a service importing a management command module is against rule 1.
+
+Tests: the empty and error states of each page (fixture handlers returning empty results and 500), a keyboard test on each dialog (focus moves into the dialog and returns on close), labels present on every input (`getByLabelText` for each form field); `backend/tests/security/` as copied, the xfail dropped where a lead is fixed, plus a test per hook change and per fix above (proxy trust per deployment, the unmapped address, the atomic rotation under a simulated race, the escaped CSV, the refresh throttle and parser, each clipped echo, the fixed `error_summary`, the numeric cell cap, the zip entry cap, `DATABASE_PATH` required, the refused test key, the header order); the three dot-segment inputs in `navigation.test.ts`.
 
 Commits:
 
-1. `perf: timing command complete and the measured numbers recorded`
-2. `fix(frontend): error and empty states on every page and the accessibility pass`
-3. `docs: README with run instructions, demo credentials and how it was built (step 11)`
+1. `fix(security): the audit's leads: proxy trust per deployment, atomic rotation, escaped CSV, clipped echoes` (items 1 to 8, `tests/security/`, the triage document)
+2. `build: an unprivileged image, pinned actions and dependency audits in CI` (item 9)
+3. `chore(hooks): the guards fail closed and block every spelling` (item 10, item 11's reviewer text)
+4. `refactor(import): the sample files' row builders in a module of their own`
+5. `fix(frontend): error and empty states on every page, the accessibility pass, fake timers and a split bundle` (PLAN's states and labels, items 14 and 15)
+6. `perf: timing command complete and the measured numbers recorded`
+7. `docs: README and AI-WORKFLOW, how it was built (step 11)` (items 12 and 13; finish-step: deploy, the live headers recorded, D73's consequences)
 
-Hours: 2.
+Hours: 8.
 
-Acceptance closed: the `[measured]` criteria consolidated into one PERFORMANCE row on the final code: SPEC F1's staging time, F4's directory p95, F5's insight response time, F6's unfiltered export, section 11's seed time and section 14's first boot; section 10's error and empty states on every page; section 13's accessibility row.
+Acceptance closed: the `[measured]` criteria consolidated into one PERFORMANCE row on the final code: SPEC F1's staging time, F4's directory p95, F5's insight response time, F6's unfiltered export, section 11's seed time and section 14's first boot; section 10's error and empty states on every page; section 13's accessibility and security rows; every lead of the audit triaged with its test in the suite.
 
-Risks: a missed target discovered here has the least time to fix; that is why the directory, import and insight timings are each measured at the end of their own step and only consolidated here. This step shrinks second (below).
+Risks: a missed target discovered here has the least time to fix; that is why the directory, import and insight timings are each measured at the end of their own step and only consolidated here. The hook changes are tested by running the hooks as subprocesses, the way Claude Code runs them, so a hook test that passes here passes in a session. Pinning actions by SHA and failing CI on advisories means a future advisory can turn CI red without a code change, which is the point.
 
-Plugin skills and connectors: `/perf-timing`, `ui-ux-pro-max` for empty states, focus and the error summary, `frontend-design` for the copy of every state.
+Plugin skills and connectors: `/perf-timing`, `/log-decision`, `ui-ux-pro-max` for empty states, focus and the error summary, `frontend-design` for the copy of every state, Context7 for Django 6.1's transaction and CSP settings, DRF 3.18's throttling and parsers, and SimpleJWT's blacklist models.
 
 ## Step 12. Ship
 
@@ -359,10 +391,10 @@ Plugin skills and connectors: `/log-decision`. No design or library skill.
 | 8 Insights, second set | 7.0 | 35.5 | added after step 7 (D62) |
 | 9 Realistic seed, a period, numbered pages | 11.0 | 46.5 | added before Hardening (D64) |
 | 10 Demo data | 9.0 | 55.5 | added before Hardening (D72) |
-| 11 Hardening | 2.0 | 57.5 | |
-| 12 Ship | 1.5 | 59.0 | |
+| 11 Hardening | 8.0 | 63.5 | the audit's leads, the guardrails and the README added on 9 October (D73) |
+| 12 Ship | 1.5 | 65.0 | |
 
-Total: 59 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64) and step 10 before it the same day (D72), so the planned close column stops at step 7.
+Total: 65 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64), step 10 before it the same day (D72) and step 11 grew by the security audit's leads, the guardrails and the README on 9 October (D73), so the planned close column stops at step 7.
 
 Submission target: the morning of 8 October 2026 IST, full scope, per DECISIONS D19 and D23. The owner decides at the end on any overrun. At these estimates and with no breaks from a 12:30 start, steps 1 to 4 close by 06:00 on 8 October, step 5 by 11:00, step 6 by 15:00 and steps 7 to 9 by 20:30; the planned close column is the number D23 asks for, so each step's slip is visible against it at the time, not after. The table assumes continuous work; the owner's own stop time is not in it.
 
