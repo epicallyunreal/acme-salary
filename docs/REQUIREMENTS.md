@@ -50,7 +50,7 @@ One persona, one role: the HR Manager. They own the salary data, approve every i
 
 ## Success criteria
 
-- A 10,000-row spreadsheet is parsed, validated and staged in under 30 seconds and approved in under 15 seconds, measured on the deployed instance.
+- A 15,000-row spreadsheet, the whole seeded organisation, is parsed, validated and staged in under 30 seconds and approved in under 22.5 seconds (15 seconds per 10,000 rows), measured on the deployed instance (D64).
 - Any employee is found by name or code in one search, and a revision is one form.
 - Every dashboard question is answered in one view, with no export to Excel needed.
 

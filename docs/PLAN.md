@@ -1,4 +1,4 @@
-Owner decision: pending for step 9, added before Hardening (D64). Steps 1 to 7 were approved on 7 October and step 8 on 8 October with the changes recorded in D62.
+Owner decision: approved. Steps 1 to 7 on 7 October, steps 8 and 9 on 8 October with the changes recorded in D62 and D64.
 
 # ACME Salary Management: Plan
 
@@ -237,33 +237,35 @@ Plugin skills and connectors: `/add-insight` for every insight and view, `/log-d
 
 ## Step 9. Realistic seed, a period on the dashboard, numbered pages
 
-Added by the owner before Hardening (D64, SPEC v2.16). Built in four slices, each end to end with its tests, then the close.
+Added by the owner before Hardening (D64, SPEC v2.16), approved with the owner's changes: the levels caption, the leave weights, the month-end rule for Last N months, the seed's Fly timing and a 15,000-row import limit. Built in six slices, each end to end with its tests, then the close: seven commits, one over the usual six, for the import limit added at approval.
 
 Goal: the demo holds 10,000 employees on staff and 5,000 who left since 2015, each on an experience ladder with every raise and promotion since joining. The directory opens on its 10,000 active employees. The dashboard reads a period, its movement cards over the whole period and the rest on its last day, with what the period cost. Every grid pages by number. The targets hold on 15,000 employees.
 
 Files to change:
 
-- Seed. `seed/profiles.py` (the ladder, leave weights, raise and promotion ranges, the experience premium, active and exited counts, without `JOINING_RANGE`, `EXIT_SHARE` and `KEPT_RAISES`), `seed/generator.py` (today's state first, the leaver flow, the level path, history back-filled through every 1 April), `seed/management/commands/seed_data.py` and `reset_demo.py` (`--active`, `--exited`), `entrypoint.sh`, `apps/core/management/commands/timing.py` (the seed flags, the directory and export cases on the Active default, insights on each preset and a long custom range), `apps/imports/management/commands/make_import_file.py` (`--all` writes the active employees), `sample-data/` (both 50-row files regenerated), `tests/seed/` (golden hash and the ladder's invariants).
+- Seed. `seed/profiles.py` (the ladder, leave weights, raise and promotion ranges, the experience premium, active and exited counts, without `JOINING_RANGE`, `EXIT_SHARE` and `KEPT_RAISES`), `seed/generator.py` (today's state first, the leaver flow, the level path, history back-filled through every 1 April), `seed/management/commands/seed_data.py` and `reset_demo.py` (`--active`, `--exited`), `entrypoint.sh`, `apps/core/management/commands/timing.py` (the seed flags, the directory and export cases on the Active default, insights on each preset and a long custom range, the import on the 15,000-row file), `sample-data/` (both 50-row files regenerated), `tests/seed/` (golden hash and the ladder's invariants).
+- Import limit. `apps/imports/parser.py` (`ROW_LIMIT = 15_000`), `apps/imports/management/commands/make_import_file.py` (`--all` writes all 15,000, leavers with their `last_date`), `src/components/imports/UploadDropzone.tsx` (`Up to 15,000 rows and 10 MB.`), the row-limit tests (the 15,001st row).
 - Directory. `apps/employees/filters.py` (`status` defaults to `active`, `any` for everyone), `src/components/grid/serverModel.ts` and `src/components/filters/FilterBar.tsx` (Active first and default, Any one click away).
-- Period. `apps/insights/queries.py` (`InsightFilters.start` and `end` in place of `on`, trend's points over the period, the bridge from `start` to `end`, `summary`'s spend in the period), `apps/insights/views.py` (`from` and `to` parsed and bounded), `apps/exports/views.py` and `tables.py` (the period in every insight export, trend's rows on its dates, the summary's spend), `src/lib/period.ts` (each preset to a `from` and `to`, the financial year), `src/components/filters/useDashboardFilters.ts` and `PeriodControl.tsx` (the bar's control, its URL keys), `src/api/{types,insights,exports}.ts`, `KpiRow.tsx`, `InsightCard.tsx` (the `on <to>` line), `RateMonthLabel.tsx`, the trend and bridge cards, fixtures and handlers.
+- Period. `apps/insights/queries.py` (`InsightFilters.start` and `end` in place of `on`, trend's points over the period, the bridge from `start` to `end`, `summary`'s spend in the period), `apps/insights/views.py` (`from` and `to` parsed and bounded), `apps/exports/views.py` and `tables.py` (the period in every insight export, trend's rows on its dates, the summary's spend), `src/lib/period.ts` (each preset to a `from` and `to`, the financial year), `src/components/filters/useDashboardFilters.ts` and `PeriodControl.tsx` (the bar's control, its URL keys), `src/api/{types,insights,exports}.ts`, `KpiRow.tsx`, `InsightCard.tsx` (the `on <to>` line), `RateMonthLabel.tsx`, the trend and bridge cards, the levels caption on ByLevelCard, ByTenureCard and GenderGapCard's By level, fixtures and handlers.
 - Grids. `src/components/grid/ServerGrid.tsx` and `PageNumbers.tsx` (numbered pages and Go to page in the footer).
 
-Tests: the seed's counts on the reference date, levels inside the ladder at the last review and never falling, every promotion an April revision with its note and a 12 to 20% raise, other raises 3 to 8%, nobody leaving within 30 days, years at ACME never above experience, leavers per month in proportion to the headcount, the golden hash, and in the slow 10,000 run the yearly leave rate; the directory and its export on Active by default, `status=any` for everyone, Clear filters back to Active; each preset's dates (a 29 February, the financial year before and after 1 April, Last FY), the URL keeping a preset's name and a custom range's dates, Clear filters back to Last 12 months, the bounds and `from` after `to` as 400s; trend's points `from`, each month-end and `to`, the bridge's start and end equal to trend's first and last points, the state cards on `to`, Spend in period hand-computed across a leap day and under D59, one rate for the whole period, every insight export sending the period and its JSON naming `from` and `to`; the numbered pages (first, last, neighbours, ellipses), Go to page, rows per page and the page in the URL, on the directory and the import review.
+Tests: the seed's counts on the reference date, levels inside the ladder at the last review and never falling, every promotion an April revision with its note and a 12 to 20% raise, other raises 3 to 8%, nobody leaving within 30 days, years at ACME never above experience, leavers per month in proportion to the headcount, the golden hash, and in the slow 10,000 run the yearly leave rate; the import's row limit at the 15,001st row and the 15,000-row `--all` file, leavers included, staging cleanly; the directory and its export on Active by default, `status=any` for everyone, Clear filters back to Active; each preset's dates (31 October to 30 April, 31 March to the end of February in a leap year and in another, the financial year before and after 1 April, Last FY), the levels caption when `to` is not today, the URL keeping a preset's name and a custom range's dates, Clear filters back to Last 12 months, the bounds and `from` after `to` as 400s; trend's points `from`, each month-end and `to`, the bridge's start and end equal to trend's first and last points, the state cards on `to`, Spend in period hand-computed across a leap day and under D59, one rate for the whole period, every insight export sending the period and its JSON naming `from` and `to`; the numbered pages (first, last, neighbours, ellipses), Go to page, rows per page and the page in the URL, on the directory and the import review.
 
 Commits:
 
 1. `feat(seed): 10,000 on staff, 5,000 leavers, every raise since joining`
-2. `feat(directory): open on Active employees`
-3. `feat(insights): a period from and to, with what it cost`
-4. `feat(dashboard): the period control and cards on its last day`
-5. `feat(grids): numbered pages and Go to page`
-6. `feat: realistic seed, a period and numbered pages (step 9)` (finish-step: `/perf-timing` on 15,000 employees locally and on Fly, the seed timed on Fly; deploy; `reset_demo` on the live database only when the owner says so)
+2. `feat(import): a 15,000-row limit, the whole organisation in one file`
+3. `feat(directory): open on Active employees`
+4. `feat(insights): a period from and to, with what it cost`
+5. `feat(dashboard): the period control and cards on its last day`
+6. `feat(grids): numbered pages and Go to page`
+7. `feat: realistic seed, a period and numbered pages (step 9)` (finish-step: `/perf-timing` on 15,000 employees locally and on Fly, the seed timed on Fly with its target raised to 120 s if it takes over 60 s, and on Fly the import of both the `--all --raises 1000` file and a `--new 15000` file with the burst balance noted and peak memory recorded; deploy; `reset_demo` on the live machine only when the owner says so, after it has been idle, its time recorded)
 
-Hours: 10.
+Hours: 11.
 
-Acceptance closed: SPEC v2.16 section 11's seed, its counts, ladder and history, and its time `[measured]`; F4's Active default; F5's period control, its presets, bounds and URL; F6's period in every insight export and the default directory export of 10,000 rows `[measured]`; section 8's `from` and `to`; section 9's cards on `to`, trend and the bridge over the period and Spend in period; section 10's numbered pages; the directory and insight targets on 15,000 employees `[measured]`.
+Acceptance closed: SPEC v2.16 section 11's seed, its counts, ladder and history, and its time `[measured]`; F1's 15,000-row staging under 30 s `[measured]` and section 13's approve under 22.5 s, REQUIREMENTS' success criterion; F4's Active default; F5's period control, its presets, bounds and URL; F6's period in every insight export and the default directory export of 10,000 rows `[measured]`; section 8's `from` and `to`; section 9's cards on `to`, trend and the bridge over the period and Spend in period; section 10's numbered pages; the directory and insight targets on 15,000 employees `[measured]`.
 
-Risks: the seed roughly doubles (about 15,000 employees and 60,000 records), so the 60 s target is at risk on Fly's shared CPU, where the first boot seeds before gunicorn starts; it is timed on Fly before `reset_demo` runs there. The exact counts and a leaver flow in proportion to the headcount must agree, met by placing the leavers month by month by largest remainder. A long custom range gives trend up to about 1,000 points and the bridge 15,000 people's history, so a 2015-to-today range is timed beside the presets. Level stays on the employee, so the cards that group by level read each person's level today on any `to` (DESIGN, question 1). The live database is rebuilt only with the owner's say-so.
+Risks: the seed roughly doubles (about 15,000 employees and 60,000 records), so the 60 s target is at risk on Fly's shared CPU, where the first boot seeds before gunicorn starts; it is timed on Fly before `reset_demo` runs there. The exact counts and a leaver flow in proportion to the headcount must agree, met by placing the leavers month by month by largest remainder. A long custom range gives trend up to about 1,000 points and the bridge 15,000 people's history, so a 2015-to-today range is timed beside the presets. Level stays on the employee, so the cards that group by level read each person's level today on any `to` (DESIGN, question 1). 15,000 staged `ImportRow` objects are the memory peak on the 1 GB machine, recorded on Fly. The live database is rebuilt only with the owner's say-so, after the machine has been idle, since its burst balance sets the speed (D65).
 
 Plugin skills and connectors: `/add-insight` and `/add-endpoint` for the period and its parameters, `/frontend-page` for the bar and the grids, `/log-decision`, `/perf-timing`, `frontend-design` and `ui-ux-pro-max` for the period control, the `on` lines and the page numbers, Context7 for MUI X 9's pagination slot and selectors and MUI's `Pagination`.
 
@@ -322,11 +324,11 @@ Plugin skills and connectors: `/log-decision`. No design or library skill.
 | 6 Insights | 4.0 | 26.5 | 15:00 |
 | 7 Export | 2.0 | 28.5 | 17:00 |
 | 8 Insights, second set | 7.0 | 35.5 | added after step 7 (D62) |
-| 9 Realistic seed, a period, numbered pages | 10.0 | 45.5 | added before Hardening (D64) |
-| 10 Hardening | 2.0 | 47.5 | |
-| 11 Ship | 1.5 | 49.0 | |
+| 9 Realistic seed, a period, numbered pages | 11.0 | 46.5 | added before Hardening (D64) |
+| 10 Hardening | 2.0 | 48.5 | |
+| 11 Ship | 1.5 | 50.0 | |
 
-Total: 49 hours. Step 8 was added after step 7 closed on 8 October (D62), and step 9 before Hardening on 8 October (D64), so the planned close column stops at step 7.
+Total: 50 hours. Step 8 was added after step 7 closed on 8 October (D62), and step 9 before Hardening on 8 October (D64), so the planned close column stops at step 7.
 
 Submission target: the morning of 8 October 2026 IST, full scope, per DECISIONS D19 and D23. The owner decides at the end on any overrun. At these estimates and with no breaks from a 12:30 start, steps 1 to 4 close by 06:00 on 8 October, step 5 by 11:00, step 6 by 15:00 and steps 7 to 9 by 20:30; the planned close column is the number D23 asks for, so each step's slip is visible against it at the time, not after. The table assumes continuous work; the owner's own stop time is not in it.
 
@@ -354,4 +356,4 @@ Answered on 7 October 2026, recorded as DECISIONS D30.
 2. Step 1 and the by-hand list: moot, the Fly work is done; step 1 closes on the custom domain.
 3. The slow seed test stays out of the commit hook.
 
-Step 9 (D64) adds one by-hand item: say when `reset_demo` may run on the live database after the step's deploy, since it replaces the live data with the new seed.
+Step 9 (D64) adds one by-hand item: say when `reset_demo` may run on the live database after the step's deploy, since it replaces the live data with the new seed. It then runs after the machine has been idle, and its time is recorded.
