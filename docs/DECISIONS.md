@@ -564,6 +564,14 @@ Decision: the brief's "an organization with 10,000 employees" is read as 10,000 
 
 Consequences: D62's caveats on the seed's depth go, since every revision is kept. The seed about doubles, so its time is measured on Fly before the live database is rebuilt with `reset_demo`, which waits for the owner. Level stays on the employee, so the cards that group by level read each person's level today on any `to`, one of the questions DESIGN lists for the owner's approval. SPEC v2.16 (F4 to F6 and sections 8 to 11, 13 and 15), REQUIREMENTS item 8, PLAN step 9, DESIGN 1.6, 1.7, 5, 6, 8 and 9.
 
+## D65. The live machine stays on Fly's shared CPU
+
+Context: the step 8 deploy's timing run sent about 900 insight requests back to back. Near its end Fly's shared vCPU spent its burst balance and ran at its 6.25% baseline, so gender-gap's By level view for India read 639 / 1118 ms p50 / p95, against 35 / 43 ms timed alone with no CPU steal. A performance CPU would hold that speed under any load, at a higher monthly cost.
+
+Decision: the owner kept `shared-cpu-1x` on 8 October. One HR user's dashboard load costs about a second of CPU, well inside the burst balance, which starts at 5 s on a new machine and accrues to 500 s while idle.
+
+Consequences: the code meets SPEC section 13's 500 ms target. A load test, or a run of filter changes just after a deploy, can still be throttled to several hundred ms a card, and PERFORMANCE.md records both numbers. Revisit if the app gains users.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.
