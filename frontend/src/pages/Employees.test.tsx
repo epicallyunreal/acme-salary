@@ -89,6 +89,18 @@ describe('Employees', () => {
     expect(within(ben).queryByText(/USD/)).not.toBeInTheDocument();
   });
 
+  it('keeps the Status label above Any instead of over it', async () => {
+    renderApp('/employees');
+
+    await screen.findAllByText('Asha Rao');
+    const status = screen.getByRole('combobox', { name: 'Status' });
+    expect(status).toHaveTextContent('Any');
+    expect(screen.getByText('Status', { selector: 'label' })).toHaveAttribute(
+      'data-shrink',
+      'true',
+    );
+  });
+
   it('keeps a deep link on its page and pages forward with the filters kept', async () => {
     const seen = recordRequests({ rows: 60 });
     const { router } = renderApp('/employees?page=2&country=IN');

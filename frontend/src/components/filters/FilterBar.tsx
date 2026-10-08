@@ -239,12 +239,16 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         width={110}
       />
       <FormControl sx={{ width: 130 }}>
-        <InputLabel id="filter-status-label">Status</InputLabel>
+        {/* "Any" shows when no status is chosen, so the label stays above it, never over it. */}
+        <InputLabel id="filter-status-label" shrink>
+          Status
+        </InputLabel>
         <Select
           labelId="filter-status-label"
           id="filter-status"
           value={filters.status}
           label="Status"
+          notched
           displayEmpty
           onChange={(event) => onChange({ status: event.target.value as EmployeeStatus | '' })}
         >
