@@ -5,7 +5,7 @@ description: Measure directory, insight, import and seed timings on the seed of 
 
 # Measure and record performance
 
-Targets: directory under 300 ms p95 and insights under 500 ms p95 (SPEC section 13), 15,000-row import staged under 30 s and approved under 22.5 s (section 13, D64), seed under 60 s (section 11).
+Targets: directory under 300 ms p95 and insights under 500 ms p95 (SPEC section 13), 15,000-row import staged under 30 s and approved under 22.5 s (section 13, D64), seed under 120 s (section 11, D64).
 
 1. The script is the management command `timing` at `backend/apps/core/management/commands/timing.py`. If it does not exist yet, create it:
    - Requires a database seeded with 10,000 active and 5,000 exited employees (D64). Refuse to run otherwise.

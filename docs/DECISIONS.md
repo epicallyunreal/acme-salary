@@ -570,6 +570,8 @@ Measured in the build: spread against those who stay, the leavers' yearly rate c
 
 Amended by D70: a period starts no earlier than 1 April 2020, the reporting cut-off, and a joiner of the six months before an April skips that April.
 
+Amended 8 Oct, after the deploy: the seed took 63.9 s on Fly with its burst balance in hand, so its target is 120 s, as the owner set at the approval.
+
 ## D65. The live machine stays on Fly's shared CPU
 
 Context: the step 8 deploy's timing run sent about 900 insight requests back to back. Near its end Fly's shared vCPU spent its burst balance and ran at its 6.25% baseline, so gender-gap's By level view for India read 639 / 1118 ms p50 / p95, against 35 / 43 ms timed alone with no CPU steal. A performance CPU would hold that speed under any load, at a higher monthly cost.
@@ -623,6 +625,14 @@ Context: the owner set a reporting cut-off at the step 9 approval on 8 October. 
 Decision: one constant, `core.dates.REPORTING_START`, mirrored once in the frontend's `lib/constants.ts`. A period's `from` and `to` lie from 2020-04-01 to 2100-12-31, and `from` defaults to the first day of the 12 months ending on `to`, never before the cut-off. The cut-off bounds the period's dates only. Records are never filtered by `effective_from`, so a record that started earlier counts for the days it covers, and Include exited adds only those whose `last_date` is on or after the cut-off. In the seed, everyone employed on 1 April 2020 has a record starting that day. Where the record running into it started earlier, a revision repeats its lines and bonus, noted `Reporting cut-off, FY 2020-21: pay unchanged`, a one-off for that day and not a rule that revisions fall in April. A joiner of the six months before an April, from 1 October on, skips that April, no raise and no promotion, so a December 2019 joiner gets the cut-off's revision rather than a raise. Where a skipped April leaves two promotion points before the next review, the lower moves to the joining day, so no review moves anyone two levels, which the owner confirmed on 8 October over a two-level promotion or a deferred one. The seed holds 51,659 records, 479 of them cut-off revisions.
 
 Consequences: a real migration would run the same split once on 1 April 2020. An employee entered later with pay starting before the cut-off gets no split and still counts correctly, because the insights read records by the days they cover, which a test holds with five paid from 2018. The golden hash and both sample files are regenerated.
+
+## D71. The summary from the reporting cut-off to today is the one accepted exception to 500 ms
+
+Context: on the live machine, with its burst balance in hand, the summary over 1 April 2020 to today read 745 / 839 ms p50 / p95 against SPEC section 13's 500 ms. Every preset read 288 ms p95 or less, and trend and the bridge over the same period 456 and 450 ms. The owner had said to accept it as the one exception if no cheap fix turned up.
+
+Decision: no cheap fix exists. The spend reads every record of the period through the spans query that trend shares, and that query with the summary's own state queries comes to about 500 ms on Fly's shared CPU, so trimming the spend's arithmetic cannot bring it under the target. The summary over the longest period the dashboard offers is the one accepted exception, and every preset stays within 500 ms.
+
+Consequences: it grows with the period, roughly 90 ms for each further year of records on Fly. Summing the pro-rated cost in SQL would remove the Python pass over the spans, and is the fix to make if the dashboard's users settle on long periods.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 
