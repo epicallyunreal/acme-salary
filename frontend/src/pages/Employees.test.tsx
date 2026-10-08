@@ -281,6 +281,23 @@ describe('Employees', () => {
     }
   });
 
+  it('sorts by Code ascending by default, leaving it out of the URL and the request', async () => {
+    const seen = recordRequests();
+    const { router } = renderApp('/employees');
+    const user = userEvent.setup();
+    await rowsShown();
+
+    expect(within(columnHeader('Code')).getByTestId('ArrowUpwardIcon')).toBeInTheDocument();
+    expect(columnHeader('Code')).toHaveAttribute('aria-sort', 'ascending');
+    expect(router.state.location.search).toBe('');
+    expect(seen[0].has('ordering')).toBe(false);
+
+    await user.click(columnHeader('Code'));
+
+    await waitFor(() => expect(seen.at(-1)?.get('ordering')).toBe('-employee_code'));
+    expect(router.state.location.search).toBe('?ordering=-employee_code');
+  });
+
   it('opens nothing from a click on the rest of the row', async () => {
     const { router } = renderApp('/employees');
     const user = userEvent.setup();

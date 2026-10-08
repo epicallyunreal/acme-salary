@@ -148,6 +148,16 @@ def test_the_reporting_date_moves_the_shown_record_and_the_status(api, cast):
     assert names(later) == ["Asha Rao", "Ben Carter", "Chloe Davies", "Esha Nair", "Farah Khan"]
 
 
+def test_without_ordering_the_directory_is_in_code_order(api, rates):
+    """D63: the grid's default sort is Code ascending, so a request without `ordering` returns
+    the order the grid shows. Hired out of name order, so name order would differ."""
+    for name in ("Zara Ali", "Adam Brook", "Mia Chen"):
+        person(name)
+
+    assert names(api.get(LIST)) == ["Zara Ali", "Adam Brook", "Mia Chen"]
+    assert names(api.get(LIST, {"ordering": "employee_code"})) == names(api.get(LIST))
+
+
 def test_ordering_by_reporting_gross_crosses_currencies(api, cast):
     ascending = names(api.get(LIST, {"ordering": "gross"}))
     descending = names(api.get(LIST, {"ordering": "-gross"}))

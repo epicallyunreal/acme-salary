@@ -130,7 +130,7 @@ describe('URL round trip', () => {
     expect(state.status).toBe('');
     expect(state.currency).toBe('usd');
     expect(state.level).toEqual([1]);
-    expect(state.ordering).toBe('');
+    expect(state.ordering).toBe('employee_code');
     expect(state.gross_min).toBe('');
     expect(state.joined_after).toBe('');
   });
@@ -165,6 +165,25 @@ describe('URL round trip', () => {
     expect(toSortModel(state.ordering)).toEqual([{ field: 'gross_reporting', sort: 'desc' }]);
     expect(toSortModel('full_name')).toEqual([{ field: 'full_name', sort: 'asc' }]);
     expect(toSortModel('')).toEqual([]);
+  });
+
+  it('sorts by Code ascending by default and leaves that out of the URL and the request', () => {
+    const state = fromSearchParams(new URLSearchParams());
+    const list = (ordering: string) =>
+      toListParams({
+        paginationModel: toPaginationModel(1, 25),
+        sortModel: toSortModel(ordering),
+        filters: state,
+        search: '',
+      }).ordering;
+
+    expect(toSortModel(state.ordering)).toEqual([{ field: 'employee_code', sort: 'asc' }]);
+    expect(toSearchParams(state).toString()).toBe('');
+    expect(list(state.ordering)).toBeUndefined();
+    expect(list('-employee_code')).toBe('-employee_code');
+    expect(toSearchParams({ ...state, ordering: '-employee_code' }).toString()).toBe(
+      'ordering=-employee_code',
+    );
   });
 });
 

@@ -61,7 +61,9 @@ export const DEFAULT_STATE: GridState = {
   currency: 'usd',
   page: 1,
   page_size: DEFAULT_PAGE_SIZE,
-  ordering: '',
+  // Code ascending: the grid marks it, the URL leaves it out, and the API orders by it when
+  // `ordering` is absent (D63).
+  ordering: 'employee_code',
 };
 
 /** Grid column field to the API's ordering alias. Columns missing here are not sortable. */
@@ -133,7 +135,9 @@ export function fromSearchParams(params: URLSearchParams): GridState {
     currency: oneOf(params.get('currency'), REPORTING_CURRENCIES, 'usd'),
     page: Number.isInteger(page) && page > 0 ? page : 1,
     page_size: (PAGE_SIZES as readonly number[]).includes(pageSize) ? pageSize : DEFAULT_PAGE_SIZE,
-    ordering: Object.values(SORT_FIELDS).includes(orderingField) ? ordering : '',
+    ordering: Object.values(SORT_FIELDS).includes(orderingField)
+      ? ordering
+      : DEFAULT_STATE.ordering,
   });
 }
 
@@ -181,7 +185,8 @@ interface ListInput {
   search: string;
 }
 
-/** The DataGrid's zero-based page becomes DRF's one-based page; empties are left out. */
+/** The DataGrid's zero-based page becomes DRF's one-based page; empties are left out, and so is
+ * the default sort, which the API applies without being asked (D63). */
 export function toListParams({
   paginationModel,
   sortModel,
@@ -192,7 +197,7 @@ export function toListParams({
   return {
     page: paginationModel.page + 1,
     page_size: paginationModel.pageSize,
-    ordering: ordering || undefined,
+    ordering: ordering && ordering !== DEFAULT_STATE.ordering ? ordering : undefined,
     search: search || undefined,
     country: filters.country.length ? filters.country : undefined,
     department: filters.department.length ? filters.department : undefined,

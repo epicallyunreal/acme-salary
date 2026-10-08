@@ -111,6 +111,16 @@ def test_a_filtered_export_has_exactly_the_rows_the_pages_show(api, people, file
     assert exported == codes
 
 
+def test_without_ordering_the_export_is_in_code_order(api, people):
+    """D63: the grid's default sort, Code ascending. DESIGN 9's people were hired U1 to U10
+    first, so by name D1 would lead."""
+    rows = csv_rows(api.get(EMPLOYEES, {"file": "csv"}))[1:]
+    ids = [int(row[0].removeprefix("ACME-")) for row in rows]
+
+    assert ids == sorted(ids)
+    assert [row[2] for row in rows[:3]] == ["U1", "U2", "U3"]
+
+
 def test_the_csv_has_seventeen_columns_in_spec_order(api, asha):
     rows = csv_rows(api.get(EMPLOYEES, {"file": "csv", "search": "asha"}))
 

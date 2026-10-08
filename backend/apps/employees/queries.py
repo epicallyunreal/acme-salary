@@ -175,7 +175,8 @@ def directory_queryset(
     """Employees annotated with the shown record's local gross, its reporting-currency value and
     the status on `on`. One correlated subquery per row and a CASE expression for the rate, so
     SQLite sorts and range-filters 10,000 rows in one pass; the shown records themselves come
-    from a prefetch of the page."""
+    from a prefetch of the page. In code order, ascending, unless `ordering` asks otherwise: the
+    grid's default sort, so the list and its export match what the grid shows (D63)."""
     shown = shown_record_subquery(on)
     return (
         Employee.objects.select_related("country", "department")
@@ -192,5 +193,5 @@ def directory_queryset(
             status=status_expression(on),
         )
         .prefetch_related(live_records_prefetch())
-        .order_by("full_name", "id")
+        .order_by("id")
     )
