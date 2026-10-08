@@ -24,7 +24,7 @@ One persona, one role: the HR Manager. They own the salary data, approve every i
 5. Export of any filtered directory view or insight table to XLSX, CSV and JSON.
 6. Audit trail of every change to employee and compensation data.
 7. Single HR Manager login protecting every API route.
-8. Deterministic seed of 10,000 employees across six countries with pay history.
+8. Deterministic seed of 10,000 employees across six countries with pay history. The brief's "10,000 employees" is read as 10,000 on staff today, and the seed adds 5,000 who left before, with every revision since 2015 (D64).
 9. A live public URL, plus a Docker build that runs with one command and a recorded demo.
 
 ## Deliberately out of scope
