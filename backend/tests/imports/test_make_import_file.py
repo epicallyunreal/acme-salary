@@ -18,7 +18,8 @@ from apps.compensation.validators import IDENTITY_COLUMNS, template_columns
 from apps.employees import services as employees
 from apps.employees.models import Employee
 from apps.imports.applier import approve
-from apps.imports.management.commands.make_import_file import (
+from apps.imports.parser import XLSX_TYPE
+from apps.imports.samples import (
     EXIT_SPREAD,
     HIRE_SPREAD,
     base_rows,
@@ -27,7 +28,6 @@ from apps.imports.management.commands.make_import_file import (
     spread_day,
     write_file,
 )
-from apps.imports.parser import XLSX_TYPE
 from apps.imports.services import stage_upload
 from seed import profiles
 from seed.generator import draw_career, generate, ordered_entries

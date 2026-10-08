@@ -24,8 +24,8 @@ from apps.compensation.validators import template_columns
 from apps.core.dates import today_utc
 from apps.core.exceptions import Conflict, Forbidden
 from apps.employees.models import Employee
+from apps.imports import samples as files
 from apps.imports import services as imports
-from apps.imports.management.commands import make_import_file as files
 from apps.imports.models import ImportBatch, ImportRow
 from seed import profiles
 from seed.management.commands.seed_data import truncate

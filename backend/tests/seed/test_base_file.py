@@ -8,7 +8,7 @@ import pytest
 from openpyxl import load_workbook
 
 from apps.compensation.validators import template_columns
-from apps.imports.management.commands.make_import_file import base_rows, profile_codes
+from apps.imports.samples import base_rows, profile_codes
 from seed import profiles
 
 BASE_FILE = Path(__file__).resolve().parents[3] / "sample-data" / "base-15000.xlsx"

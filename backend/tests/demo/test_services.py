@@ -23,9 +23,9 @@ from apps.demo import services
 from apps.employees.models import Employee
 from apps.imports import services as imports
 from apps.imports.applier import approve
-from apps.imports.management.commands.make_import_file import database_codes
 from apps.imports.models import ImportBatch, ImportRow
 from apps.imports.parser import XLSX_TYPE
+from apps.imports.samples import database_codes
 from seed import profiles
 from seed.generator import ordered_entries
 from tests.imports.sheets import new_row, upload_of

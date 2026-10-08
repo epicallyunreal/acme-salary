@@ -11,8 +11,8 @@ from apps.core.management.commands import timing
 from apps.core.management.commands.timing import crafted_sheet, period_cases, run_base_import
 from apps.employees.models import Employee
 from apps.imports import parser
-from apps.imports.management.commands.make_import_file import base_rows, profile_codes, write_file
 from apps.imports.models import ImportBatch, ImportRow
+from apps.imports.samples import base_rows, profile_codes, write_file
 from tests.imports.sheets import HEADER
 
 
