@@ -11,6 +11,7 @@ import { ByCountryCard } from '../components/insights/ByCountryCard';
 import { ByDepartmentCard } from '../components/insights/ByDepartmentCard';
 import { ByLevelCard } from '../components/insights/ByLevelCard';
 import { CardControl } from '../components/insights/CardControl';
+import { CostBridgeCard } from '../components/insights/CostBridgeCard';
 import { DistributionCard } from '../components/insights/DistributionCard';
 import { GenderGapCard } from '../components/insights/GenderGapCard';
 import { KpiRow } from '../components/insights/KpiRow';
@@ -32,6 +33,7 @@ export function Dashboard() {
   const trendControl = controlQuery('trend', controls);
   const summary = useInsight('summary', filters);
   const trend = useInsight('trend', filters, trendControl);
+  const costBridge = useInsight('cost-bridge', filters);
   const byCountry = useInsight('by-country', filters);
   const byDepartment = useInsight('by-department', filters);
   const distribution = useInsight('distribution', filters);
@@ -79,6 +81,11 @@ export function Dashboard() {
                   {exportMenu('trend', 'Export cost trend', 'the cost trend', trendControl)}
                 </Stack>
               }
+            />
+            <CostBridgeCard
+              query={costBridge}
+              includeExited={filters.include_exited}
+              actions={exportMenu('cost-bridge', 'Export cost bridge', 'the cost bridge')}
             />
             <ByCountryCard
               query={byCountry}

@@ -299,7 +299,14 @@ export interface ImportRowParams {
 // Insights (DESIGN 1.6). Money is a two-decimal string, or null where SPEC section 9 withholds it.
 
 export type InsightName =
-  'summary' | 'by-country' | 'by-department' | 'distribution' | 'by-level' | 'gender-gap' | 'trend';
+  | 'summary'
+  | 'by-country'
+  | 'by-department'
+  | 'distribution'
+  | 'by-level'
+  | 'gender-gap'
+  | 'trend'
+  | 'cost-bridge';
 
 /** A card's own control on the wire, `{ measure: 'headcount' }`: what it measures or how it
  * slices, never who is counted (D62). */
@@ -403,6 +410,23 @@ export interface TrendInsight extends InsightHeader {
   points: TrendPoint[];
 }
 
+export type BridgePartName = 'start' | 'leavers' | 'joiners' | 'pay_changes' | 'end';
+
+export interface BridgePart {
+  part: BridgePartName;
+  people: number;
+  /** Leavers are negative. `null` when withheld, with the reason (D62). */
+  amount: string | null;
+  reason: string | null;
+}
+
+/** Why total cost moved over the 12 months ending at `on`, the parts adding up exactly. */
+export interface CostBridgeInsight extends InsightHeader {
+  start_date: string;
+  end_date: string;
+  parts: BridgePart[];
+}
+
 export interface InsightPayloads {
   summary: SummaryInsight;
   'by-country': InsightHeader & { rows: CountryRow[] };
@@ -411,6 +435,7 @@ export interface InsightPayloads {
   'by-level': InsightHeader & { rows: LevelRow[] };
   'gender-gap': InsightHeader & { rows: GapRow[] };
   trend: TrendInsight;
+  'cost-bridge': CostBridgeInsight;
 }
 
 export interface ExchangeRates {

@@ -15,12 +15,14 @@ const QUESTIONS = [
   'What does each level pay?',
   'Is there a gender pay gap?',
   'How has total cost moved over two years?',
+  'Why did total cost move over the year?',
 ];
 const SECTIONS = ['What we spend', 'How pay is structured', 'Is pay fair'];
 const INSIGHTS = [
   'by-country',
   'by-department',
   'by-level',
+  'cost-bridge',
   'distribution',
   'gender-gap',
   'summary',

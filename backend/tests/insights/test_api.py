@@ -64,6 +64,7 @@ def test_every_filter_reaches_the_query(api, people):
         ("by-level", 5),
         ("gender-gap", 5),
         ("trend", 5),
+        ("cost-bridge", 5),
     ],
 )
 def test_an_insight_runs_a_fixed_number_of_queries(

@@ -14,7 +14,7 @@ from apps.employees import services as employees
 from apps.insights import queries
 from tests.factories import CompensationRecordFactory, EmployeeFactory, country, department
 from tests.insights.fixture import build_fixture, us_lines
-from tests.insights.history import build_history
+from tests.insights.history import build_history, hire
 
 pytestmark = pytest.mark.django_db
 
@@ -971,3 +971,78 @@ def test_a_trend_point_under_five_people_shows_its_headcount_alone(history):
 def test_include_exited_does_not_apply_to_trend(history):
     """D62: trend counts the people employed on each date, so X1 is gone after March 2025."""
     assert insight("trend", include_exited=True) == insight("trend")
+
+
+# cost-bridge (D62), over tests/insights/history.py
+
+
+def part(name, people, amount, reason=None):
+    return {"part": name, "people": people, "amount": amount, "reason": reason}
+
+
+def test_a_year_back_is_the_same_day_or_the_months_last():
+    assert queries.months_before(TODAY, 12) == date(2025, 10, 7)
+    assert queries.months_before(date(2024, 2, 29), 12) == date(2023, 2, 28)
+
+
+def test_the_bridge_adds_up_exactly_and_no_leavers_shows_every_amount(history):
+    """From 7 Oct 2025 to 7 Oct 2026 at 1.25 for EUR. Start: A1 100,000, A2 80,000, A3 60,000,
+    A4 50,000, A5 60,000 and B1 65,000, 415,000. Nobody left, so leavers is 0 and triggers
+    nothing. Joiners J1 to J5: 70,000 + 50,000 + 40,000 + 90,000 + 45,000 = 295,000. Pay changes:
+    A1 +10,000, A2 +8,000, A4 +5,000 = 23,000. End: 415,000 - 0 + 295,000 + 23,000 = 733,000."""
+    result = insight("cost-bridge")
+
+    assert (result["start_date"], result["end_date"]) == ("2025-10-07", "2026-10-07")
+    assert result["parts"] == [
+        part("start", 6, "415000.00"),
+        part("leavers", 0, "0.00"),
+        part("joiners", 5, "295000.00"),
+        part("pay_changes", 6, "23000.00"),
+        part("end", 11, "733000.00"),
+    ]
+
+
+def test_three_leavers_withhold_leavers_joiners_and_pay_changes(lookups):
+    """D62: L1, L2 and L3 leave during the year. Any one of the three changes could be worked
+    out from the other two and the totals, so all three show their people alone. Start gains
+    30,000 + 36,000 + 30,000 (24,000 EUR) and stays shown, as does the end."""
+    build_history(with_leavers=True)
+
+    assert insight("cost-bridge")["parts"] == [
+        part("start", 9, "511000.00"),
+        part("leavers", 3, None, "fewer than 5 people"),
+        part("joiners", 5, None, "withheld with the leavers"),
+        part("pay_changes", 6, None, "withheld with the leavers"),
+        part("end", 11, "733000.00"),
+    ]
+
+
+def test_pay_changes_summed_from_the_stayers_match_the_balancing_figure(lookups):
+    """Fifteen salaries of 1,000.01 EUR at 1.25, five raised to 1,000.03, convert with half
+    cents. Start 10,000.10 EUR is 12,500.13, end 10,000.20 is 12,500.25, leavers and joiners
+    5,000.05 each are 6,250.06, so the balancing pay change is 0.12. Summed from the stayers,
+    0.10 EUR is 0.13. They may differ by 3 cents per currency in the filter (D62)."""
+    core_services.set_exchange_rate("EUR", "USD", Decimal("1.25"), date(2024, 1, 1))
+    pay, raised = Decimal("1000.01"), Decimal("1000.03")
+    for n in range(5):
+        hire(f"S{n}", "DE", pay, raised_to=raised)
+        hire(f"J{n}", "DE", pay, joined=date(2026, 1, 15))
+        hire(f"L{n}", "DE", pay, left=date(2026, 2, 28))
+
+    b = queries.bridge(filters(), fx.RateTable.load(TODAY))
+
+    assert (b.pay_changes, b.summed_pay_changes, b.currencies) == (
+        Decimal("0.12"),
+        Decimal("0.13"),
+        1,
+    )
+    assert abs(b.pay_changes - b.summed_pay_changes) <= Decimal("0.03") * b.currencies
+    parts = [p["amount"] for p in insight("cost-bridge")["parts"]]
+    assert parts == ["12500.13", "-6250.06", "6250.06", "0.12", "12500.25"]
+
+
+def test_include_exited_does_not_apply_to_the_bridge(lookups):
+    """D62: with the box ticked, the three who left are still leavers, not stayers."""
+    build_history(with_leavers=True)
+
+    assert insight("cost-bridge", include_exited=True) == insight("cost-bridge")

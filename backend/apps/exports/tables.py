@@ -338,6 +338,41 @@ def trend_table(payload: dict) -> Table:
     return table(TREND_COLUMNS, rows)
 
 
+BRIDGE_COLUMNS = (
+    ("Part", "part"),
+    ("Date", "date"),
+    ("People", "people"),
+    ("Amount", "amount"),
+    ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
+)
+BRIDGE_LABELS = {
+    "start": "Start",
+    "leavers": "Leavers",
+    "joiners": "Joiners",
+    "pay_changes": "Pay changes",
+    "end": "End",
+}
+
+
+def cost_bridge_table(payload: dict) -> Table:
+    """One row per part, the balancing pay change among them, so the amounts add up (D62)."""
+    dates = {"start": payload["start_date"], "end": payload["end_date"]}
+    rows = [
+        (
+            BRIDGE_LABELS[part["part"]],
+            dates.get(part["part"]),
+            part["people"],
+            part["amount"],
+            part["reason"],
+            *currency_and_rates(payload),
+        )
+        for part in payload["parts"]
+    ]
+    return table(BRIDGE_COLUMNS, rows)
+
+
 INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "summary": summary_table,
     "by-country": by_country_table,
@@ -346,4 +381,5 @@ INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "by-level": by_level_table,
     "gender-gap": gender_gap_table,
     "trend": trend_table,
+    "cost-bridge": cost_bridge_table,
 }

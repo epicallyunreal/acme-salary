@@ -41,6 +41,7 @@ SPREAD_GROUP = 20  # under twenty, no percentile figures: each would be one pers
 BANDS = 12
 LEVELS = range(1, 7)
 TREND_MONTHS = 24
+BRIDGE_MONTHS = 12
 GENDERS = tuple(choice.value for choice in Gender)
 
 COUNTRY = "employee__country_id"
@@ -136,6 +137,13 @@ def population_on(f: InsightFilters, on: date) -> QuerySet[CompensationRecord]:
 
 def last_day(year: int, month: int) -> date:
     return date(year, month, calendar.monthrange(year, month)[1])
+
+
+def months_before(day: date, months: int) -> date:
+    """The same day `months` months earlier, or that month's last day when it is shorter, so 29
+    February a year back is 28 February."""
+    year, month = divmod(day.year * 12 + day.month - 1 - months, 12)
+    return date(year, month + 1, min(day.day, calendar.monthrange(year, month + 1)[1]))
 
 
 def month_ends(on: date) -> list[date]:
@@ -500,6 +508,108 @@ def trend(
     return {**header(f, rates), "measure": measure, "latest": ends[-1], "points": points}
 
 
+BRIDGE_PARTS = ("start", "leavers", "joiners", "pay_changes", "end")
+CHANGES = ("leavers", "joiners", "pay_changes")
+CHANGE_NAMES = {"leavers": "leavers", "joiners": "joiners", "pay_changes": "pay changes"}
+
+
+@dataclass(frozen=True)
+class Bridge:
+    """The year's movement in the reporting currency, each sum converted and quantised once. The
+    pay changes are summed from the stayers here, and the card shows the balancing figure."""
+
+    start_date: date
+    end_date: date
+    people: dict[str, int]
+    amounts: dict[str, Decimal]
+    summed_pay_changes: Decimal
+    currencies: int
+
+    @property
+    def pay_changes(self) -> Decimal:
+        """End minus start plus leavers minus joiners, so the five parts add up to the cent."""
+        a = self.amounts
+        return a["end"] - a["start"] + a["leavers"] - a["joiners"]
+
+
+def bridge(f: InsightFilters, rates: fx.RateTable) -> Bridge:
+    """Who was employed a year before `on` and on `on`, and what each cost, at the rate effective
+    on `on` (D62). Leavers count at the start alone, joiners at the end alone, stayers at both."""
+    end = f.on
+    start = months_before(end, BRIDGE_MONTHS)
+    at_start: dict[int, Span] = {}
+    at_end: dict[int, Span] = {}
+    for span in spans(f, start, end):
+        if span.counts_on(start):
+            at_start[span.employee] = span
+        if span.counts_on(end):
+            at_end[span.employee] = span
+    sums: dict[str, dict[str, Decimal]] = {part: defaultdict(Decimal) for part in BRIDGE_PARTS}
+    for employee, span in at_start.items():
+        sums["start"][span.currency] += span.total_cost
+        if employee in at_end:
+            sums["pay_changes"][span.currency] -= span.total_cost
+        else:
+            sums["leavers"][span.currency] += span.total_cost
+    for employee, span in at_end.items():
+        sums["end"][span.currency] += span.total_cost
+        if employee in at_start:
+            sums["pay_changes"][span.currency] += span.total_cost
+        else:
+            sums["joiners"][span.currency] += span.total_cost
+    convert = Converter(f, rates)
+
+    def converted(part: str) -> Decimal:
+        return q2(sum((cost * convert.rate(ccy) for ccy, cost in sums[part].items()), Decimal(0)))
+
+    stayers = len(at_start.keys() & at_end.keys())
+    return Bridge(
+        start_date=start,
+        end_date=end,
+        people={
+            "start": len(at_start),
+            "leavers": len(at_start) - stayers,
+            "joiners": len(at_end) - stayers,
+            "pay_changes": stayers,
+            "end": len(at_end),
+        },
+        amounts={part: converted(part) for part in ("start", "leavers", "joiners", "end")},
+        summed_pay_changes=converted("pay_changes"),
+        currencies=len({span.currency for span in (*at_start.values(), *at_end.values())}),
+    )
+
+
+def cost_bridge(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
+    """Question 8: start, minus leavers, plus joiners, plus pay changes, end, over the 12 months
+    ending at `on` (D62). Start and end need five people each. When leavers, joiners or stayers
+    number 1 to 4, all three changes show their people alone, since any one of them could be
+    worked out from the others, the short one saying why. A part with nobody shows 0."""
+    b = bridge(f, rates)
+    amounts = {
+        "start": b.amounts["start"],
+        # Zero minus, so no leavers is 0.00 and never -0.00.
+        "leavers": Decimal(0) - b.amounts["leavers"],
+        "joiners": b.amounts["joiners"],
+        "pay_changes": b.pay_changes,
+        "end": b.amounts["end"],
+    }
+    short = [part for part in CHANGES if 0 < b.people[part] < SMALL_GROUP]
+    parts = []
+    for part in BRIDGE_PARTS:
+        people, amount, reason = b.people[part], amounts[part], None
+        if 0 < people < SMALL_GROUP:
+            amount, reason = None, f"fewer than {SMALL_GROUP} people"
+        elif part in CHANGES and short:
+            amount, reason = None, f"withheld with the {CHANGE_NAMES[short[0]]}"
+        parts.append({"part": part, "people": people, "amount": amount, "reason": reason})
+    return {
+        **header(f, rates),
+        "start_date": b.start_date,
+        "end_date": b.end_date,
+        "parts": parts,
+    }
+
+
 INSIGHTS: dict[str, Callable[..., dict]] = {
     "summary": summary,
     "by-country": by_country,
@@ -508,6 +618,7 @@ INSIGHTS: dict[str, Callable[..., dict]] = {
     "by-level": by_level,
     "gender-gap": gender_gap,
     "trend": trend,
+    "cost-bridge": cost_bridge,
 }
 
 # Each card's control (D62): the parameter, then its values, the first being the default. It

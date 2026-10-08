@@ -6,13 +6,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useInsight } from '../../api/insights';
 import { setSession } from '../../lib/auth';
-import { distribution, summary } from '../../test/fixtures/insights';
+import { costBridgeShown, distribution, summary } from '../../test/fixtures/insights';
 import { renderWithProviders } from '../../test/render';
 import { server } from '../../test/setup';
 import { DASHBOARD_DEFAULTS } from '../filters/useDashboardFilters';
 import { ByCountryCard } from './ByCountryCard';
 import { ByDepartmentCard } from './ByDepartmentCard';
 import { ByLevelCard } from './ByLevelCard';
+import { CostBridgeCard } from './CostBridgeCard';
 import { DistributionCard } from './DistributionCard';
 import { GenderGapCard } from './GenderGapCard';
 import { KpiRow } from './KpiRow';
@@ -41,6 +42,10 @@ function Levels() {
 function Gap() {
   const query = useInsight('gender-gap', DASHBOARD_DEFAULTS);
   return <GenderGapCard query={query} />;
+}
+function Bridge({ includeExited = false }: { includeExited?: boolean }) {
+  const query = useInsight('cost-bridge', DASHBOARD_DEFAULTS);
+  return <CostBridgeCard query={query} includeExited={includeExited} />;
 }
 function Trend({ includeExited = false }: { includeExited?: boolean }) {
   const query = useInsight('trend', DASHBOARD_DEFAULTS, { measure: 'total_cost' });
@@ -259,6 +264,40 @@ describe('insight cards', () => {
 
     expect(
       await screen.findByText("Counts people employed on each date; Include exited doesn't apply"),
+    ).toBeInTheDocument();
+  });
+
+  it('the bridge gives each part signed, its dates and rates', async () => {
+    answer('cost-bridge', costBridgeShown);
+    renderWithProviders(<Bridge />);
+
+    expect(
+      await screen.findByText('From 7 Oct 2025 to 7 Oct 2026, at October 2026 rates.'),
+    ).toBeInTheDocument();
+    expect(await row('Cost bridge for the year', 'Start')).toEqual(['6', 'USD 415,000']);
+    expect(await row('Cost bridge for the year', 'Leavers')).toEqual(['0', 'USD 0']);
+    expect(await row('Cost bridge for the year', 'Joiners')).toEqual(['5', '+USD 295,000']);
+    expect(await row('Cost bridge for the year', 'Pay changes')).toEqual(['6', '+USD 23,000']);
+    expect(await row('Cost bridge for the year', 'End')).toEqual(['11', 'USD 733,000']);
+    expect(screen.queryByText(/any one could be worked out/)).not.toBeInTheDocument();
+  });
+
+  it('a bridge with a short change shows the three by their people, and says why', async () => {
+    renderWithProviders(<Bridge includeExited />);
+
+    expect(await row('Cost bridge for the year', 'Leavers')).toEqual(['1', UNDER_FIVE]);
+    expect(await row('Cost bridge for the year', 'Joiners')).toEqual([
+      '0',
+      'withheld with the leavers',
+    ]);
+    expect(await row('Cost bridge for the year', 'End')).toEqual(['27', 'USD 2,435,450']);
+    expect(
+      screen.getByText(
+        'Leavers, joiners and pay changes are shown when none of them has 1 to 4 people, since any one could be worked out from the others.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Counts people employed on each date; Include exited doesn't apply"),
     ).toBeInTheDocument();
   });
 

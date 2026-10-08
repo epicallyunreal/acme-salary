@@ -219,6 +219,34 @@ export const trend: InsightPayloads['trend'] = {
   }),
 };
 
+/** DESIGN 9's year: X1 the one leaver, so the three changes show their people alone. */
+export const costBridge: InsightPayloads['cost-bridge'] = {
+  ...USD,
+  start_date: '2025-10-07',
+  end_date: '2026-10-07',
+  parts: [
+    { part: 'start', people: 28, amount: '2567450.00', reason: null },
+    { part: 'leavers', people: 1, amount: null, reason: 'fewer than 5 people' },
+    { part: 'joiners', people: 0, amount: null, reason: 'withheld with the leavers' },
+    { part: 'pay_changes', people: 27, amount: null, reason: 'withheld with the leavers' },
+    { part: 'end', people: 27, amount: '2435450.00', reason: null },
+  ],
+};
+
+/** A year where every part shows: the history fixture of the backend tests. */
+export const costBridgeShown: InsightPayloads['cost-bridge'] = {
+  ...USD,
+  start_date: '2025-10-07',
+  end_date: '2026-10-07',
+  parts: [
+    { part: 'start', people: 6, amount: '415000.00', reason: null },
+    { part: 'leavers', people: 0, amount: '0.00', reason: null },
+    { part: 'joiners', people: 5, amount: '295000.00', reason: null },
+    { part: 'pay_changes', people: 6, amount: '23000.00', reason: null },
+    { part: 'end', people: 11, amount: '733000.00', reason: null },
+  ],
+};
+
 /** Each insight's payload, by the name in its URL. */
 export function insightFor(name: string, includeExited: boolean): JsonBodyType | undefined {
   const payloads: Record<string, unknown> = {
@@ -229,6 +257,7 @@ export function insightFor(name: string, includeExited: boolean): JsonBodyType |
     'by-level': byLevel,
     'gender-gap': genderGap,
     trend,
+    'cost-bridge': costBridge,
   };
   return payloads[name] as JsonBodyType | undefined;
 }

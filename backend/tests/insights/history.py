@@ -38,10 +38,10 @@ RAISED = date(2026, 4, 1)
 def hire(
     name: str,
     code: str,
-    pay: int,
+    pay: int | Decimal,
     *,
     joined: date = LONG_AGO,
-    raised_to: int | None = None,
+    raised_to: int | Decimal | None = None,
     left: date | None = None,
 ) -> Employee:
     """One employee on a single BASE line, raised on 1 April 2026 when `raised_to` is given and

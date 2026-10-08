@@ -669,3 +669,18 @@ def test_trend_exports_both_figures_whatever_its_card_draws(api, people):
         "currency": "USD",
         "rates": RATES,
     }
+
+
+def test_the_bridge_exports_one_row_per_part(api, people):
+    """X1 left on 30 June 2026, the one leaver of DESIGN 9's fixture, so the three changes show
+    their people alone. Start is today's 27 and X1's 132,000 (D62)."""
+    rows = csv_rows(api.get(INSIGHT.format("cost-bridge"), {"file": "csv"}))
+
+    assert rows == [
+        ["Part", "Date", "People", "Amount", "Reason", "Currency", "Rates"],
+        ["Start", "2025-10-07", "28", "2567450.00", "", "USD", RATES],
+        ["Leavers", "", "1", "", "fewer than 5 people", "USD", RATES],
+        ["Joiners", "", "0", "", "withheld with the leavers", "USD", RATES],
+        ["Pay changes", "", "27", "", "withheld with the leavers", "USD", RATES],
+        ["End", "2026-10-07", "27", "2435450.00", "", "USD", RATES],
+    ]

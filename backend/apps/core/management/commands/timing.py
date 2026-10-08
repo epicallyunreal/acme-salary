@@ -44,6 +44,7 @@ INSIGHT_NAMES = (
     "by-level",
     "gender-gap",
     "trend",
+    "cost-bridge",
 )
 INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
 

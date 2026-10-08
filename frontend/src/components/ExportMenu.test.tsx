@@ -189,6 +189,7 @@ describe('Export menus on the pages', () => {
     ['What does each level pay?', 'Export pay by level', 'by-level'],
     ['Is there a gender pay gap?', 'Export gender pay gap', 'gender-gap'],
     ['How has total cost moved over two years?', 'Export cost trend', 'trend'],
+    ['Why did total cost move over the year?', 'Export cost bridge', 'cost-bridge'],
   ])('the card "%s" exports its own table', async (question, label, name) => {
     const user = userEvent.setup();
     const saved = catchSaves();
