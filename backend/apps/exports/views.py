@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 from apps.core.exceptions import Invalid, clip
 from apps.employees.views import DirectoryMixin
 from apps.exports import tables, writers
+from apps.insights import queries
 from apps.insights.views import answer
 
 CONTENT_TYPES = {
@@ -23,9 +24,16 @@ CONTENT_TYPES = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "json": "application/json",
 }
-# What each export reads besides `on` and `currency`, and so what its JSON file says it applied.
+# What each export reads besides `on` and `currency`, and so what its JSON file says it applied:
+# an insight's card control as well, when it has one (D62).
 DIRECTORY_FILTERS = (*DirectoryMixin.filterset_class.base_filters, "search")
 INSIGHT_FILTERS = ("country", "department", "include_exited")
+
+
+def read_by(name: str) -> tuple[str, ...]:
+    """The insight filters, and the card's control when the insight has one (D62)."""
+    control = queries.CONTROLS.get(name)
+    return (*INSIGHT_FILTERS, control[0]) if control else INSIGHT_FILTERS
 
 
 def parse_file(value: str | None) -> str:
@@ -89,5 +97,5 @@ class ExportInsightView(APIView):
         file = parse_file(request.query_params.get("file"))
         payload, filters = answer(name, request.query_params)
         table = tables.INSIGHT_TABLES[name](payload)
-        given = applied(request.query_params, INSIGHT_FILTERS, filters.on, filters.currency)
+        given = applied(request.query_params, read_by(name), filters.on, filters.currency)
         return respond(table, file, name, given)

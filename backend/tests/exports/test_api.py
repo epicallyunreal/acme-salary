@@ -650,3 +650,22 @@ def test_an_insight_export_reads_what_the_insight_reads(api, people, django_asse
         response = api.get(INSIGHT.format("by-country"), {"file": "csv"})
 
     assert response.status_code == 200
+
+
+def test_trend_exports_both_figures_whatever_its_card_draws(api, people):
+    """D62: the measure picks the card's line, and the JSON says which one was asked for."""
+    response = api.get(INSIGHT.format("trend"), {"file": "json", "measure": "headcount"})
+    body = json_body(response)
+    header = csv_rows(api.get(INSIGHT.format("trend"), {"file": "csv"}))[0]
+
+    assert header == ["Month-end", "Headcount", "Total cost", "Reason", "Currency", "Rates"]
+    assert body["filters"] == {"measure": "headcount", "on": "2026-10-07", "currency": "USD"}
+    assert len(body["rows"]) == 24
+    assert body["rows"][-1] == {
+        "month_end": "2026-09-30",
+        "headcount": 27,
+        "total_cost": "2435450.00",
+        "reason": None,
+        "currency": "USD",
+        "rates": RATES,
+    }

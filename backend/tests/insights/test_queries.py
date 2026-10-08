@@ -14,6 +14,7 @@ from apps.employees import services as employees
 from apps.insights import queries
 from tests.factories import CompensationRecordFactory, EmployeeFactory, country, department
 from tests.insights.fixture import build_fixture, us_lines
+from tests.insights.history import build_history
 
 pytestmark = pytest.mark.django_db
 
@@ -897,3 +898,76 @@ def test_other_and_undisclosed_are_counted_never_given_a_median(people):
     assert rows["all"]["female"] == {"headcount": 13, "median_gross": "62500.00"}
     assert rows["all"]["male"] == {"headcount": 14, "median_gross": "100000.00"}
     assert insight("summary")["headcount"] == 29
+
+
+# trend (D62), over tests/insights/history.py
+
+
+@pytest.fixture
+def history(lookups):
+    return build_history()
+
+
+def point(month_end, headcount, total_cost):
+    return {"month_end": month_end, "headcount": headcount, "total_cost": total_cost}
+
+
+def test_the_month_ends_are_the_24_in_the_24_months_ending_at_on():
+    """On a month-end the list ends at `on` itself, and a leap year keeps its 29 February."""
+    ends = queries.month_ends(TODAY)
+
+    assert (len(ends), ends[0], ends[1], ends[-1]) == (
+        24,
+        date(2024, 10, 31),
+        date(2024, 11, 30),
+        date(2026, 9, 30),
+    )
+    assert queries.month_ends(date(2026, 10, 31))[::23] == [date(2024, 11, 30), date(2026, 10, 31)]
+    assert date(2024, 2, 29) in queries.month_ends(date(2024, 3, 15))
+
+
+def test_trend_counts_the_people_employed_at_each_month_end_at_one_rate(history):
+    """A4 and A5 are EUR, at 1.25 on every date although 1.10 was in effect until October 2026.
+    X1 leaves on 31 March 2025, B1 joins in January 2025, J1 to J4 join through 2026, three
+    raises land on 1 April 2026, and J5 joins on 1 October, after the last month-end."""
+    result = insight("trend")
+
+    assert (result["measure"], result["latest"]) == ("total_cost", "2026-09-30")
+    assert result["points"] == [
+        point("2024-10-31", 6, "405000.00"),
+        point("2024-11-30", 6, "405000.00"),
+        point("2024-12-31", 6, "405000.00"),
+        point("2025-01-31", 7, "470000.00"),
+        point("2025-02-28", 7, "470000.00"),
+        point("2025-03-31", 7, "470000.00"),
+        point("2025-04-30", 6, "415000.00"),
+        point("2025-05-31", 6, "415000.00"),
+        point("2025-06-30", 6, "415000.00"),
+        point("2025-07-31", 6, "415000.00"),
+        point("2025-08-31", 6, "415000.00"),
+        point("2025-09-30", 6, "415000.00"),
+        point("2025-10-31", 6, "415000.00"),
+        point("2025-11-30", 7, "485000.00"),
+        point("2025-12-31", 7, "485000.00"),
+        point("2026-01-31", 7, "485000.00"),
+        point("2026-02-28", 8, "535000.00"),
+        point("2026-03-31", 8, "535000.00"),
+        point("2026-04-30", 8, "558000.00"),
+        point("2026-05-31", 8, "558000.00"),
+        point("2026-06-30", 9, "598000.00"),
+        point("2026-07-31", 9, "598000.00"),
+        point("2026-08-31", 9, "598000.00"),
+        point("2026-09-30", 10, "688000.00"),
+    ]
+
+
+def test_a_trend_point_under_five_people_shows_its_headcount_alone(history):
+    """Germany is A4 and A5, and J3 from June 2026."""
+    points = insight("trend", country=["DE"])["points"]
+
+    assert [(p["headcount"], p["total_cost"]) for p in points] == [(2, None)] * 20 + [(3, None)] * 4
+
+
+def test_include_exited_does_not_apply_to_trend(history):
+    """D62: trend counts the people employed on each date, so X1 is gone after March 2025."""
+    assert insight("trend", include_exited=True) == insight("trend")

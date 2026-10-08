@@ -313,6 +313,31 @@ def gender_gap_table(payload: dict) -> Table:
     return table(GENDER_GAP_COLUMNS, rows)
 
 
+TREND_COLUMNS = (
+    ("Month-end", "month_end"),
+    ("Headcount", "headcount"),
+    ("Total cost", "total_cost"),
+    ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
+)
+
+
+def trend_table(payload: dict) -> Table:
+    """One row per month-end, both figures whatever the card draws (D62)."""
+    rows = [
+        (
+            point["month_end"],
+            point["headcount"],
+            point["total_cost"],
+            withheld(point["headcount"], point["total_cost"], SMALL_GROUP),
+            *currency_and_rates(payload),
+        )
+        for point in payload["points"]
+    ]
+    return table(TREND_COLUMNS, rows)
+
+
 INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "summary": summary_table,
     "by-country": by_country_table,
@@ -320,4 +345,5 @@ INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "distribution": distribution_table,
     "by-level": by_level_table,
     "gender-gap": gender_gap_table,
+    "trend": trend_table,
 }

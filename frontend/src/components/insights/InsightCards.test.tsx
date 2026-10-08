@@ -16,6 +16,7 @@ import { ByLevelCard } from './ByLevelCard';
 import { DistributionCard } from './DistributionCard';
 import { GenderGapCard } from './GenderGapCard';
 import { KpiRow } from './KpiRow';
+import { TrendCard } from './TrendCard';
 
 function Kpis() {
   const query = useInsight('summary', DASHBOARD_DEFAULTS);
@@ -40,6 +41,10 @@ function Levels() {
 function Gap() {
   const query = useInsight('gender-gap', DASHBOARD_DEFAULTS);
   return <GenderGapCard query={query} />;
+}
+function Trend({ includeExited = false }: { includeExited?: boolean }) {
+  const query = useInsight('trend', DASHBOARD_DEFAULTS, { measure: 'total_cost' });
+  return <TrendCard query={query} measure="total_cost" includeExited={includeExited} />;
 }
 
 /** One row of a chart's table, read the way a screen reader reads it. */
@@ -231,6 +236,30 @@ describe('insight cards', () => {
       '0',
       '37.5%',
     ]);
+  });
+
+  it('the trend names its latest month-end and rates, and its gaps, month by month', async () => {
+    renderWithProviders(<Trend />);
+
+    expect(
+      await screen.findByText('Month-end totals, latest 30 Sept 2026, at October 2026 rates.'),
+    ).toBeInTheDocument();
+    expect(await row('Cost trend by month-end', '31 Oct 2024')).toEqual(['4', UNDER_FIVE]);
+    expect(await row('Cost trend by month-end', '30 Sept 2026')).toEqual(['27', 'USD 2,435,450']);
+    expect(
+      screen.getByText(
+        'A gap is a month-end with fewer than 5 people, where total cost is not shown.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Include exited doesn't apply/)).not.toBeInTheDocument();
+  });
+
+  it('the trend says Include exited does not apply to it while the box is ticked', async () => {
+    renderWithProviders(<Trend includeExited />);
+
+    expect(
+      await screen.findByText("Counts people employed on each date; Include exited doesn't apply"),
+    ).toBeInTheDocument();
   });
 
   it('a card that fails to load says so, and its Retry loads it', async () => {

@@ -3,6 +3,7 @@
 import type {
   HistoryParams,
   ImportRowParams,
+  InsightControl,
   InsightName,
   InsightParams,
   ListParams,
@@ -28,7 +29,8 @@ export const keys = {
   },
   insights: {
     all: ['insights'] as const,
-    one: (name: InsightName, params: InsightParams) => ['insights', name, params] as const,
+    one: (name: InsightName, params: InsightParams, control: InsightControl = {}) =>
+      ['insights', name, params, control] as const,
   },
   imports: {
     all: ['imports'] as const,

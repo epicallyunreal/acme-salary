@@ -35,3 +35,8 @@ export function people(count: number): string {
 export function count(value: number): string {
   return formatAmount(String(value));
 }
+
+/** What `trend` and `cost-bridge` say while Include exited is ticked: they count the people
+ * employed on each date, the one exception to the bar deciding who is counted (D62). */
+export const EMPLOYED_ON_EACH_DATE =
+  "Counts people employed on each date; Include exited doesn't apply";

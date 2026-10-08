@@ -14,7 +14,9 @@ const QUESTIONS = [
   'How are salaries distributed?',
   'What does each level pay?',
   'Is there a gender pay gap?',
+  'How has total cost moved over two years?',
 ];
+const SECTIONS = ['What we spend', 'How pay is structured', 'Is pay fair'];
 const INSIGHTS = [
   'by-country',
   'by-department',
@@ -22,6 +24,7 @@ const INSIGHTS = [
   'distribution',
   'gender-gap',
   'summary',
+  'trend',
 ];
 
 /** Answers every insight from the fixtures and records the query string of each request. */
@@ -65,14 +68,17 @@ describe('Dashboard', () => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
   });
 
-  it('answers the six questions for the whole company', async () => {
+  it('answers every question for the whole company, under three headings', async () => {
     renderApp('/');
 
     expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
     expect(await within(await keyFigures()).findByText('27')).toBeInTheDocument();
     expect(screen.getByText('October 2026 rates')).toBeInTheDocument();
+    for (const section of SECTIONS) {
+      expect(await screen.findByRole('heading', { level: 2, name: section })).toBeInTheDocument();
+    }
     for (const question of QUESTIONS) {
-      expect(await screen.findByRole('heading', { level: 2, name: question })).toBeInTheDocument();
+      expect(await screen.findByRole('heading', { level: 3, name: question })).toBeInTheDocument();
     }
     expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
   });
@@ -180,6 +186,47 @@ describe('Dashboard', () => {
 
     expect(await screen.findByText('October 2026 rates')).toBeInTheDocument();
     expect(within(await keyFigures()).getAllByText('USD')).toHaveLength(3);
+  });
+
+  it("the trend's control picks its line, lives in the URL and refetches that card alone", async () => {
+    const user = userEvent.setup();
+    const seen = recordRequests();
+    const { router } = renderApp('/');
+    const control = await screen.findByRole('group', { name: 'Trend measure' });
+    await waitFor(() => expect(seen.trend).toHaveLength(1));
+
+    await user.click(within(control).getByRole('button', { name: 'Headcount' }));
+
+    await waitFor(() => expect(seen.trend).toHaveLength(2));
+    expect(seen.trend[1].get('measure')).toBe('headcount');
+    expect(router.state.location.search).toBe('?trend.measure=headcount');
+    expect(within(control).getByRole('button', { name: 'Headcount' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    for (const name of INSIGHTS.filter((insight) => insight !== 'trend')) {
+      expect(seen[name]).toHaveLength(1);
+    }
+  });
+
+  it("Clear filters resets the cards' controls with the bar's filters", async () => {
+    const user = userEvent.setup();
+    const { router } = renderApp('/?country=IN&trend.measure=headcount');
+
+    await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
+
+    expect(router.state.location.search).toBe('');
+    const control = await screen.findByRole('group', { name: 'Trend measure' });
+    expect(within(control).getByRole('button', { name: 'Total cost' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('a card control alone still offers Clear filters', async () => {
+    renderApp('/?trend.measure=headcount');
+
+    expect(await screen.findByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
   });
 
   it('says what to do when no one matches the filters', async () => {

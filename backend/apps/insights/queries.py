@@ -8,17 +8,21 @@ than five people shows its headcount alone, since a one-person total is that per
 spread figures, by-level's p10 to p90 and the distribution's range, bands and markers, need
 twenty: at exactly five, by-level's five figures were every salary in the group.
 
-TODO(owner, step 7): register each insight's table in apps/exports for /exports/insights/.
+`trend` and `cost-bridge` read the people employed on each of several dates (`spans`), at the one
+rate effective on `on`, and Include exited does not apply to them (D62). A card may have one
+control of its own (`CONTROLS`), which slices or measures and never decides who is counted.
 """
 
 from __future__ import annotations
 
+import calendar
 import math
 import statistics
+from bisect import bisect_left
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -36,6 +40,7 @@ SMALL_GROUP = 5  # under five people a group shows its headcount alone (SPEC sec
 SPREAD_GROUP = 20  # under twenty, no percentile figures: each would be one person's pay (D59)
 BANDS = 12
 LEVELS = range(1, 7)
+TREND_MONTHS = 24
 GENDERS = tuple(choice.value for choice in Gender)
 
 COUNTRY = "employee__country_id"
@@ -99,13 +104,16 @@ def build_filters(
 
 
 def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
+    return population_on(f, f.on)
+
+
+def population_on(f: InsightFilters, on: date) -> QuerySet[CompensationRecord]:
     """SPEC section 9: the record current on `on` of everyone active then, and with
     `include_exited` the last record of everyone who left before it. Future joiners never.
 
     Live records of one employee never overlap, so at most one is current. An exited employee's
     last record alone ends after `last_date`, at `last_date + 1`.
     """
-    on = f.on
     active = Q(employee__joining_date__lte=on) & (
         Q(employee__last_date__isnull=True) | Q(employee__last_date__gte=on)
     )
@@ -121,6 +129,74 @@ def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
     if f.department:
         records = records.filter(employee__department__code__in=f.department)
     return records.order_by()
+
+
+# Dates (D62)
+
+
+def last_day(year: int, month: int) -> date:
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+def month_ends(on: date) -> list[date]:
+    """The 24 month-ends in the 24 months ending at `on`, oldest first: 31 Oct 2024 to 30 Sep 2026
+    for 7 Oct 2026, ending at `on` itself when `on` is a month-end."""
+    latest = on if on == last_day(on.year, on.month) else on.replace(day=1) - timedelta(days=1)
+    months = latest.year * 12 + latest.month - 1
+    ends = []
+    for index in range(months - TREND_MONTHS + 1, months + 1):
+        year, month = divmod(index, 12)
+        ends.append(last_day(year, month + 1))
+    return ends
+
+
+@dataclass(frozen=True)
+class Span:
+    """The days one live record counts its employee as employed: from `first` up to, not
+    including, `stop`, or on and on when `stop` is None."""
+
+    employee: int
+    currency: str
+    total_cost: Decimal
+    first: date
+    stop: date | None
+
+    def counts_on(self, day: date) -> bool:
+        return self.first <= day and (self.stop is None or day < self.stop)
+
+
+def spans(f: InsightFilters, first: date, last: date) -> list[Span]:
+    """The live records of the filtered employees that count someone as employed on some day from
+    `first` to `last`, the dated population `trend` and `cost-bridge` share. A record counts from
+    the later of its start and the joining date, and stops at its end or the day after the last
+    date. Include exited does not apply, so nobody counts after leaving (D62)."""
+    records = CompensationRecord.objects.filter(
+        Q(effective_to__isnull=True) | Q(effective_to__gt=first),
+        Q(employee__last_date__isnull=True) | Q(employee__last_date__gte=first),
+        cancelled_at__isnull=True,
+        effective_from__lte=last,
+        employee__joining_date__lte=last,
+    )
+    if f.country:
+        records = records.filter(employee__country_id__in=f.country)
+    if f.department:
+        records = records.filter(employee__department__code__in=f.department)
+    found = []
+    for employee, currency, cost, start, end, joined, left in records.order_by().values_list(
+        "employee_id",
+        "currency_code",
+        "total_cost_annual",
+        "effective_from",
+        "effective_to",
+        "employee__joining_date",
+        "employee__last_date",
+    ):
+        first_day = max(start, joined)
+        stops = [day for day in (end, left and left + timedelta(days=1)) if day]
+        stop = min(stops) if stops else None
+        if stop is None or first_day < stop:
+            found.append(Span(employee, currency, cost, first_day, stop))
+    return found
 
 
 # Groups
@@ -386,11 +462,56 @@ def gender_gap(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict
     return {**header(f, rates), "rows": rows}
 
 
-INSIGHTS: dict[str, Callable[[InsightFilters, fx.RateTable, Lookups], dict]] = {
+def trend(
+    f: InsightFilters, rates: fx.RateTable, lookups: Lookups, *, measure: str = "total_cost"
+) -> dict:
+    """Question 7: headcount and total cost at the 24 month-ends ending at `on`, every month at
+    the rate effective on `on` (D62). A span adds at the first month-end it covers and drops at
+    the first it does not, so one pass over the spans and one over the dates do it. `measure`
+    only picks the card's line, and both figures are always here."""
+    ends = month_ends(f.on)
+    convert = Converter(f, rates)
+    people = [0] * (len(ends) + 1)
+    costs: dict[str, list[Decimal]] = defaultdict(lambda: [Decimal(0)] * (len(ends) + 1))
+    for span in spans(f, ends[0], ends[-1]):
+        start = bisect_left(ends, span.first)
+        stop = len(ends) if span.stop is None else bisect_left(ends, span.stop)
+        if start < stop:
+            people[start] += 1
+            people[stop] -= 1
+            costs[span.currency][start] += span.total_cost
+            costs[span.currency][stop] -= span.total_cost
+    points = []
+    headcount = 0
+    running: dict[str, Decimal] = defaultdict(Decimal)
+    for index, month_end in enumerate(ends):
+        headcount += people[index]
+        for currency, deltas in costs.items():
+            running[currency] += deltas[index]
+        total = sum((cost * convert.rate(ccy) for ccy, cost in running.items()), Decimal(0))
+        shown = headcount >= SMALL_GROUP
+        points.append(
+            {
+                "month_end": month_end,
+                "headcount": headcount,
+                "total_cost": q2(total) if shown else None,
+            }
+        )
+    return {**header(f, rates), "measure": measure, "latest": ends[-1], "points": points}
+
+
+INSIGHTS: dict[str, Callable[..., dict]] = {
     "summary": summary,
     "by-country": by_country,
     "by-department": by_department,
     "distribution": distribution,
     "by-level": by_level,
     "gender-gap": gender_gap,
+    "trend": trend,
+}
+
+# Each card's control (D62): the parameter, then its values, the first being the default. It
+# slices or measures, and never decides who is counted.
+CONTROLS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "trend": ("measure", ("total_cost", "headcount")),
 }

@@ -299,7 +299,11 @@ export interface ImportRowParams {
 // Insights (DESIGN 1.6). Money is a two-decimal string, or null where SPEC section 9 withholds it.
 
 export type InsightName =
-  'summary' | 'by-country' | 'by-department' | 'distribution' | 'by-level' | 'gender-gap';
+  'summary' | 'by-country' | 'by-department' | 'distribution' | 'by-level' | 'gender-gap' | 'trend';
+
+/** A card's own control on the wire, `{ measure: 'headcount' }`: what it measures or how it
+ * slices, never who is counted (D62). */
+export type InsightControl = Record<string, string>;
 
 export interface InsightParams {
   country: string[];
@@ -384,6 +388,21 @@ export interface GapRow {
   reason: string | null;
 }
 
+export type TrendMeasure = 'total_cost' | 'headcount';
+
+export interface TrendPoint {
+  month_end: string;
+  headcount: number;
+  total_cost: string | null;
+}
+
+/** Headcount and total cost at the 24 month-ends ending at `on`, at one rate (D62). */
+export interface TrendInsight extends InsightHeader {
+  measure: TrendMeasure;
+  latest: string;
+  points: TrendPoint[];
+}
+
 export interface InsightPayloads {
   summary: SummaryInsight;
   'by-country': InsightHeader & { rows: CountryRow[] };
@@ -391,6 +410,7 @@ export interface InsightPayloads {
   distribution: DistributionInsight;
   'by-level': InsightHeader & { rows: LevelRow[] };
   'gender-gap': InsightHeader & { rows: GapRow[] };
+  trend: TrendInsight;
 }
 
 export interface ExchangeRates {

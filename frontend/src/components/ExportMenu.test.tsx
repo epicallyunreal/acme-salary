@@ -188,6 +188,7 @@ describe('Export menus on the pages', () => {
     ['How are salaries distributed?', 'Export salary distribution', 'distribution'],
     ['What does each level pay?', 'Export pay by level', 'by-level'],
     ['Is there a gender pay gap?', 'Export gender pay gap', 'gender-gap'],
+    ['How has total cost moved over two years?', 'Export cost trend', 'trend'],
   ])('the card "%s" exports its own table', async (question, label, name) => {
     const user = userEvent.setup();
     const saved = catchSaves();
@@ -198,6 +199,21 @@ describe('Export menus on the pages', () => {
     await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
 
     await waitFor(() => expect(saved).toEqual([`acme-${name}-20261007-0900.csv`]));
+  });
+
+  it("a card's export sends its control as the URL holds it", async () => {
+    const user = userEvent.setup();
+    const saved = catchSaves();
+    const asked = recordRequests();
+    renderApp('/?trend.measure=headcount');
+
+    await user.click(await screen.findByRole('button', { name: 'Export cost trend' }));
+    await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
+
+    await waitFor(() => expect(saved).toEqual(['acme-trend-20261007-0900.csv']));
+    expect(asked).toEqual([
+      '/api/v1/exports/insights/trend/?currency=usd&file=csv&measure=headcount Bearer access-1',
+    ]);
   });
 
   it('a failed download says so on the page it was asked from', async () => {

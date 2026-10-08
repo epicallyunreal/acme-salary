@@ -36,7 +36,15 @@ DIRECTORY_CASES = {
 }
 
 # Each insight is timed unfiltered and with one country (the /perf-timing skill names them).
-INSIGHT_NAMES = ("summary", "by-country", "by-department", "distribution", "by-level", "gender-gap")
+INSIGHT_NAMES = (
+    "summary",
+    "by-country",
+    "by-department",
+    "distribution",
+    "by-level",
+    "gender-gap",
+    "trend",
+)
 INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
 
 # The unfiltered directory is exported once in each format (SPEC F6).

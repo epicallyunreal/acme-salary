@@ -49,6 +49,7 @@ export function DistributionCard({
       what="the salary distribution"
       query={query}
       actions={actions}
+      wide
     >
       {query.data ? <Distribution data={query.data} /> : null}
     </InsightCard>

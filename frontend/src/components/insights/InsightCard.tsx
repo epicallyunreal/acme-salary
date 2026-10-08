@@ -38,7 +38,7 @@ export function InsightCard({ question, what, query, actions, wide, children }: 
       >
         <Typography
           id={headingId}
-          component="h2"
+          component="h3"
           sx={{ fontSize: 16, lineHeight: '24px', fontWeight: 600 }}
         >
           {question}

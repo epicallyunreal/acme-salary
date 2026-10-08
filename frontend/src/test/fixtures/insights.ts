@@ -179,6 +179,46 @@ export const genderGap: InsightPayloads['gender-gap'] = {
   ],
 };
 
+const MONTH_ENDS = [
+  '2024-10-31',
+  '2024-11-30',
+  '2024-12-31',
+  '2025-01-31',
+  '2025-02-28',
+  '2025-03-31',
+  '2025-04-30',
+  '2025-05-31',
+  '2025-06-30',
+  '2025-07-31',
+  '2025-08-31',
+  '2025-09-30',
+  '2025-10-31',
+  '2025-11-30',
+  '2025-12-31',
+  '2026-01-31',
+  '2026-02-28',
+  '2026-03-31',
+  '2026-04-30',
+  '2026-05-31',
+  '2026-06-30',
+  '2026-07-31',
+  '2026-08-31',
+  '2026-09-30',
+];
+
+/** Two years of month-ends: four people at the first two, so their totals are withheld (D59),
+ * then 26 people at 2,300,000.00, then the 27 of the summary from April 2026. */
+export const trend: InsightPayloads['trend'] = {
+  ...USD,
+  measure: 'total_cost',
+  latest: '2026-09-30',
+  points: MONTH_ENDS.map((month_end, index) => {
+    if (index < 2) return { month_end, headcount: 4, total_cost: null };
+    if (index < 18) return { month_end, headcount: 26, total_cost: '2300000.00' };
+    return { month_end, headcount: 27, total_cost: '2435450.00' };
+  }),
+};
+
 /** Each insight's payload, by the name in its URL. */
 export function insightFor(name: string, includeExited: boolean): JsonBodyType | undefined {
   const payloads: Record<string, unknown> = {
@@ -188,6 +228,7 @@ export function insightFor(name: string, includeExited: boolean): JsonBodyType |
     distribution,
     'by-level': byLevel,
     'gender-gap': genderGap,
+    trend,
   };
   return payloads[name] as JsonBodyType | undefined;
 }

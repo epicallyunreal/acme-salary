@@ -63,6 +63,7 @@ def test_every_filter_reaches_the_query(api, people):
         ("distribution", 5),
         ("by-level", 5),
         ("gender-gap", 5),
+        ("trend", 5),
     ],
 )
 def test_an_insight_runs_a_fixed_number_of_queries(
@@ -121,3 +122,24 @@ def test_a_filter_that_names_nothing_is_a_400(api, people, params, errors):
     response = api.get(URL.format("summary"), params)
 
     assert (response.status_code, response.json()) == (400, errors)
+
+
+# Card controls (D62)
+
+
+@pytest.mark.parametrize(
+    ("given", "measure"), [({}, "total_cost"), ({"measure": "headcount"}, "headcount")]
+)
+def test_trend_names_the_measure_its_card_draws(api, people, given, measure):
+    response = api.get(URL.format("trend"), given)
+
+    assert (response.status_code, response.json()["measure"]) == (200, measure)
+
+
+def test_a_control_value_outside_its_list_is_a_400(api, people):
+    response = api.get(URL.format("trend"), {"measure": "salary"})
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"measure": ["measure must be total_cost or headcount, got salary"]},
+    )

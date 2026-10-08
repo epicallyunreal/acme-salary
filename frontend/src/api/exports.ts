@@ -1,7 +1,7 @@
 import { saveFile } from '../lib/download';
 import { apiDownload } from './client';
 import { insightQuery } from './insights';
-import type { InsightName, InsightParams, ListParams } from './types';
+import type { InsightControl, InsightName, InsightParams, ListParams } from './types';
 
 export type ExportFile = 'csv' | 'xlsx' | 'json';
 
@@ -16,9 +16,15 @@ export async function exportEmployees(params: ListParams, file: ExportFile) {
   saveFile(blob, fileName ?? `acme-employees.${file}`);
 }
 
-/** One insight's table for the dashboard's filters, the card's figures in rows (D60). */
-export async function exportInsight(name: InsightName, params: InsightParams, file: ExportFile) {
-  const query = { ...insightQuery(params), file };
+/** One insight's table for the dashboard's filters and the card's control, the card's figures in
+ * rows (D60, D62). */
+export async function exportInsight(
+  name: InsightName,
+  params: InsightParams,
+  file: ExportFile,
+  control: InsightControl = {},
+) {
+  const query = { ...insightQuery(params), ...control, file };
   const { blob, fileName } = await apiDownload(`/exports/insights/${name}/`, { query });
   saveFile(blob, fileName ?? `acme-${name}.${file}`);
 }
