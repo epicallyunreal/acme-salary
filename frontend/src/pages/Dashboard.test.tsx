@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,8 @@ import { setSession } from '../lib/auth';
 import { exchangeRates, insightFor, nobody } from '../test/fixtures/insights';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
+import { expectEveryFieldLabelled } from '../test/a11y';
+import { PERIOD_DELAY_MS } from '../components/filters/PeriodControl';
 
 const QUESTIONS = [
   'Where does payroll go, by country?',
@@ -413,6 +415,8 @@ describe('Dashboard', () => {
   });
 
   it('a custom date applies on leaving its field, or on its own after a pause', async () => {
+    // The pause is a fake timer, advanced by hand, so the test never waits on the clock.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const seen = recordRequests();
     const { router } = renderApp('/?period=custom&from=2026-01-01&to=2026-03-31');
     await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
@@ -425,6 +429,8 @@ describe('Dashboard', () => {
 
     // As a date picked from the calendar does, with no Enter and no click elsewhere (D66).
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-04-30' } });
+    expect(router.state.location.search).toBe('?period=custom&from=2026-02-01&to=2026-03-31');
+    act(() => vi.advanceTimersByTime(PERIOD_DELAY_MS));
 
     await waitFor(() =>
       expect(router.state.location.search).toBe('?period=custom&from=2026-02-01&to=2026-04-30'),
@@ -525,5 +531,21 @@ describe('Dashboard', () => {
     expect(
       await screen.findByText('No one matches these filters on 31 Mar 2026. Clear a filter.'),
     ).toBeInTheDocument();
+  });
+  it('every card says so when its insight does not load, each with its own Retry', async () => {
+    server.use(http.get('/api/v1/insights/:name/', () => HttpResponse.json({}, { status: 500 })));
+    renderApp('/');
+
+    const retries = await screen.findAllByRole('button', { name: 'Retry' });
+
+    expect(retries.length).toBeGreaterThanOrEqual(6);
+    expect(screen.getAllByText(/Could not load/).length).toBe(retries.length);
+  });
+
+  it('labels every filter', async () => {
+    renderApp('/');
+    await screen.findByLabelText('Period');
+
+    expectEveryFieldLabelled();
   });
 });

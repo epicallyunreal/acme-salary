@@ -19,6 +19,7 @@ import { getResetCounts, useResetCounts, useResetDemo } from '../../api/demo';
 import type { ResetCounts } from '../../api/types';
 import { useBusy } from '../busy/busyContext';
 import type { FormMessage } from '../forms/applyServerErrors';
+import { ErrorState } from '../layout/ErrorState';
 import { deletes } from './deletes';
 
 /** The word the confirmation box must hold, exactly: no other case, no spaces around it. */
@@ -121,9 +122,13 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
       <form onSubmit={(event) => void submit(event)} noValidate>
         <DialogTitle id="reset-title">Empty the database?</DialogTitle>
         <DialogContent>
-          <DialogContentText id="reset-description">
-            {counts.data ? deletes(counts.data) : 'Counting what will be deleted.'}
-          </DialogContentText>
+          {counts.isError ? (
+            <ErrorState what="the counts" onRetry={() => void counts.refetch()} />
+          ) : (
+            <DialogContentText id="reset-description">
+              {counts.data ? deletes(counts.data) : 'Counting what will be deleted.'}
+            </DialogContentText>
+          )}
           <TextField
             id="reset-password"
             label="Your password"

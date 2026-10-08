@@ -369,4 +369,14 @@ describe('Imports', () => {
       'The server may still be working, or the file was refused; check the batch list.',
     );
   });
+  it('labels the file input', async () => {
+    renderApp('/imports');
+    await screen.findByRole('table', { name: 'Imports' });
+
+    // Hidden behind the button, so the name is its aria-label, which the button also reads.
+    expect(screen.getByLabelText('Spreadsheet to import')).toHaveAttribute(
+      'aria-label',
+      'Spreadsheet to import',
+    );
+  });
 });

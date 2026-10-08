@@ -1,12 +1,14 @@
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { setSession } from '../lib/auth';
 import { employeeDetails } from '../test/fixtures/detail';
+import { countries } from '../test/fixtures/meta';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
+import { expectEveryFieldLabelled } from '../test/a11y';
 
 describe('NewEmployee', () => {
   beforeEach(() => {
@@ -72,5 +74,35 @@ describe('NewEmployee', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Meera Iyer added as ACME-5. Check it: gross 300,000 INR is below the India minimum 400,000.',
     );
+  });
+  it('says so when the countries and departments do not load, and the retry loads them', async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    server.use(
+      http.get('/api/v1/meta/countries/', () =>
+        failing ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json(countries),
+      ),
+    );
+    renderApp('/employees/new');
+
+    expect(
+      await screen.findByText(
+        'Could not load the countries and departments. Check your connection and try again.',
+      ),
+    ).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Could not load the countries/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it('labels every field of the form', async () => {
+    renderApp('/employees/new');
+    await screen.findByRole('heading', { level: 1, name: 'New employee' });
+    await screen.findByLabelText(/Full name/);
+
+    expectEveryFieldLabelled();
   });
 });

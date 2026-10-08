@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setSession } from '../lib/auth';
 import { POLL } from '../lib/poll';
-import { resetCounts, sampleFilesEmpty } from '../test/fixtures/demo';
+import { resetCounts, sampleFiles, sampleFilesEmpty } from '../test/fixtures/demo';
 import { batchPage } from '../test/fixtures/imports';
 import { expectClosed, expectFailed, expectPending, held } from '../test/busy';
 import { HR_PASSWORD } from '../test/handlers';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
+import { expectEveryFieldLabelled, expectFocusCycle } from '../test/a11y';
 
 /** jsdom has no object URLs and does not follow links, so each save is caught at the click. */
 function catchSaves(): string[] {
@@ -320,5 +321,57 @@ describe('DemoData', () => {
       'The database was not emptied',
       'Too many attempts. Wait an hour and try again.',
     );
+  });
+  it('says so when the sample files do not load, and the retry loads them', async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    server.use(
+      http.get('/api/v1/admin/sample-files/', () =>
+        failing ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json(sampleFiles),
+      ),
+    );
+    renderApp('/demo');
+
+    expect(
+      await screen.findByText(
+        'Could not load the sample files. Check your connection and try again.',
+      ),
+    ).toBeInTheDocument();
+    failing = false;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(await screen.findByRole('list', { name: 'Sample files' })).toBeInTheDocument();
+  });
+
+  it('says so in the dialog when the counts do not load, and the retry loads them', async () => {
+    const user = userEvent.setup();
+    let failing = true;
+    server.use(
+      http.get('/api/v1/admin/reset-demo/', () =>
+        failing ? HttpResponse.json({}, { status: 500 }) : HttpResponse.json(resetCounts),
+      ),
+    );
+    renderApp('/demo');
+
+    await user.click(await screen.findByRole('button', { name: 'Empty the database' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Empty the database?' });
+    expect(
+      await within(dialog).findByText(
+        'Could not load the counts. Check your connection and try again.',
+      ),
+    ).toBeInTheDocument();
+    failing = false;
+    await user.click(within(dialog).getByRole('button', { name: 'Retry' }));
+
+    expect(await within(dialog).findByText(DELETES)).toBeInTheDocument();
+    expectEveryFieldLabelled(dialog);
+  });
+
+  it('the reset dialog takes focus and hands it back on Escape', async () => {
+    const user = userEvent.setup();
+    renderApp('/demo');
+    const button = await screen.findByRole('button', { name: 'Empty the database' });
+
+    await expectFocusCycle(user, button, 'Empty the database?');
   });
 });

@@ -1,12 +1,14 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setSession } from '../lib/auth';
 import { employeePage, employees } from '../test/fixtures/employees';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
+import { SEARCH_DELAY_MS } from '../components/filters/FilterBar';
+import { expectEveryFieldLabelled } from '../test/a11y';
 
 /** Sixty rows, so the directory has three pages of 25; every row is a copy of the fixture. */
 function sixtyRows(params: URLSearchParams) {
@@ -76,6 +78,10 @@ async function rowsShown() {
 }
 
 describe('Employees', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
   });
@@ -373,12 +379,16 @@ describe('Employees', () => {
   });
 
   it('searches after a pause and sorts by the reporting gross', async () => {
+    // The pause is a fake timer, advanced by hand, so the test never waits on the clock.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const seen = recordRequests();
     renderApp('/employees');
-    const user = userEvent.setup();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await rowsShown();
 
     await user.type(screen.getByLabelText('Search'), 'rao');
+    expect(seen.map((params) => params.get('search'))).toEqual([null]);
+    act(() => vi.advanceTimersByTime(SEARCH_DELAY_MS));
     await waitFor(() => expect(seen.at(-1)?.get('search')).toBe('rao'));
     // One request for the whole word, not one per keystroke.
     expect(seen.map((params) => params.get('search'))).toEqual([null, 'rao']);
@@ -532,5 +542,11 @@ describe('Employees', () => {
     const { pathname, search } = router.state.location;
     expect(pathname).toBe('/login');
     expect(new URLSearchParams(search).get('next')).toBe('/employees?country=IN');
+  });
+  it('labels every filter and the search', async () => {
+    renderApp('/employees');
+    await rowsShown();
+
+    expectEveryFieldLabelled();
   });
 });

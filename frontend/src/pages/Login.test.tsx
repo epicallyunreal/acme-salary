@@ -7,6 +7,7 @@ import { getRefreshToken, setSession } from '../lib/auth';
 import { HR_EMAIL, HR_PASSWORD } from '../test/handlers';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
+import { expectEveryFieldLabelled } from '../test/a11y';
 
 async function signIn(password = HR_PASSWORD) {
   const user = userEvent.setup();
@@ -79,5 +80,11 @@ describe('Login', () => {
     renderApp('/login');
 
     await screen.findByRole('heading', { level: 1, name: 'Dashboard' });
+  });
+  it('labels both fields', async () => {
+    renderApp('/login');
+    await screen.findByRole('button', { name: 'Sign in' });
+
+    expectEveryFieldLabelled();
   });
 });

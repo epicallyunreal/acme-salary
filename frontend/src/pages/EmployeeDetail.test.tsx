@@ -9,6 +9,7 @@ import { setSession } from '../lib/auth';
 import { auditPage, employeeDetails, histories } from '../test/fixtures/detail';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
+import { expectEveryFieldLabelled, expectFocusCycle } from '../test/a11y';
 
 async function openExitDialog() {
   const user = userEvent.setup();
@@ -526,4 +527,21 @@ describe('EmployeeDetail', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(sent).toEqual([]);
   });
+  it.each([
+    ['Edit', 'Edit Asha Rao', '/employees/1'],
+    ['Add revision', 'Add a revision for Asha Rao', '/employees/1'],
+    ['Mark exited', 'Mark Asha Rao exited', '/employees/1'],
+    ['Cancel revision v3', 'Cancel revision v3?', '/employees/4'],
+  ])(
+    '%s opens a dialog that takes focus and hands it back on Escape, every field labelled',
+    async (trigger, title, route) => {
+      const user = userEvent.setup();
+      renderApp(route);
+      const button = await screen.findByRole('button', { name: trigger });
+
+      const dialog = await expectFocusCycle(user, button, title);
+
+      if (within(dialog).queryAllByRole('textbox').length) expectEveryFieldLabelled(dialog);
+    },
+  );
 });

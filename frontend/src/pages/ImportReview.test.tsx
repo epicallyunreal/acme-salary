@@ -1,7 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ImportBatch, ImportRow } from '../api/types';
 import { setSession } from '../lib/auth';
@@ -10,6 +10,8 @@ import { expectClosed, expectFailed, expectPending, held } from '../test/busy';
 import { reviewBatch, reviewRows, rowsPage } from '../test/fixtures/imports';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
+import { expectEveryFieldLabelled, expectFocusCycle } from '../test/a11y';
+import { SEARCH_DELAY_MS } from '../components/filters/FilterBar';
 
 /** The review batch with its error row skipped: nothing stands in the way of approve. */
 const READY: ImportBatch = { ...reviewBatch, error_rows: 0, skipped_rows: 2 };
@@ -38,6 +40,10 @@ function summary() {
 }
 
 describe('ImportReview', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
   });
@@ -155,7 +161,9 @@ describe('ImportReview', () => {
   });
 
   it('searches the rows by code or name after a pause', async () => {
-    const user = userEvent.setup();
+    // The pause is a fake timer, advanced by hand, so the test never waits on the clock.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const asked: (string | null)[] = [];
     server.use(
       http.get('/api/v1/imports/3/rows/', ({ request }) => {
@@ -168,6 +176,8 @@ describe('ImportReview', () => {
     await screen.findByText('Ravi Iyer');
 
     await user.type(screen.getByLabelText('Search'), 'HR-41');
+    expect(asked.filter(Boolean)).toEqual([]);
+    act(() => vi.advanceTimersByTime(SEARCH_DELAY_MS));
 
     await waitFor(() => expect(screen.queryByText('Ravi Iyer')).not.toBeInTheDocument());
     expect(screen.getByText('Mohan Khan')).toBeInTheDocument();
@@ -654,5 +664,23 @@ describe('ImportReview', () => {
       'The row did not change: the batch is approved, not in review.',
     );
     expect(notice.className).toMatch(/Error/);
+  });
+  it.each([
+    ['Approve', 'Approve october-raises.xlsx?'],
+    ['Discard', 'Discard october-raises.xlsx?'],
+  ])('%s opens a dialog that takes focus and hands it back on Escape', async (trigger, title) => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v1/imports/3/', () => HttpResponse.json(READY)));
+    renderApp('/imports/3');
+    const button = await screen.findByRole('button', { name: trigger });
+
+    await expectFocusCycle(user, button, title);
+  });
+
+  it('labels the filter and the search', async () => {
+    renderApp('/imports/3');
+    await screen.findByText('Ravi Iyer');
+
+    expectEveryFieldLabelled();
   });
 });
