@@ -12,8 +12,10 @@ from tests.factories import UserFactory
 
 TODAY = date(2026, 10, 7)
 
-# pytest times tests with its own clock; frozen, `--durations` reports nonsense.
-freezegun.configure(extend_ignore_list=["_pytest."])
+# pytest times tests with its own clock; frozen, `--durations` reports nonsense. subprocess and
+# selectors keep the real clock too, or a `subprocess.run(timeout=...)` in a test, the hook tests'
+# way of running the hooks, times out at once under the freeze (D73).
+freezegun.configure(extend_ignore_list=["_pytest.", "subprocess", "selectors"])
 
 # DRF binds `SimpleRateThrottle.timer` to `time.time` when first imported. Imported above, before
 # any test freezes time, it keeps the real clock; under a freeze it would bind freezegun's fake,

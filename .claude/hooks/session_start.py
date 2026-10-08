@@ -42,26 +42,31 @@ for skill in sorted(pathlib.Path(ROOT, ".claude", "skills").glob("*/SKILL.md")):
 agents = sorted(p.stem for p in pathlib.Path(ROOT, ".claude", "agents").glob("*.md"))
 
 
-def decision_of(path, limit=600):
-    head = path.read_text(encoding="utf-8")[:limit].lower()
-    if "owner decision: approved" in head:
+def decision_of(path, line_number):
+    """The owner's decision is the one line that starts with it: line 3 of a review, line 1 of
+    PLAN and DESIGN. The phrase anywhere else, a reviewer quoting it, opens no gate (D73)."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    line = lines[line_number - 1].strip().lower() if len(lines) >= line_number else ""
+    if line.startswith("owner decision: approved"):
         return "approved"
-    if "owner decision: rework" in head:
+    if line.startswith("owner decision: rework"):
         return "rework requested"
     return "pending owner decision"
 
 
-reviews = sorted(pathlib.Path(ROOT, "docs", "reviews").glob("spec-review-*.md"), key=lambda p: p.stat().st_mtime)
+# The latest review is the latest by name, which carries its date: a touched older file or a
+# copy with a newer modification time changes nothing (D73).
+reviews = sorted(pathlib.Path(ROOT, "docs", "reviews").glob("spec-review-*.md"))
 if not reviews:
     gate = "no spec review yet. The only task before development is /review-spec."
 else:
     latest = reviews[-1]
-    gate = f"{decision_of(latest)} ({latest.name}, latest by modification time)."
+    gate = f"{decision_of(latest, 3)} ({latest.name}, latest by name)."
 
 
 def doc_state(name):
     path = pathlib.Path(ROOT, "docs", name)
-    return decision_of(path, 200) if path.exists() else "missing"
+    return decision_of(path, 1) if path.exists() else "missing"
 
 
 plan_state = f"PLAN.md {doc_state('PLAN.md')}, DESIGN.md {doc_state('DESIGN.md')}"

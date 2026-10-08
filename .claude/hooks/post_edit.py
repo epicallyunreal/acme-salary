@@ -60,8 +60,9 @@ if rel.startswith("backend/") and rel.endswith(".py"):
     backend = os.path.join(ROOT, "backend")
     ruff = tool("ruff", "backend")
     if ruff:
-        run([ruff, "format", path], backend)
-        run([ruff, "check", "--fix", path], backend)
+        # `--` before the path: a file whose name starts with a dash is a path, not a flag (D73).
+        run([ruff, "format", "--", path], backend)
+        run([ruff, "check", "--fix", "--", path], backend)
     with open(path, encoding="utf-8", errors="replace") as fh:
         text = code_lines(fh.read(), "#")
     is_test = "/tests/" in "/" + rel or rel.endswith("conftest.py")
@@ -87,9 +88,9 @@ elif rel.startswith("frontend/") and rel.endswith((".ts", ".tsx")):
     prettier = tool("prettier", "frontend")
     eslint = tool("eslint", "frontend")
     if prettier:
-        run([prettier, "--write", path], frontend)
+        run([prettier, "--write", "--", path], frontend)
     if eslint:
-        run([eslint, "--fix", path], frontend)
+        run([eslint, "--fix", "--", path], frontend)
     with open(path, encoding="utf-8", errors="replace") as fh:
         text = code_lines(fh.read(), "//")
     if re.search(r":\s*any\b", text):

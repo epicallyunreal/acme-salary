@@ -2,6 +2,7 @@
 name: finish-step
 description: Close out a build step. Runs lint and tests, runs the four reviewer subagents, fixes blockers, updates DECISIONS and PERFORMANCE, then commits. Use when a step's acceptance criteria pass, or when the user says "finish step", "wrap up the step" or "ready to commit the step".
 argument-hint: <step number>
+disable-model-invocation: true
 ---
 
 # Finish a build step

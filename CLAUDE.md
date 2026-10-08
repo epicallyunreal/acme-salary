@@ -60,7 +60,7 @@ Five read-only subagents live in `.claude/agents/`: `eng-manager-spec-review` fo
 
 ## Hooks
 
-`.claude/settings.json` wires five hook scripts. `session_start.py` puts the repo state, the gate status and the skill list into context and exports the venv onto PATH. `post_edit.py` formats every edited file and checks a few rules (FloatField, logic in API modules, non-deterministic tests). `pre_commit_gate.py` runs ruff, pytest, eslint and vitest before every `git commit` and blocks on failure. `git_guard.py` blocks any command that rewrites history, whatever its spelling. `dependency_note.py` reminds about rule 9 on installs. A blocked commit means fix the failure, never bypass the hook or skip tests. `.pre-commit-config.yaml` runs the same gate on commits made from a terminal.
+`.claude/settings.json` wires five hook scripts. `session_start.py` puts the repo state, the gate status and the skill list into context and exports the venv onto PATH. `post_edit.py` formats every edited file and checks a few rules (FloatField, logic in API modules, non-deterministic tests). `pre_commit_gate.py` runs ruff, pytest, eslint, `tsc -b` and vitest before every `git commit`, however the commit is spelled, and blocks on failure, on a suite that collects nothing, and on any error of its own (D73). `git_guard.py` blocks any command that rewrites history, whatever its spelling, global options and abbreviations included. `dependency_note.py` reminds about rule 9 on installs. A blocked commit means fix the failure, never bypass the hook or skip tests. `.pre-commit-config.yaml` runs the same gate on commits made from a terminal.
 
 ## Tests
 
