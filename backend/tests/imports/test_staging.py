@@ -375,6 +375,55 @@ def test_every_value_a_row_applies_fits_inside_the_stored_cap():
     assert max(*TEXT_LIMITS.values(), LEGACY_CODE_MAX) < STORED_CELL_LIMIT
 
 
+def test_one_long_shared_string_in_every_cell_is_cut_once_and_errs_in_every_column(lookups):
+    """A crafted sheet points every cell at one 10,000-character shared string. Each cell is cut
+    to 256 characters as it is read, one copy for them all, and errs in its column, never a
+    shorter value that passes (D68)."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(HEADER)
+    for _ in range(3):
+        sheet.append(["9" * 10_000] * len(HEADER))
+    stream = io.BytesIO()
+    workbook.save(stream)
+    xlsx_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    upload = SimpleUploadedFile("a.xlsx", stream.getvalue(), xlsx_type)
+
+    cells = [cell for _, row in parser.read(upload, upload.name, xlsx_type).rows for cell in row]
+    upload.seek(0)
+    batch = stage_upload(upload, actor=None)
+
+    assert len(cells) == 3 * len(HEADER)
+    assert all(cell is cells[0] for cell in cells)
+    assert cells[0] == "9" * 255 + "\u2026"
+    for row in staged(batch).values():
+        assert row.status == "error"
+        assert {m["field"] for m in row.messages if m["severity"] == "error"} >= set(HEADER)
+
+
+def test_a_cell_of_nothing_but_spaces_past_the_cap_stays_blank(lookups):
+    """Cutting keeps a blank cell blank: 10,000 spaces in an optional column change nothing."""
+    batch = stage_upload(upload_of(new_row(bonus_annual=" " * 10_000)), actor=None)
+
+    row = staged(batch)[2]
+    assert row.status != "error"
+    assert not [m for m in row.messages if m["field"] == "bonus_annual"]
+
+
+def test_a_number_padded_past_the_cap_is_an_error_never_a_shorter_number(lookups):
+    """`1`, 300 spaces and an x is no number. Cut to 256 characters it is still none, so the row
+    errs rather than staging BASE as 1 (D68)."""
+    batch = stage_upload(upload_of(new_row(BASE="1" + " " * 300 + "x")), actor=None)
+
+    row = staged(batch)[2]
+    assert row.status == "error"
+    assert any(
+        m["field"] == "BASE"
+        and m["message"].startswith("BASE must be a non-negative number, got 1")
+        for m in row.messages
+    )
+
+
 def test_a_level_thousands_of_digits_long_is_a_row_error_not_a_crash(lookups):
     """Python will not write an int past 4,300 digits back as text, so none is ever kept."""
     batch = stage_upload(upload_of(new_row(level="9" * 5000)), actor=None)

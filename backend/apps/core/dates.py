@@ -2,6 +2,7 @@
 the insights read a period, `from` and `to`, instead (D64)."""
 
 import calendar
+import re
 from datetime import UTC, date, datetime
 
 from apps.core.exceptions import Invalid, clip
@@ -11,6 +12,8 @@ from apps.core.exceptions import Invalid, clip
 PERIOD_FIRST = date(2015, 1, 1)
 PERIOD_LAST = date(2100, 12, 31)
 PERIOD_MONTHS = 12
+# `fromisoformat` reads week dates and compact forms as well, which the messages do not offer.
+ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def today_utc() -> date:
@@ -21,27 +24,24 @@ EARLIEST_ON = date(1900, 1, 1)
 
 
 def parse_on(value: str | None) -> date:
-    """`on`, or today in UTC when it is not given. Before 1900 is a 400, since the trend and the
-    bridge reach two years back from it (D62)."""
-    if value in (None, ""):
-        return today_utc()
-    try:
-        on = date.fromisoformat(value)
-    except ValueError as exc:
-        raise Invalid({"on": [f"on must be a date in YYYY-MM-DD form, got {clip(value)}"]}) from exc
+    """`on`, or today in UTC when it is not given. Before 1900 is a 400 (D62)."""
+    on = parse_date("on", value) or today_utc()
     if on < EARLIEST_ON:
         raise Invalid({"on": [f"on must be on or after 1900-01-01, got {clip(value)}"]})
     return on
 
 
 def parse_date(name: str, value: str | None) -> date | None:
-    """`value` as a date, or None when not given. Any other shape is a 400 naming `name`."""
+    """`value` as a `YYYY-MM-DD` date, or None when not given. Any other shape is a 400 naming
+    `name`."""
     if value in (None, ""):
         return None
+    message = f"{name} must be a date in YYYY-MM-DD form, got {clip(value)}"
+    if not ISO_DATE.fullmatch(value):
+        raise Invalid({name: [message]})
     try:
         return date.fromisoformat(value)
     except ValueError as exc:
-        message = f"{name} must be a date in YYYY-MM-DD form, got {clip(value)}"
         raise Invalid({name: [message]}) from exc
 
 
@@ -50,7 +50,11 @@ def parse_period(start: str | None, end: str | None) -> tuple[date, date]:
     day 12 months before it, no earlier than 1 January 2015. Each must lie from 2015-01-01 to
     2100-12-31, and `from` on or before `to`."""
     last = parse_date("to", end) or today_utc()
-    first = parse_date("from", start) or max(months_before(last, PERIOD_MONTHS), PERIOD_FIRST)
+    first = parse_date("from", start)
+    if first is None:
+        # Worked out only from a `to` inside the bounds, so year 1 never reaches back to year 0.
+        within = PERIOD_FIRST < last <= PERIOD_LAST
+        first = max(months_before(last, PERIOD_MONTHS), PERIOD_FIRST) if within else PERIOD_FIRST
     errors = {}
     for name, value in (("from", first), ("to", last)):
         if value < PERIOD_FIRST:

@@ -94,7 +94,7 @@ export function Dashboard() {
           {/* The summary has no card, so its menu sits on the rate month line above it (D60). */}
           <Box sx={{ ml: 'auto' }}>{exportMenu('summary', 'Export summary', 'the summary')}</Box>
         </Box>
-        <KpiRow query={summary} />
+        <KpiRow query={summary} includeExited={filters.include_exited} />
         {nobody ? (
           <EmptyState message={`No one matches these filters ${when}. Clear a filter.`} />
         ) : (

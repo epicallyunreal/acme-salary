@@ -111,6 +111,11 @@ class Command(BaseCommand):
                     "the database has employees; pass --reset to rebuild it or --if-empty to skip"
                 )
         active, exited = options["active"], options["exited"]
+        if active < 0 or exited < 0:
+            raise CommandError("--active and --exited must be 0 or more")
+        if exited and not active:
+            # Leavers leave month by month in proportion to those on staff (D64).
+            raise CommandError("--exited needs --active: leavers follow the headcount")
         elapsed = seed(active, exited, options["seed"], reset=options["reset"], stdout=self.stdout)
         self.stdout.write(
             f"seeded {active} active and {exited} exited employees in {elapsed:.1f} s"

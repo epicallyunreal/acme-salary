@@ -410,6 +410,25 @@ describe('Dashboard', () => {
     }
   });
 
+  it('a custom date applies on leaving its field, or on its own after a pause', async () => {
+    const seen = recordRequests();
+    const { router } = renderApp('/?period=custom&from=2026-01-01&to=2026-03-31');
+    await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
+
+    const from = screen.getByLabelText('From');
+    fireEvent.change(from, { target: { value: '2026-02-01' } });
+    fireEvent.blur(from);
+
+    expect(router.state.location.search).toBe('?period=custom&from=2026-02-01&to=2026-03-31');
+
+    // As a date picked from the calendar does, with no Enter and no click elsewhere (D66).
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-04-30' } });
+
+    await waitFor(() =>
+      expect(router.state.location.search).toBe('?period=custom&from=2026-02-01&to=2026-04-30'),
+    );
+  });
+
   it('a custom range from before 2015 in a link falls back to the last 12 months', async () => {
     const seen = recordRequests();
     renderApp('/?period=custom&from=2014-12-31&to=2026-01-01');

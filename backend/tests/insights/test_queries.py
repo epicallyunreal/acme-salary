@@ -1071,11 +1071,6 @@ def part(name, people, amount, reason=None):
     return {"part": name, "people": people, "amount": amount, "reason": reason}
 
 
-def test_a_year_back_is_the_same_day_or_the_months_last():
-    assert queries.months_before(TODAY, 12) == date(2025, 10, 7)
-    assert queries.months_before(date(2024, 2, 29), 12) == date(2023, 2, 28)
-
-
 def test_the_bridge_adds_up_exactly_and_no_leavers_shows_every_amount(history):
     """From 7 Oct 2025 to 7 Oct 2026 at 1.25 for EUR. Start: A1 100,000, A2 80,000, A3 60,000,
     A4 50,000, A5 60,000 and B1 65,000, 415,000. Nobody left, so leavers is 0 and triggers
@@ -1280,15 +1275,73 @@ def test_spent_in_period_counts_each_day_a_record_was_current(lookups):
 
 def test_spent_in_period_is_withheld_under_five_and_ignores_include_exited(lookups):
     """Four people, one of whom left: the period counts the people employed in it, as trend
-    does, whatever Include exited says (D59, D64)."""
+    does, whatever Include exited says. Someone gone in 2023 counts in the summary with the box
+    ticked, never in the period's spend (D59, D64)."""
     for n in range(3):
         pay_all_year(f"P{n}", 36_600)
     pay_all_year("Left", 36_600, left=date(2024, 3, 31))
+    pay_all_year("Gone", 36_600, left=date(2023, 6, 30))
 
     spent = insight("summary", **YEAR_2024)["spent"]
+    ticked = insight("summary", include_exited=True, **YEAR_2024)
 
     assert spent == {"headcount": 4, "total_cost": None}
-    assert insight("summary", include_exited=True, **YEAR_2024)["spent"] == spent
+    assert (ticked["headcount"], ticked["spent"]) == (5, spent)
+
+
+def test_spent_converts_every_day_at_the_one_rate_in_force_on_to(history):
+    """1 September to 7 October 2026 is 37 days of 2026's 365, every one at the 1.25 in force on
+    `to`, not September's 1.10. USD: A1 110,000, A2 88,000, A3 60,000, B1 65,000, J1 70,000 and
+    J2 50,000 for 37 days, J4 90,000 for 8 and J5 45,000 for 7, 17,426,000 / 365 = 47,742.4658.
+    EUR: A4 44,000, A5 48,000 and J3 32,000 for 37 days, 4,588,000 / 365 = 12,569.8630, at 1.25
+    15,712.3288. Together 63,454.79 for eleven people (D64)."""
+    result = insight("summary", **{"from": date(2026, 9, 1)})
+
+    assert result["spent"] == {"headcount": 11, "total_cost": "63454.79"}
+
+
+def joined_on(name, day, base):
+    """A US employee who joined on `day`, on one BASE line from then."""
+    employee = EmployeeFactory(full_name=name, country=country("US"), joining_date=day)
+    CompensationRecordFactory(employee=employee, lines={"BASE": Decimal(base)}, effective_from=day)
+
+
+def test_spent_is_withheld_when_a_day_of_the_period_has_one_to_four_people(lookups):
+    """Four all year and a fifth from 1 July are five in 2024, but four on its first 182 days,
+    whose totals trend withholds. The year less its second half would give them back, so the
+    year is withheld, and the half where every day has five is shown: 5 x 100 x 184 = 92,000
+    (D68)."""
+    for n in range(4):
+        pay_all_year(f"P{n}", 36_600)
+    joined_on("July", date(2024, 7, 1), 36_600)
+
+    year = insight("summary", **YEAR_2024)["spent"]
+    second_half = insight("summary", **{"from": date(2024, 7, 1), "to": date(2024, 12, 31)})
+
+    assert year == {"headcount": 5, "total_cost": None}
+    assert second_half["spent"] == {"headcount": 5, "total_cost": "92000.00"}
+
+
+def test_one_day_of_four_between_trend_points_withholds_the_spend(lookups):
+    """Five on every date trend reads in 2024, but a leaver's last day is 15 May and the next
+    joiner's first 17 May, so 16 May has four. The totals either side of it would give that day
+    back, so the year's spend is withheld though every point of trend is shown (D68)."""
+    for n in range(4):
+        pay_all_year(f"P{n}", 36_600)
+    pay_all_year("Left", 36_600, left=date(2024, 5, 15))
+    joined_on("Joined", date(2024, 5, 17), 36_600)
+
+    points = insight("trend", **YEAR_2024)["points"]
+
+    assert all(point["headcount"] == 5 and point["total_cost"] for point in points)
+    assert insight("summary", **YEAR_2024)["spent"] == {"headcount": 6, "total_cost": None}
+
+
+def test_a_day_with_nobody_employed_hides_nobody():
+    changes = {date(2024, 1, 1): 5, date(2024, 3, 1): -5, date(2024, 6, 1): 6}
+
+    assert not queries.few_on_a_day(changes)
+    assert queries.few_on_a_day({**changes, date(2024, 9, 1): -2})
 
 
 # by-tenure (D62)

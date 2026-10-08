@@ -13,6 +13,7 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.views import APIView
 
 from apps.core.filters import parse_choice
+from apps.employees.queries import DEFAULT_STATUS
 from apps.employees.views import DirectoryMixin
 from apps.exports import tables, writers
 from apps.insights import queries
@@ -91,7 +92,7 @@ class ExportEmployeesView(DirectoryMixin, GenericAPIView):
         table = tables.directory_table(employees, on=on, rates=rates, currency=currency)
         filters = applied(request.query_params, DIRECTORY_FILTERS, {"on": on}, currency)
         # The status the rows are in, Active when none was given (D64).
-        filters["status"] = request.query_params.get("status") or "active"
+        filters["status"] = request.query_params.get("status") or DEFAULT_STATUS
         return respond(table, file, "employees", filters)
 
 

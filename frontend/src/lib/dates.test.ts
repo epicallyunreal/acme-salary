@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatDateTime, formatMonthShort, parseIsoDate } from './dates';
+import {
+  formatAxisDate,
+  formatDate,
+  formatDateTime,
+  formatMonthShort,
+  parseIsoDate,
+} from './dates';
 
 describe('formatDate', () => {
   it('writes day, short month and year', () => {
@@ -40,5 +46,15 @@ describe('formatMonthShort', () => {
   it('writes a month on an axis with a two-digit year', () => {
     expect(formatMonthShort('2026-09-30')).toBe('Sep 26');
     expect(formatMonthShort('2024-10-31')).toBe('Oct 24');
+  });
+});
+
+describe('formatAxisDate', () => {
+  it('writes a month-end as its month and any other day with its day', () => {
+    expect(formatAxisDate('2026-09-30')).toBe('Sep 26');
+    expect(formatAxisDate('2024-02-29')).toBe('Feb 24');
+    expect(formatAxisDate('2026-02-28')).toBe('Feb 26');
+    expect(formatAxisDate('2024-02-28')).toBe('28 Feb 24');
+    expect(formatAxisDate('2025-10-07')).toBe('7 Oct 25');
   });
 });

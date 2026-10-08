@@ -214,8 +214,8 @@ describe('Imports', () => {
     [
       'the file has too many rows',
       () =>
-        HttpResponse.json({ rows: ['file has 10,450 data rows, limit 10,000'] }, { status: 400 }),
-      'file has 10,450 data rows, limit 10,000',
+        HttpResponse.json({ rows: ['file has 15,450 data rows, limit 15,000'] }, { status: 400 }),
+      'file has 15,450 data rows, limit 15,000',
     ],
     [
       'another file is being read',

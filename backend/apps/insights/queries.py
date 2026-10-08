@@ -22,7 +22,7 @@ import math
 import statistics
 from bisect import bisect_left
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -33,7 +33,7 @@ from django.db.models import Count, F, Q, QuerySet, Sum
 from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core import fx
-from apps.core.dates import last_day, months_before  # noqa: F401 (months_before for callers)
+from apps.core.dates import last_day
 from apps.core.exceptions import Invalid
 from apps.core.models import Country, Department, SalaryComponent
 from apps.core.money import q1, q2
@@ -163,12 +163,18 @@ def period_dates(start: date, end: date) -> list[date]:
 
 def year_fraction(first: date, last: date) -> Decimal:
     """The days from `first` to `last`, both counted, each as a share of its own calendar year,
-    so a whole year adds up to 1 (D64)."""
-    fraction = Decimal(0)
-    for year in range(first.year, last.year + 1):
-        days = (min(last, date(year, 12, 31)) - max(first, date(year, 1, 1))).days + 1
-        fraction += Decimal(days) / (366 if calendar.isleap(year) else 365)
-    return fraction
+    so a whole year adds up to 1 (D64). The years between the first and the last add 1 each."""
+
+    def share(start: date, end: date) -> Decimal:
+        return Decimal((end - start).days + 1) / (366 if calendar.isleap(start.year) else 365)
+
+    if first.year == last.year:
+        return share(first, last)
+    return (
+        share(first, date(first.year, 12, 31))
+        + (last.year - first.year - 1)
+        + share(date(last.year, 1, 1), last)
+    )
 
 
 @dataclass(frozen=True)
@@ -355,21 +361,38 @@ def spent(f: InsightFilters, rates: fx.RateTable) -> dict:
     """What the period cost (D64): each record's annual total cost for the days it was current
     within it, a day costing the annual figure over the days in its calendar year, summed per
     currency, converted once and quantised once. Everyone employed on any day of the period is
-    counted, as trend counts them, Include exited not applying, and under five the amount is
-    withheld (D59)."""
+    counted, as trend counts them, Include exited not applying.
+
+    The amount is withheld when 1 to 4 people were employed on any day of the period. A day's cost
+    is part of the total, so with the trend's own points on the page, or the total over a day
+    shorter, it would give back what trend withholds on that day (D59, D68)."""
     convert = Converter(f, rates)
     by_currency: dict[str, Decimal] = defaultdict(Decimal)
     people = set()
+    # The headcount changes on the days someone starts counting and the days after they stop.
+    changes: dict[date, int] = defaultdict(int)
     for span in spans(f, f.start, f.end):
         first = max(span.first, f.start)
         last = f.end if span.stop is None else min(span.stop - timedelta(days=1), f.end)
-        if first > last:
-            continue
         people.add(span.employee)
+        changes[first] += 1
+        if last < f.end:
+            changes[last + timedelta(days=1)] -= 1
         by_currency[span.currency] += span.total_cost * year_fraction(first, last)
     total = sum((amount * convert.rate(ccy) for ccy, amount in by_currency.items()), Decimal(0))
-    shown = len(people) >= SMALL_GROUP
+    shown = len(people) >= SMALL_GROUP and not few_on_a_day(changes)
     return {"headcount": len(people), "total_cost": q2(total) if shown else None}
+
+
+def few_on_a_day(changes: Mapping[date, int]) -> bool:
+    """Whether the headcount these day-by-day changes add up to is 1 to 4 on any day. A day
+    nobody is employed hides nobody."""
+    headcount = 0
+    for day in sorted(changes):
+        headcount += changes[day]
+        if 0 < headcount < SMALL_GROUP:
+            return True
+    return False
 
 
 def by_country(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
@@ -741,7 +764,7 @@ CHANGE_NAMES = {"leavers": "leavers", "joiners": "joiners", "pay_changes": "pay 
 
 @dataclass(frozen=True)
 class Bridge:
-    """The year's movement in the reporting currency, each sum converted and quantised once. The
+    """The period's movement in the reporting currency, each sum converted and quantised once. The
     pay changes are summed from the stayers here, and the card shows the balancing figure."""
 
     start_date: date

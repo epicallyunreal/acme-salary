@@ -116,7 +116,9 @@ def new_rows(count: int, seed: int, start_number: int, taken: set[str]) -> list[
     codes = legacy_codes(count, f"import-{seed}", taken)
     for entry, code in zip(generate(count, seed, start_number=start_number), codes, strict=True):
         identity = entry.identity
-        first = entry.records[0]
+        # Today's pay beside today's level: the seed's history starts at the joining pay, years
+        # and levels below it (D64).
+        latest = entry.records[-1]
         rows.append(
             {
                 "legacy_code": code,
@@ -130,8 +132,8 @@ def new_rows(count: int, seed: int, start_number: int, taken: set[str]) -> list[
                 "joining_date": identity["joining_date"],
                 "last_date": identity["last_date"],
                 "effective_from": None,
-                "bonus_annual": first.bonus_annual,
-                **first.lines,
+                "bonus_annual": latest.bonus_annual,
+                **latest.lines,
             }
         )
     return rows

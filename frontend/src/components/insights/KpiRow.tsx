@@ -14,7 +14,13 @@ function counted(count: number, one: string, many: string): string {
 
 /** Question 1 (SPEC section 9) as five cards: headcount, annual cost, mean and median gross on the
  * period's last day, and what the period cost (D64). */
-export function KpiRow({ query }: { query: UseQueryResult<SummaryInsight> }) {
+export function KpiRow({
+  query,
+  includeExited = false,
+}: {
+  query: UseQueryResult<SummaryInsight>;
+  includeExited?: boolean;
+}) {
   const summary = query.data;
   return (
     <Box
@@ -29,13 +35,13 @@ export function KpiRow({ query }: { query: UseQueryResult<SummaryInsight> }) {
           <Skeleton key={slot} variant="rounded" height={112} sx={{ flex: '1 1 200px' }} />
         ))
       ) : (
-        <Figures summary={summary} />
+        <Figures summary={summary} includeExited={includeExited} />
       )}
     </Box>
   );
 }
 
-function Figures({ summary }: { summary: SummaryInsight }) {
+function Figures({ summary, includeExited }: { summary: SummaryInsight; includeExited: boolean }) {
   const { currency, headcount } = summary;
   // The API withholds every money figure for a population under five (D59).
   const withheld = headcount > 0 && summary.total_cost === null;
@@ -74,17 +80,24 @@ function Figures({ summary }: { summary: SummaryInsight }) {
         figure={pay(summary.median_gross)}
         caption={payCaption}
       />
-      <Spent summary={summary} />
+      <Spent summary={summary} includeExited={includeExited} />
     </>
   );
 }
 
-/** What the period cost, captioned with its dates, withheld under five people employed on any day
- * of it (D59, D64). */
-function Spent({ summary }: { summary: SummaryInsight }) {
+/** What the period cost, captioned with its dates. It is withheld when any day of the period had 1
+ * to 4 people (D68), and counts the people employed on each day, as trend does, so Include exited
+ * does not apply to it either (D64). */
+function Spent({ summary, includeExited }: { summary: SummaryInsight; includeExited: boolean }) {
   const { currency, spent } = summary;
   const withheld = spent.headcount > 0 && spent.total_cost === null;
-  const dates = `${formatDate(summary.from)} to ${formatDate(summary.to)}`;
+  const caption = [
+    `${formatDate(summary.from)} to ${formatDate(summary.to)}`,
+    withheld ? `shown when each day has ${SMALL_GROUP} people or more` : null,
+    includeExited ? "Include exited doesn't apply" : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
   return (
     <KpiCard
       label="Spent in period"
@@ -93,7 +106,7 @@ function Spent({ summary }: { summary: SummaryInsight }) {
         spent.total_cost !== null ? formatCompactAmount(spent.total_cost) : withheld ? '—' : '0'
       }
       exact={spent.total_cost === null ? undefined : formatMoney(spent.total_cost, currency)}
-      caption={withheld ? `${dates}, shown for ${SMALL_GROUP} people or more` : dates}
+      caption={caption}
     />
   );
 }

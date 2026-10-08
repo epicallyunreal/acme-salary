@@ -395,6 +395,26 @@ def test_a_summary_under_five_says_why_its_figures_are_missing(api, people):
     ]
 
 
+def test_a_spend_withheld_alone_says_a_day_of_the_period_had_under_five():
+    """`to` has 27 people, but some day of the period had 1 to 4, so only the spend is withheld,
+    and the reason names the period's day, not the 27 (D68)."""
+    payload = {
+        "headcount": 27,
+        "total_cost": "2435450.00",
+        "mean_gross": "80462.96",
+        "median_gross": "75000.00",
+        "countries": 4,
+        "departments": 4,
+        "spent": {"headcount": 30, "total_cost": None},
+        "currency": "USD",
+        "rate_month": {"label": RATES},
+    }
+
+    (row,) = tables.summary_table(payload).rows
+
+    assert row[-4:] == (None, "fewer than 5 people on a day in the period", "USD", RATES)
+
+
 def test_by_country_lists_every_country_with_the_withheld_ones_saying_why(api, people):
     rows = csv_rows(api.get(INSIGHT.format("by-country"), {"file": "csv"}))
 
@@ -663,6 +683,18 @@ def test_to_reaches_the_insight_export(api, people):
 
     assert body["filters"] == {"from": "2026-01-01", "to": "2027-01-01", "currency": "USD"}
     assert (body["rows"][0]["headcount"], body["rows"][0]["total_cost"]) == (28, "2618450.00")
+
+
+@pytest.mark.parametrize("name", sorted(queries.INSIGHTS))
+def test_every_insight_export_reads_its_period_and_names_it(api, people, name):
+    """SPEC F6 (D64): each insight's file covers the period it was asked for, and says so."""
+    period = {"from": "2026-04-01", "to": "2027-01-01"}
+
+    body = json_body(api.get(INSIGHT.format(name), {"file": "json", **period}))
+
+    assert {key: body["filters"][key] for key in period} == period
+    if name == "trend":
+        assert (body["rows"][0]["date"], body["rows"][-1]["date"]) == ("2026-04-01", "2027-01-01")
 
 
 def test_an_insight_file_is_named_after_the_insight(api, people):

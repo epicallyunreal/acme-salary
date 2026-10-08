@@ -260,7 +260,8 @@ class People:
             *april_firsts(career.joining_date, last_date or profiles.REFERENCE_DATE),
         ]
         levels = [career.level_on(day) for day in review_days]
-        assert levels[-1] == level, (levels, level)
+        if levels[-1] != level:
+            raise RuntimeError(f"a career drawn for L{level} ends at L{levels[-1]}")
         raises = [
             dec(rng.uniform(*profiles.PROMOTION_RANGE if moved else profiles.RAISE_RANGE))
             for moved in (after > before for before, after in zip(levels, levels[1:], strict=False))

@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 
 import type { TrendInsight, TrendMeasure, TrendPoint } from '../../api/types';
-import { formatDate, formatMonthShort, parseIsoDate } from '../../lib/dates';
+import { formatAxisDate, formatDate } from '../../lib/dates';
 import { AXIS, compactTick, GRID, plot, SERIES, STILL } from './chartTheme';
 import { count, EMPLOYED_ON_EACH_DATE, money, people, SMALL_GROUP } from './figures';
 import { ChartNote, ChartTable, ChartTooltip, InsightCard } from './InsightCard';
@@ -59,7 +59,7 @@ function Trend({
   const cost = measure === 'total_cost';
   const rows = points.map((point) => ({
     point,
-    label: axisLabel(point.date),
+    label: formatAxisDate(point.date),
     // A withheld total is null, so the line breaks there instead of dropping to zero.
     value: cost ? plot(point.total_cost) : point.headcount,
   }));
@@ -120,16 +120,6 @@ function Trend({
       />
     </>
   );
-}
-
-/** A month-end on the axis as `Sep 26`, the period's first or last day, where it is not one, as
- * `7 Oct 26`. */
-function axisLabel(date: string): string {
-  const day = parseIsoDate(date);
-  const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
-  return next.getDate() === 1
-    ? formatMonthShort(date)
-    : `${day.getDate()} ${formatMonthShort(date)}`;
 }
 
 function lines(point: TrendPoint, currency: string): string[] {

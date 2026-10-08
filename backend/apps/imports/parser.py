@@ -18,6 +18,7 @@ from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import PurePath
 from typing import Any
 from xml.parsers import expat
@@ -29,7 +30,7 @@ from openpyxl.worksheet._read_only import ReadOnlyWorksheet
 
 from apps.compensation.messages import msg
 from apps.compensation.validators import IDENTITY_COLUMNS, Message, NormalizedRow, error
-from apps.core.exceptions import Invalid
+from apps.core.exceptions import Invalid, clip
 
 DATE_COLUMNS = ("joining_date", "last_date", "effective_from")
 # The whole seeded organisation, 10,000 on staff and 5,000 who left, in one file (D64).
@@ -47,6 +48,10 @@ MAX_ELEMENTS = 2_000_000
 # has 339 of those (D56).
 CELL_TAGS = frozenset({"row", "c", "v", "f", "is", "t", "r", "si"})
 MAX_OBJECT_ELEMENTS = 300_000
+# The most of a cell a staged row keeps, longer than any column (D56). A longer cell is cut to it
+# as it is read, so what staging holds and parses stays bounded at 15,000 rows, however long the
+# shared string every cell of a crafted sheet points to (D68).
+CELL_KEPT = 256
 XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # A browser sends what the operating system calls the file. Windows with Excel installed calls a
 # .csv application/vnd.ms-excel, so that type is accepted for .csv too.
@@ -267,6 +272,18 @@ def open_rows(upload, file_name: str, content_type: str | None) -> Iterator[list
     return _xlsx_rows(upload) if extension == ".xlsx" else _csv_rows(upload)
 
 
+def _kept(cell: Any, cuts: dict[str, str]) -> Any:
+    """A cell as staging keeps it. Text longer than `CELL_KEPT` is cut to it with an ellipsis,
+    so it stays too long for every column and parses as no number or date, and text of nothing but
+    spaces stays blank. A shared string is cut once for every cell that uses it."""
+    if not isinstance(cell, str) or len(cell) <= CELL_KEPT:
+        return cell
+    cut = cuts.get(cell)
+    if cut is None:
+        cut = cuts[cell] = clip(cell, CELL_KEPT) if cell.strip() else ""
+    return cut
+
+
 def read(upload, file_name: str, content_type: str | None) -> ParsedFile:
     """The header and every data row, all-blank rows skipped. Rows are counted while streaming,
     past the limit too, because the sheet's own row count cannot be trusted (SPEC section 8)."""
@@ -281,16 +298,18 @@ def read(upload, file_name: str, content_type: str | None) -> ParsedFile:
         headless = {index for index, cell in enumerate(header) if is_blank(cell)}
         kept: list[tuple[int, list[Any]]] = []
         unnamed: set[int] = set()
+        cuts: dict[str, str] = {}
         count = 0
-        for number, cells in enumerate(rows, start=2):
+        for number, row in enumerate(rows, start=2):
             # The .xlsx pre-scan has refused wide rows already; a .csv row is checked here.
-            if len(cells) > MAX_ROW_CELLS:
+            if len(row) > MAX_ROW_CELLS:
                 raise _too_wide(number)
+            cells = [_kept(cell, cuts) for cell in row]
             if all(is_blank(cell) for cell in cells):
                 continue
             count += 1
             if count <= ROW_LIMIT:
-                kept.append((number, list(cells)))
+                kept.append((number, cells))
             for index, cell in enumerate(cells):
                 if (index in headless or index >= width) and not is_blank(cell):
                     unnamed.add(index)
@@ -387,6 +406,12 @@ def parse_text(value: Any) -> str | None:
     return str(value).strip()
 
 
+@lru_cache(maxsize=256)
+def _names(names: tuple[str, ...]) -> frozenset[str]:
+    """One set for every row that names the same columns, so 15,000 rows share a few (D68)."""
+    return frozenset(names)
+
+
 def normalize(row_number: int, cells: Sequence[Any], mapping: Mapping[int, str]) -> NormalizedRow:
     """One data row as the validators read it (DESIGN 1.5). Parse problems ride along as
     messages, which the structure rules report with the rest."""
@@ -425,7 +450,7 @@ def normalize(row_number: int, cells: Sequence[Any], mapping: Mapping[int, str])
         effective_from=dates["effective_from"],
         bonus_annual=kept(parse_number(values.get("bonus_annual"), "bonus_annual")),
         amounts=amounts,
-        columns=frozenset(values),
-        present=frozenset(column for column, value in values.items() if not is_blank(value)),
+        columns=_names(tuple(values)),
+        present=_names(tuple(column for column, value in values.items() if not is_blank(value))),
         parse_messages=problems,
     )

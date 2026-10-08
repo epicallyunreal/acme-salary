@@ -34,6 +34,10 @@ from apps.employees.models import Employee
 
 TOLERANCE = Decimal("0.005")
 STATUSES = ("active", "exited", "upcoming")
+# The directory and its export hold the active employees when `status` is not given, and `any`
+# asks for everyone (D64).
+DEFAULT_STATUS = "active"
+ANY_STATUS = "any"
 
 
 def is_current(record: CompensationRecord, on: date) -> bool:

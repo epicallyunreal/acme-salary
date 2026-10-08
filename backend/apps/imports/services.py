@@ -31,7 +31,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 CHUNK_SIZE = 1000
 # A staged row keeps at most this much of a cell (D56). A longer value is an error of its own,
 # so approve, which reads only accepted rows, never reads a capped one.
-STORED_CELL_LIMIT = 256
+STORED_CELL_LIMIT = parser.CELL_KEPT
 FULL_NAME_MAX = ImportRow._meta.get_field("full_name").max_length
 FILE_NAME_MAX = ImportBatch._meta.get_field("file_name").max_length
 _reading = threading.Lock()

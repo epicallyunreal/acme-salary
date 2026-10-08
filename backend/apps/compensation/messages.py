@@ -4,6 +4,8 @@ The parser (step 5) and the rules in validators.py both format their text here, 
 worded the same wherever it is raised.
 """
 
+from functools import lru_cache
+
 from apps.core.exceptions import clip
 
 MESSAGES = {
@@ -79,5 +81,11 @@ MESSAGES = {
 
 
 def msg(key: str, **values) -> str:
-    """The message, each value in it cut by `clip` (D56)."""
-    return MESSAGES[key].format(**{name: clip(value) for name, value in values.items()})
+    """The message, each value in it cut by `clip` (D56). A message that many rows of a sheet
+    repeat is one string, so staging 15,000 of them holds one copy (D68)."""
+    return _formatted(key, tuple((name, clip(value)) for name, value in values.items()))
+
+
+@lru_cache(maxsize=4096)
+def _formatted(key: str, values: tuple[tuple[str, str], ...]) -> str:
+    return MESSAGES[key].format(**dict(values))

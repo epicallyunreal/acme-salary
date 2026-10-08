@@ -1,4 +1,5 @@
-"""The directory's query parameters (SPEC F4), mapped onto the annotated queryset. No rules here."""
+"""The directory's query parameters (SPEC F4), mapped onto the annotated queryset. The status
+default is employees/queries.py's, which the export names as well."""
 
 from django.db.models import Q
 from django_filters import ChoiceFilter, DateFilter, FilterSet, NumberFilter, OrderingFilter
@@ -6,10 +7,15 @@ from django_filters import ChoiceFilter, DateFilter, FilterSet, NumberFilter, Or
 from apps.core.exceptions import Invalid
 from apps.core.filters import BoundedSearchFilter, CharInFilter, ChoiceInFilter
 from apps.employees.models import Employee
-from apps.employees.queries import STATUSES, gross_bound, parse_employee_code
+from apps.employees.queries import (
+    ANY_STATUS,
+    DEFAULT_STATUS,
+    STATUSES,
+    gross_bound,
+    parse_employee_code,
+)
 
-# `any` returns everyone, since without `status` the directory holds its active employees (D64).
-STATUS_CHOICES = [(status, status) for status in (*STATUSES, "any")]
+STATUS_CHOICES = [(status, status) for status in (*STATUSES, ANY_STATUS)]
 # Each title is one more OR, and SQLite refuses an expression deeper than 1,000 with a 500 (D61).
 MAX_DESIGNATIONS = 20
 
@@ -57,11 +63,11 @@ class DirectoryFilterSet(FilterSet):
         employees on staff, as the grid does (D64)."""
         if data is not None and not data.get("status"):
             data = data.copy()
-            data["status"] = "active"
+            data["status"] = DEFAULT_STATUS
         super().__init__(data, *args, **kwargs)
 
     def filter_status(self, queryset, name, value):
-        return queryset if value == "any" else queryset.filter(status=value)
+        return queryset if value == ANY_STATUS else queryset.filter(status=value)
 
     def filter_designation(self, queryset, name, values):
         """Each title exactly, in any case: `product manager` finds `Product Manager`."""

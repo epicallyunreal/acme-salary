@@ -121,6 +121,19 @@ def test_if_empty_skips_and_a_bare_rerun_is_refused():
         seed(20, 10)
 
 
+@pytest.mark.parametrize(
+    ("active", "exited", "message"),
+    [(-1, 0, "0 or more"), (5, -1, "0 or more"), (0, 5, "leavers follow the headcount")],
+)
+def test_a_negative_count_or_leavers_with_nobody_on_staff_is_refused(active, exited, message):
+    """Leavers are placed month by month in proportion to those on staff, so with nobody on staff
+    none could be placed, and the command would say it seeded them (D64)."""
+    with pytest.raises(CommandError, match=message):
+        seed(active, exited)
+
+    assert Employee.objects.count() == 0
+
+
 def test_reset_and_if_empty_exclude_each_other():
     with pytest.raises(CommandError, match="exclude each other"):
         seed(20, 10, reset=True, if_empty=True)

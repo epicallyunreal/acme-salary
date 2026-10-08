@@ -1,4 +1,5 @@
-"""`timing`: measure the directory, insights, import and seed on the 10,000-row seed.
+"""`timing`: measure the directory, insights, import and seed on the seed of 10,000 employees on
+staff and 5,000 who left (D64).
 
 Driven by the /perf-timing skill. Step 2 ships the seed case, step 3 the directory cases,
 step 5 the import case, step 6 the insight cases and step 7 the export case. Prints a Markdown
@@ -24,6 +25,7 @@ from django.test import Client
 
 from apps.core.dates import months_before, today_utc
 from apps.insights.queries import CONTROLS
+from seed import profiles
 
 CASES = ("directory", "insights", "import", "export", "seed")
 
@@ -104,8 +106,6 @@ def percentile(samples: list[float], fraction: float) -> float:
 
 def api_client() -> Client:
     """A test client logged in as the seeded HR Manager, so the timings include auth."""
-    from seed import profiles
-
     host = next((h for h in settings.ALLOWED_HOSTS if not h.startswith((".", "*"))), "localhost")
     client = Client(headers={"host": host})
     response = client.post(
@@ -178,12 +178,12 @@ def time_seed(scratch_db: Path, active: int, exited: int, seed: int) -> float:
 
 
 class Command(BaseCommand):
-    help = "Measure the step targets on the 10,000-row seed and print a PERFORMANCE.md row."
+    help = "Measure the step targets on the seed and print a PERFORMANCE.md row."
 
     def add_arguments(self, parser):
         parser.add_argument("--case", choices=("all", *CASES), default="all")
-        parser.add_argument("--active", type=int, default=10000)
-        parser.add_argument("--exited", type=int, default=5000)
+        parser.add_argument("--active", type=int, default=profiles.ACTIVE_EMPLOYEES)
+        parser.add_argument("--exited", type=int, default=profiles.EXITED_EMPLOYEES)
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--repeats", type=int, default=20)
         # Each import sheet can run alone, so its peak memory is its own (D64).
@@ -246,15 +246,11 @@ class Command(BaseCommand):
         """The default directory export, on Active, in each format: rows, size, wall time and
         how far it raised the process's peak memory. SPEC F6 asks for every active employee,
         10,000 on the seed, so a short file is an error (D64)."""
-        from django.db.models import Q
-
-        from apps.core.dates import today_utc
         from apps.employees.models import Employee
+        from apps.employees.queries import DEFAULT_STATUS, status_expression
 
-        today = today_utc()
-        active = Employee.objects.filter(
-            Q(last_date__isnull=True) | Q(last_date__gte=today), joining_date__lte=today
-        ).count()
+        statuses = Employee.objects.annotate(status=status_expression(today_utc()))
+        active = statuses.filter(status=DEFAULT_STATUS).count()
 
         client = api_client()
         for file in EXPORT_FILES:

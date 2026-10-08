@@ -109,6 +109,28 @@ describe('ImportReview', () => {
     expect(asked).toEqual(['4', '10']);
   });
 
+  it('numbers its pages for the rows per page the URL holds', async () => {
+    const asked: [string | null, string | null][] = [];
+    server.use(
+      http.get('/api/v1/imports/3/rows/', ({ request }) => {
+        const url = new URL(request.url);
+        asked.push([url.searchParams.get('page'), url.searchParams.get('page_size')]);
+        return HttpResponse.json(rowsPage(url, MANY_ROWS));
+      }),
+    );
+    renderApp('/imports/3?page_size=100&page=2');
+
+    await screen.findByText('Person 101');
+    expect(asked).toEqual([['2', '100']]);
+    expect(screen.getByText('101–200 of 250')).toBeInTheDocument();
+    const pager = screen.getByRole('navigation', { name: 'pagination navigation' });
+    expect(within(pager).getByRole('button', { name: 'page 2' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(pager).getByRole('button', { name: 'Go to page 3' })).toBeInTheDocument();
+  });
+
   it('filters the rows by status through the API and keeps the filter in the URL', async () => {
     const user = userEvent.setup();
     const asked: (string | null)[] = [];

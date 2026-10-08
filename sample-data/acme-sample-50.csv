@@ -30,22 +30,22 @@ HR-39498,Brandon Ellis,brandon.ellis.3026@acme.example,sales,Principal Account E
 HR-72313,Luke Sundaram,luke.sundaram.6245@acme.example,engineering,Head of Engineering,6,IN,male,2015-03-20,,2026-11-01,324500.00,5409915,,,2187003,1324505,2699616,,,,656486
 HR-16650,Dave Takkelenburg,dave.takkelenburg.6250@acme.example,customer-support,Principal Support Specialist,5,NL,male,2015-03-30,,2026-11-01,0.00,97020,,7979,,,31112,,,,16949
 HR-83388,Margaret Johnson,margaret.johnson.15001@acme.example,engineering,Associate Engineer,1,US,female,2026-08-16,,,0,73300,,,,,7520,,,,5664
-HR-80961,Dayita Bakshi,dayita.bakshi.15002@acme.example,engineering,Lead Engineer,4,IN,female,2019-09-18,,,0,1147700,,,439744,280991,189857,,,,141485
-HR-67280,Laksh Konda,laksh.konda.15003@acme.example,customer-support,Senior Support Specialist,3,IN,male,2022-10-07,,,0,811800,,,333682,197451,139348,,,,95611
-HR-76311,Isaac Dewan,isaac.dewan.15004@acme.example,engineering,Engineer,2,IN,male,2025-04-28,,,0,891300,,,353745,213099,138691,,,,109317
-HR-91004,Donald Walker,donald.walker.15005@acme.example,engineering,Associate Engineer,1,US,male,2024-09-11,,,0,82200,,,,,8564,,,,6641
+HR-80961,Dayita Bakshi,dayita.bakshi.15002@acme.example,engineering,Lead Engineer,4,IN,female,2019-09-18,,,0,2327700,,,891863,569890,770113,,,,286951
+HR-67280,Laksh Konda,laksh.konda.15003@acme.example,customer-support,Senior Support Specialist,3,IN,male,2022-10-07,,,0,1236300,,,508169,300701,424429,,,,145607
+HR-76311,Isaac Dewan,isaac.dewan.15004@acme.example,engineering,Engineer,2,IN,male,2025-04-28,,,0,948400,,,376407,226751,147576,,,,116320
+HR-91004,Donald Walker,donald.walker.15005@acme.example,engineering,Associate Engineer,1,US,male,2024-09-11,,,0,89800,,,,,9356,,,,7255
 HR-81797,Charan Chahal,charan.chahal.15006@acme.example,operations,Associate Operations Analyst,1,IN,male,2026-06-27,,,0,899900,,,361753,219689,143707,,,,105955
-HR-32393,Nancy Rhodes,nancy.rhodes.15007@acme.example,customer-support,Senior Support Specialist,3,SG,female,2023-05-09,,,7100,58800,4817,,,,7099,11743,,,10219
-HR-79904,Stephanie Miller,stephanie.miller.15008@acme.example,data,Senior Data Scientist,3,US,female,2024-01-05,,,0,104500,,,,,10391,,,,8662
-HR-95024,Marcus Dowerg,marcus.dowerg.15009@acme.example,operations,Lead Operations Analyst,4,DE,male,2022-11-15,,,0,47900,,,,,4655,,,9567,9157
-HR-50914,Javier Johnson,javier.johnson.15010@acme.example,it,Associate IT Engineer,1,US,male,2023-11-07,,,0,83800,,,,,8180,,,,6818
-HR-98767,Daniel Wagner,daniel.wagner.15011@acme.example,sales,Principal Account Executive,5,US,male,2021-05-02,,,0,176100,,,,,35795,,,,14706
-HR-64553,Alyssa Gonzalez,alyssa.gonzalez.15012@acme.example,customer-support,Senior Support Specialist,3,US,female,2025-06-09,,,12900,101800,,,,,23819,,,,8473
-HR-31165,Alida Weihmann,alida.weihmann.15013@acme.example,sales,Associate Account Executive,1,DE,female,2025-07-17,,,0,44500,,,,,4306,,,8600,8822
-HR-49807,Maja Heere,maja.heere.15014@acme.example,finance,Senior Financial Analyst,3,NL,female,2022-11-06,,,0,55900,,4604,,,6271,,,,10532
-HR-75902,Marie Gardner,marie.gardner.15015@acme.example,operations,Head of Operations,6,US,female,2020-12-14,,,0,323400,,,,,97393,,,,26440
-HR-59468,Siddharth Balay,siddharth.balay.15016@acme.example,hr,HR Partner,2,IN,male,2025-04-02,,,0,1083400,,,428123,277571,173724,,,,133723
-HR-33930,Alexander Chander,alexander.chander.15017@acme.example,sales,Senior Account Executive,3,IN,male,2021-04-01,,,0,715900,,,291308,174047,113080,,,,85173
-HR-25691,Stanley Griffiths,stanley.griffiths.15018@acme.example,engineering,Lead Engineer,4,GB,male,2023-06-02,,,0,72400,,,,,7198,,7283,,10455
+HR-32393,Nancy Rhodes,nancy.rhodes.15007@acme.example,customer-support,Senior Support Specialist,3,SG,female,2023-05-09,,,10200,84400,6914,,,,20382,16855,,,14668
+HR-79904,Stephanie Miller,stephanie.miller.15008@acme.example,data,Senior Data Scientist,3,US,female,2024-01-05,,,0,134100,,,,,26667,,,,11116
+HR-95024,Marcus Dowerg,marcus.dowerg.15009@acme.example,operations,Lead Operations Analyst,4,DE,male,2022-11-15,,,0,67500,,,,,13119,,,13482,12904
+HR-50914,Javier Johnson,javier.johnson.15010@acme.example,it,Associate IT Engineer,1,US,male,2023-11-07,,,0,94700,,,,,9243,,,,7705
+HR-98767,Daniel Wagner,daniel.wagner.15011@acme.example,sales,Principal Account Executive,5,US,male,2021-05-02,,,0,257700,,,,,78573,,,,21521
+HR-64553,Alyssa Gonzalez,alyssa.gonzalez.15012@acme.example,customer-support,Senior Support Specialist,3,US,female,2025-06-09,,,13700,107600,,,,,25189,,,,8956
+HR-31165,Alida Weihmann,alida.weihmann.15013@acme.example,sales,Associate Account Executive,1,DE,female,2025-07-17,,,0,46200,,,,,4471,,,8928,9159
+HR-49807,Maja Heere,maja.heere.15014@acme.example,finance,Senior Financial Analyst,3,NL,female,2022-11-06,,,0,85300,,7026,,,19138,,,,16071
+HR-75902,Marie Gardner,marie.gardner.15015@acme.example,operations,Head of Operations,6,US,female,2020-12-14,,,0,484800,,,,,145999,,,,39635
+HR-59468,Siddharth Balay,siddharth.balay.15016@acme.example,hr,HR Partner,2,IN,male,2025-04-02,,,0,1148800,,,453966,294326,184211,,,,141795
+HR-33930,Alexander Chander,alexander.chander.15017@acme.example,sales,Senior Account Executive,3,IN,male,2021-04-01,,,0,1116400,,,454276,271415,352680,,,,132822
+HR-25691,Stanley Griffiths,stanley.griffiths.15018@acme.example,engineering,Lead Engineer,4,GB,male,2023-06-02,,,0,108100,,,,,21496,,10874,,15611
 HR-99454,Ikbal Kaul,ikbal.kaul.15019@acme.example,engineering,Engineer,2,IN,male,2026-07-28,,,0,1191900,,,465876,292603,186539,,,,141706
 HR-25797,Connie Lawrence,connie.lawrence.15020@acme.example,data,Data Scientist,2,US,female,2026-05-14,,,0,129100,,,,,13141,,,,10229

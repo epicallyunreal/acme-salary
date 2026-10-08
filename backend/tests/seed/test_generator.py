@@ -9,6 +9,7 @@ import pytest
 
 from seed import profiles
 from seed.generator import (
+    LEAVER_LEVEL_WEIGHTS,
     Career,
     april_firsts,
     ascii_slug,
@@ -322,3 +323,9 @@ def test_ascii_slug():
     assert ascii_slug("Jürgen") == "jurgen"
     assert ascii_slug("O'Neil-Smith") == "oneilsmith"
     assert ascii_slug("张") == "user"
+
+
+def test_leavers_are_drawn_twice_as_often_at_l1_and_one_and_a_half_times_at_l2():
+    """The owner's weights (D64): each level's share of the staff times how likely it is to leave,
+    L1 twice and L2 one and a half times as likely as L3 to L6."""
+    assert LEAVER_LEVEL_WEIGHTS == pytest.approx([0.5, 0.375, 0.2, 0.15, 0.1, 0.05])

@@ -36,9 +36,9 @@ import { TrendCard } from './TrendCard';
 // The fixtures' period is the default one on 7 October 2026, the day the tests stand on.
 const PARAMS = insightParams(defaultFilters('2026-10-07'));
 
-function Kpis() {
+function Kpis({ includeExited = false }: { includeExited?: boolean }) {
   const query = useInsight('summary', PARAMS);
-  return <KpiRow query={query} />;
+  return <KpiRow query={query} includeExited={includeExited} />;
 }
 function Countries() {
   const query = useInsight('by-country', PARAMS);
@@ -142,13 +142,15 @@ describe('insight cards', () => {
     expect(within(kpis).getByText('7 Oct 2025 to 7 Oct 2026')).toBeInTheDocument();
   });
 
-  it('the spend is withheld under five people in the period, its dates kept', async () => {
-    answer('summary', { ...summary, spent: { headcount: 4, total_cost: null } });
+  it('the spend is withheld when a day of the period had under five, its dates kept', async () => {
+    answer('summary', { ...summary, spent: { headcount: 30, total_cost: null } });
     renderWithProviders(<Kpis />);
     const kpis = await screen.findByRole('region', { name: 'Key figures' });
 
     expect(
-      await within(kpis).findByText('7 Oct 2025 to 7 Oct 2026, shown for 5 people or more'),
+      await within(kpis).findByText(
+        '7 Oct 2025 to 7 Oct 2026, shown when each day has 5 people or more',
+      ),
     ).toBeInTheDocument();
     expect(within(kpis).getAllByText('—')).toHaveLength(1);
     expect(within(kpis).getByTitle(/^USD\s2,435,450$/)).toBeInTheDocument();
@@ -473,6 +475,26 @@ describe('insight cards', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText("Counts people employed on each date; Include exited doesn't apply"),
+    ).toBeInTheDocument();
+  });
+
+  it('the spend says Include exited does not apply to it while the box is ticked', async () => {
+    renderWithProviders(<Kpis includeExited />);
+    const kpis = await screen.findByRole('region', { name: 'Key figures' });
+
+    expect(
+      await within(kpis).findByText("7 Oct 2025 to 7 Oct 2026, Include exited doesn't apply"),
+    ).toBeInTheDocument();
+  });
+
+  it('a period ending after today says levels are as of today as well', async () => {
+    answer('by-level', { ...byLevel, to: '2027-01-01' });
+    renderWithProviders(<Levels />);
+
+    expect(
+      await screen.findByText(
+        'Levels are as of today; anyone promoted after 1 Jan 2027 appears at their new level',
+      ),
     ).toBeInTheDocument();
   });
 

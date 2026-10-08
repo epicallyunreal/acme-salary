@@ -7,6 +7,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from io import StringIO
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import CommandError, call_command
 from openpyxl import load_workbook
 
@@ -15,8 +16,10 @@ from apps.compensation.services import RecordInput, bulk_apply
 from apps.compensation.validators import IDENTITY_COLUMNS
 from apps.employees import services as employees
 from apps.employees.models import Employee
+from apps.imports.management.commands.make_import_file import new_rows
+from apps.imports.services import stage_upload
 from seed import profiles
-from seed.generator import ordered_entries
+from seed.generator import generate, ordered_entries
 from seed.lookups import ensure_lookups
 from tests.factories import EmployeeFactory
 
@@ -132,6 +135,19 @@ def test_new_alone_invents_employees_with_unused_legacy_codes(thirty, tmp_path):
     assert all(row["effective_from"] is None for row in rows)
 
 
+def test_a_new_row_is_paid_as_today_beside_todays_level():
+    """The seed's history starts at the joining pay, levels below the one written beside it, so a
+    new row carries the latest record's pay (D64)."""
+    entries = list(generate(5, 42, start_number=1))
+
+    rows = new_rows(5, 42, 1, set())
+
+    assert any(len(entry.records) > 1 for entry in entries)
+    assert [(row["level"], row["BASE"]) for row in rows] == [
+        (entry.identity["level"], entry.records[-1].lines["BASE"]) for entry in entries
+    ]
+
+
 def test_an_employee_created_in_the_app_is_never_written(thirty, tmp_path):
     """The import serves the legacy system's employees only (D48)."""
     added = EmployeeFactory(joining_date=date(2024, 1, 1))
@@ -210,6 +226,32 @@ def test_raises_alone_pass_over_the_leavers(thirty, tmp_path):
     _, rows = rows_of_xlsx(path)
     assert [row["legacy_code"] for row in rows] == [second.legacy_code, third.legacy_code]
     assert [row["effective_from"] for row in rows] == [datetime(2026, 11, 1)] * 2
+
+
+def test_the_whole_organisation_leavers_included_stages_with_no_errors(db, tmp_path):
+    """The seed's leavers are written with their last_date, and `--all` reads back as the
+    database holds it: every row a no-op, none an error (D64)."""
+    ensure_lookups()
+    bulk_apply(
+        ordered_entries(20, 42, exited=10),
+        source="seed",
+        at=profiles.REFERENCE_DATETIME,
+        today=profiles.REFERENCE_DATE,
+    )
+    path = tmp_path / "everyone.csv"
+
+    run(path, all=True)
+
+    with path.open(newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    leavers = Employee.objects.exclude(last_date=None)
+    assert leavers.count() == 10
+    assert {row["legacy_code"]: row["last_date"] for row in rows if row["last_date"]} == {
+        employee.legacy_code: employee.last_date.isoformat() for employee in leavers
+    }
+    upload = SimpleUploadedFile(path.name, path.read_bytes(), content_type="text/csv")
+    batch = stage_upload(upload, actor=None, today=profiles.REFERENCE_DATE)
+    assert (batch.total_rows, batch.error_rows, batch.noop_rows) == (30, 0, 30)
 
 
 def test_the_output_extension_must_be_xlsx_or_csv(thirty, tmp_path):

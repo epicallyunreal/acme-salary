@@ -29,6 +29,15 @@ export function formatMonthShort(value: string): string {
   return `${MONTHS[day.getMonth()]} ${twoDigits(day.getFullYear() % 100)}`;
 }
 
+/** A date on a chart's axis: a month-end as `Sep 26`, and any other day, the period's first or
+ * last where it is not a month-end, as `7 Oct 25` (D66). */
+export function formatAxisDate(value: string): string {
+  const day = parseIsoDate(value);
+  const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+  const month = formatMonthShort(value);
+  return next.getDate() === 1 ? month : `${day.getDate()} ${month}`;
+}
+
 const monthFormat = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });
 
 /** `formatMonth('2026-10-01')` gives `October 2026`, the name of a month's rates. */

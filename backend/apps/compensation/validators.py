@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
 from typing import Any, Literal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -78,16 +79,22 @@ class Message:
         return {"field": self.field, "severity": self.severity, "message": self.message}
 
 
+@lru_cache(maxsize=4096)
+def _message(field_name: str, severity: Severity, text: str, key: str) -> Message:
+    """One frozen Message for every row that raises the same one (D68)."""
+    return Message(field_name, severity, text, key)
+
+
 def error(field_name: str, key: str, **values) -> Message:
-    return Message(field_name, "error", msg(key, **values), key)
+    return _message(field_name, "error", msg(key, **values), key)
 
 
 def warning(field_name: str, key: str, **values) -> Message:
-    return Message(field_name, "warning", msg(key, **values), key)
+    return _message(field_name, "warning", msg(key, **values), key)
 
 
 def info(field_name: str, key: str, **values) -> Message:
-    return Message(field_name, "info", msg(key, **values), key)
+    return _message(field_name, "info", msg(key, **values), key)
 
 
 @dataclass

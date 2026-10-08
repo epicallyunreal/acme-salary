@@ -56,6 +56,13 @@ def test_a_period_defaults_to_the_twelve_months_ending_today(today):
     assert parse_period(None, "2015-06-30") == (date(2015, 1, 1), date(2015, 6, 30))
 
 
+def test_a_period_may_end_on_the_last_day_allowed_and_be_one_day_long(today):
+    assert parse_period("2100-12-01", "2100-12-31") == (date(2100, 12, 1), date(2100, 12, 31))
+    assert parse_period(None, "2100-12-31") == (date(2099, 12, 31), date(2100, 12, 31))
+    assert parse_period("2026-10-07", "2026-10-07") == (date(2026, 10, 7), date(2026, 10, 7))
+    assert parse_period(None, "2015-01-01") == (date(2015, 1, 1), date(2015, 1, 1))
+
+
 def test_a_month_back_lands_on_the_months_last_day_when_the_day_is_not_there():
     """D64: 31 October six months back is 30 April, 31 March a month back 28 or 29 February."""
     assert months_before(date(2026, 10, 31), 6) == date(2026, 4, 30)
@@ -68,6 +75,10 @@ def test_a_month_back_lands_on_the_months_last_day_when_the_day_is_not_there():
     ("start", "end", "errors"),
     [
         ("01/04/2026", None, {"from": ["from must be a date in YYYY-MM-DD form, got 01/04/2026"]}),
+        ("20260101", None, {"from": ["from must be a date in YYYY-MM-DD form, got 20260101"]}),
+        (None, "2026-W41-3", {"to": ["to must be a date in YYYY-MM-DD form, got 2026-W41-3"]}),
+        (None, "0001-06-15", {"to": ["to must be on or after 2015-01-01, got 0001-06-15"]}),
+        (None, "9999-12-31", {"to": ["to must be on or before 2100-12-31, got 9999-12-31"]}),
         ("2014-12-31", None, {"from": ["from must be on or after 2015-01-01, got 2014-12-31"]}),
         (None, "2101-01-01", {"to": ["to must be on or before 2100-12-31, got 2101-01-01"]}),
         ("2026-10-08", "2026-10-07", {"from": ["from must be on or before to"]}),

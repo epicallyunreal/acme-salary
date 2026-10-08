@@ -31,7 +31,8 @@ def test_an_insight_answers_with_its_figures_as_text(api, people):
             "countries": 4,
             "departments": 4,
             # The 27 for the period's 366 days of a 365-day year, 1,948,360 x 366 / 365, and X1
-            # until 30 June, 267 days of 105,600: 1,953,697.97 + 77,247.12 (D64).
+            # until 30 June, 267 days of 105,600: 1,953,697.9726 + 77,247.1233 = 2,030,945.0959,
+            # quantised once (D64).
             "spent": {"headcount": 28, "total_cost": "2030945.10"},
         },
     )
@@ -78,7 +79,8 @@ def test_an_insight_runs_a_fixed_number_of_queries(
     api, people, django_assert_num_queries, name, queries
 ):
     """The user, the countries, the departments, the rates, then one aggregate and one list of
-    gross values, or the list alone, whatever the population."""
+    gross values, or the list alone, whatever the population. The summary reads the period's
+    spans as well, for its spend (D64)."""
     with django_assert_num_queries(queries):
         response = api.get(URL.format(name))
 

@@ -614,8 +614,8 @@ def test_every_part_of_the_zip_is_scanned_whatever_its_name(no_openpyxl):
 
 def test_the_element_budget_is_for_the_whole_file(monkeypatch, no_openpyxl):
     """openpyxl builds styles.xml, among others, as one tree: 12 million empty elements, 50 KB
-    zipped, took it past 1.2 GB. The budget is 2,000,000 for the file as a whole, against under
-    400,000 in a full 10,000-row template, so parts each under it are not enough."""
+    zipped, took it past 1.2 GB. The budget is 2,000,000 for the file as a whole, against about
+    560,000 in a full 15,000-row template, so parts each under it are not enough."""
     assert parser.MAX_ELEMENTS == 2_000_000
     monkeypatch.setattr(parser, "MAX_ELEMENTS", 1_000)
     part = b"<notes>" + b"<x/>" * 400 + b"</notes>"

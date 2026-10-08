@@ -592,6 +592,22 @@ Decision: Go to page empties once it has jumped, and a number past either end go
 
 Consequences: a few lines in `PageNumbers.tsx` and `ImportReview.tsx`, listed in the step 9 close report for the owner to confirm or change.
 
+## D68. After the step 9 review: long cells are cut as they are read, and the spend hides any small day
+
+Context: the security review found two blockers. A crafted .xlsx whose 15,000 rows point every cell at one 10,000-character shared string passed every D56 check and peaked at 1,241 MB in 114 s on the laptop, past the 1 GB machine, because each row made its own copies of the string. And Spent in period, shown once five people worked in the period, gave back what trend withholds: over two days, 365 times the spend less the shown end is the withheld start. The reviewer offered withholding the spend when any date trend draws has 1 to 4 people, or going back to 10,000 rows.
+
+Decision: the reader cuts a text cell longer than 256 characters to 256 with an ellipsis, once for each distinct string, so the cell stays too long for every column and parses as no number or date, and a cell of nothing but spaces stays blank. Messages, `Message` objects and column sets that many rows repeat are shared. The crafted file now peaks at 540 MB in 10 s and a sheet of 256-character cells at 478 MB, under the 582 MB of a real 15,000-row approve, so the 15,000-row limit stands. The spend is withheld when 1 to 4 people were employed on any day of the period, not only on trend's dates, since two overlapping periods can isolate any day between them. Its export Reason is `fewer than 5 people on a day in the period`, and its card says `shown when each day has 5 people or more`.
+
+Consequences: a spend is withheld for a group that ever had 1 to 4 people in the period. On the seed, only two people had joined by 5 January 2015, so any period starting before 10 January 2015 is withheld for the whole company. The worst crafted import is measured on Fly with the deploy.
+
+## D69. The step 9 close: defaults taken while the owner was away
+
+Context: the four reviewers raised these as questions or should-fixes, and the owner, offline on 8 October, asked for every reversible choice to take the recommended default and be listed at the close.
+
+Decision: `from` defaults to 12 months before `to` but never before 1 January 2015, so `to=2015-06-30` alone is a 200 where SPEC section 8's wording reads as a 400, and it is never worked out from a `to` outside the bounds. A date must be written `YYYY-MM-DD`, as the 400 says. Last 12 months counts its first and its last day, 366 days, so for a steady headcount Spent in period is 366/365 of the annual cost beside it. Include exited does not apply to Spent in period either, and its card says so while the box is ticked. `make_import_file` writes a new row at its latest pay beside today's level, and both sample files were regenerated, still 43 valid rows and 7 errors. `timing` times the presets and 2015 to today for the summary, trend and the bridge alone, whose work grows with the period. `seed_data` refuses a negative count and leavers with nobody on staff. The status default lives in `employees/queries.py`.
+
+Consequences: SPEC v2.17 and DESIGN carry these, and the step 9 close report lists each for the owner to confirm or change.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

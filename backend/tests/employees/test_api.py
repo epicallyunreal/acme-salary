@@ -403,7 +403,10 @@ def test_an_employee_without_records_has_no_shown_block(api, lookups):
 
 
 def test_list_query_count(api, cast, django_assert_num_queries):
-    """User from the JWT, rates, count, page, prefetch of the page's live records."""
+    """User from the JWT, rates, count, page, prefetch of the page's live records, on the Active
+    default the grid opens on as on everyone (D64)."""
+    with django_assert_num_queries(5):
+        api.get(LIST)
     with django_assert_num_queries(5):
         api.get(LIST, EVERYONE)
     with django_assert_num_queries(5):

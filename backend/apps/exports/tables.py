@@ -116,6 +116,8 @@ def currency_and_rates(payload: dict) -> tuple[str, str]:
     return payload["currency"], payload["rate_month"]["label"]
 
 
+SPEND_WITHHELD = f"fewer than {SMALL_GROUP} people on a day in the period"
+
 SUMMARY_COLUMNS = (
     ("Headcount", "headcount"),
     ("Total cost", "total_cost"),
@@ -132,12 +134,13 @@ SUMMARY_COLUMNS = (
 
 
 def summary_table(payload: dict) -> Table:
-    """One row: the state on `to` and what the period cost (D64). With Include exited the
-    headcount can reach five while the period's people do not, and the reason then says so."""
+    """One row: the state on `to` and what the period cost (D64). The spend is withheld when 1 to
+    4 people were employed on any day of the period, though `to` has five or more, and the reason
+    then says so (D68)."""
     spent = payload["spent"]
     reason = withheld(payload["headcount"], payload["total_cost"], SMALL_GROUP)
     if reason is None and withheld(spent["headcount"], spent["total_cost"], SMALL_GROUP):
-        reason = f"fewer than {SMALL_GROUP} people in the period"
+        reason = SPEND_WITHHELD
     row = (
         payload["headcount"],
         payload["total_cost"],

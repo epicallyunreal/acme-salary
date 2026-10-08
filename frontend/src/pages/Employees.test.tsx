@@ -247,6 +247,28 @@ describe('Employees', () => {
     expect(router.state.location.search).toBe('');
   });
 
+  it('an empty directory still shows page 1, and Go to page with nothing typed stays put', async () => {
+    const seen: URLSearchParams[] = [];
+    server.use(
+      http.get('/api/v1/employees/', ({ request }) => {
+        seen.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ count: 0, next: null, previous: null, results: [] });
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderApp('/employees');
+
+    expect(
+      await screen.findByText('No employees yet. Import a spreadsheet or add an employee.'),
+    ).toBeInTheDocument();
+    expect(pageButtons()).toEqual(['Go to previous page', 'page 1', 'Go to next page']);
+
+    await user.type(screen.getByLabelText('Go to page'), '{Enter}');
+
+    expect(router.state.location.search).toBe('');
+    expect(seen).toHaveLength(1);
+  });
+
   it('numbers the pages for the rows per page the URL holds', async () => {
     // jsdom applies no media query, so MUI X keeps its Rows per page select hidden here, as on a
     // phone. The size it sets is read from the URL like the page.
