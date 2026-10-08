@@ -20,6 +20,7 @@ One persona, one role: the HR Manager. They own the salary data, approve every i
 2. Employee and compensation management: create, view, edit, mark exited. Compensation as effective-dated revisions with full history.
 3. Employee directory with server-side search, filters, sorting and pagination.
 4. Insights dashboard answering six fixed questions about how the org pays people, filterable by country and department.
+   Added after step 7 (D62): a two-year cost trend, a cost bridge for the year, pay by tenure, the cost mix by country, and Bonus, Quartiles and By level views of the gender pay gap, each card with one control and an export.
 5. Export of any filtered directory view or insight table to XLSX, CSV and JSON.
 6. Audit trail of every change to employee and compensation data.
 7. Single HR Manager login protecting every API route.

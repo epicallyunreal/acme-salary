@@ -1,8 +1,8 @@
-Owner decision: approved
+Owner decision: pending for step 8, added after step 7 (D62). Steps 1 to 7 were approved on 7 October.
 
 # ACME Salary Management: Plan
 
-What gets built, in what order, from `docs/SPEC.md` v2.1 section 15, the way `docs/DESIGN.md` describes it. Nine steps, each 2 to 6 commits, each closed by `/finish-step` (lint, tests, the four reviewers, DECISIONS and PERFORMANCE updates, one closing commit named after the step). A later step does not start before the earlier one is green and committed. Nothing marked P1 is built before the Ship step. Hours are focused wall-clock hours with Claude Code doing the work and the owner reviewing at each step close; they include the `/finish-step` cycle (two suite runs plus four reviewer agents, 20 to 30 minutes per step).
+What gets built, in what order, from `docs/SPEC.md` v2.1 section 15, the way `docs/DESIGN.md` describes it. Ten steps, each 2 to 6 commits, each closed by `/finish-step` (lint, tests, the four reviewers, DECISIONS and PERFORMANCE updates, one closing commit named after the step). A later step does not start before the earlier one is green and committed. Nothing marked P1 is built before the Ship step. Hours are focused wall-clock hours with Claude Code doing the work and the owner reviewing at each step close; they include the `/finish-step` cycle (two suite runs plus four reviewer agents, 20 to 30 minutes per step).
 
 ## Dependency graph
 
@@ -15,8 +15,9 @@ flowchart LR
   S5["5 Import pipeline"]
   S6["6 Insights"]
   S7["7 Export"]
-  S8["8 Hardening"]
-  S9["9 Ship"]
+  S8["8 Insights,<br/>second set"]
+  S9["9 Hardening"]
+  S10["10 Ship"]
   S1 -->|settings, test harness, CI, live target| S2
   S2 -->|models, fx, validators, pick_shown, factories| S3
   S3 -->|JWT, app shell, session, ServerGrid, FilterBar, detail serializer| S4
@@ -27,9 +28,11 @@ flowchart LR
   S3 -->|FilterBar, resolve_reporting_currency, shell| S6
   S3 -->|directory queryset and FilterSet| S7
   S6 -->|insight dicts to tabulate| S7
-  S5 -->|import timing| S8
-  S7 -->|export menus to polish| S8
-  S8 --> S9
+  S6 -->|population, published, cards, figures| S8
+  S7 -->|export tables, menus, the Reason test| S8
+  S5 -->|import timing| S9
+  S8 -->|insight timings, cards to polish| S9
+  S9 --> S10
 ```
 
 ## Step 1. Scaffold and skeleton, deployed
@@ -198,7 +201,36 @@ Risks: a 10,000-row XLSX is built in memory (a few megabytes, fine on 1 GB); str
 
 Plugin skills and connectors: `/add-endpoint`, Context7 for openpyxl write-only mode and `StreamingHttpResponse`.
 
-## Step 8. Hardening
+## Step 8. Insights, second set
+
+Added by the owner after step 7 closed, exports included (D62, SPEC v2.13). Built in the owner's order, each insight end to end, query, export and card, before the next.
+
+Goal: the dashboard answers four more questions, `trend`, `cost-bridge`, `by-tenure` and `cost-mix`, and the gender-gap card three more views, Bonus, Quartiles and By level, each card with one control kept in the URL, sent by its export and reset by Clear filters, every card under 500 ms.
+
+Files to change: `apps/insights/queries.py` (`population_on`, the dated population `trend` and `cost-bridge` share, the four insights, the gender views and the reason wording), `apps/insights/views.py` (each card's control parsed in `answer()`), `apps/exports/tables.py` (four tables and the gender views), `timing.py` (the new insights and every control value). Tests: `tests/insights/history.py` (a small fixture of joins, exits and raises over two years, figures worked out by hand), `tests/insights/{test_queries,test_api}.py`, `tests/exports/test_api.py`. Frontend: `src/api/{types,insights}.ts`, `src/components/filters/useDashboardFilters.ts` (the card controls under their prefixes), `src/components/insights/{CardControl,TrendCard,CostBridgeCard,ByTenureCard,CostMixCard}.tsx`, `GenderGapCard.tsx` (four views), `src/pages/Dashboard.tsx`, fixtures and handlers; tests `InsightCards.test.tsx`, `Dashboard.test.tsx` and `ExportMenu.test.tsx`.
+
+Tests: the bridge's parts add up exactly, as hand-computed literals, 3 leavers withhold leavers, joiners and pay changes while start and end stay shown, and 0 leavers show every amount; trend's 24 month-ends for `on` on 7 Oct 2026 and on a month-end, one rate for every month, total cost withheld under five at a point; by-tenure on each band's boundary (exactly 1, 3, 5 and 10 years) and within a level; cost-mix shares in both views; the gender views, Bonus shares and gaps, Quartiles with a count not divisible by four and tied pay, By level's mean and median gaps and the 5% flag either way; `fewer than 5 women`, `fewer than 5 men` and both, replacing `group too small` in every view; each D59 threshold; each control: a value outside its list is a 400, the URL keeps it, the export sends it, Clear filters resets it; query counts pinned; every new table ends with Reason, Currency and Rates (the step 7 test picks them up); every insight and view timed under 500 ms on the seed.
+
+Commits:
+
+1. `feat(insights): trend on a dated population, with its card and export`
+2. `feat(insights): cost bridge whose parts add up exactly`
+3. `feat(insights): pay by tenure within a level`
+4. `feat(insights): cost mix by country, cost or take-home`
+5. `feat(insights): gender gap's bonus, quartile and by-level views`
+6. `feat: insights, second set (step 8)` (finish-step: `/perf-timing` for the new insights, DECISIONS entries for any choice made in the step; deploy)
+
+The first commit also lays the card controls: `CardControl`, the prefixed URL keys, the controls in `answer()` and the export, and Clear filters resetting them.
+
+Hours: 7.
+
+Acceptance closed: SPEC v2.13 F5's card controls (in the URL, sent by the export, reset by Clear filters), F6's new tables, section 8's control parameters, section 9 rows 6 to 10 with their thresholds and reasons, and the 500 ms target for every new insight `[measured]`.
+
+Risks: trend's 24 dates over 10,000 employees under 500 ms, met by one query of the records that overlap the window and a running sum per date in Python; the waterfall and the stacked bars in Recharts 3, checked on Context7 before the cards; the seed's two-year depth (D62), so exactness holds from 1 April 2026 for trend and 1 April 2025 for the bridge, and the tests use their own history fixture.
+
+Plugin skills and connectors: `/add-insight` for every insight and view, `/log-decision`, `/perf-timing`, `frontend-design` and `ui-ux-pro-max` for the new cards and their controls, `dataviz` for the series hues and the stacked and waterfall marks, Context7 for Recharts 3 and MUI's `ToggleButtonGroup`.
+
+## Step 9. Hardening
 
 Goal: the measured numbers are in `docs/PERFORMANCE.md`, every page has its error and empty states, keyboard and labels pass, and the README carries demo credentials and how the app was built.
 
@@ -210,7 +242,7 @@ Commits:
 
 1. `perf: timing command complete and the measured numbers recorded`
 2. `fix(frontend): error and empty states on every page and the accessibility pass`
-3. `docs: README with run instructions, demo credentials and how it was built (step 8)`
+3. `docs: README with run instructions, demo credentials and how it was built (step 9)`
 
 Hours: 2.
 
@@ -220,7 +252,7 @@ Risks: a missed target discovered here has the least time to fix; that is why th
 
 Plugin skills and connectors: `/perf-timing`, `ui-ux-pro-max` for empty states, focus and the error summary, `frontend-design` for the copy of every state.
 
-## Step 9. Ship
+## Step 10. Ship
 
 Goal: the final build is live, smoke-tested on the live URL, recorded, and the repository is public.
 
@@ -231,7 +263,7 @@ Tests: none new. A manual smoke test on the live URL in the order of the demo: s
 Commits:
 
 1. `docs: final decisions, performance notes and demo video link`
-2. `chore: ship (step 9)`
+2. `chore: ship (step 10)`
 
 Hours: 1.5, of which the demo recording is the owner's.
 
@@ -252,18 +284,19 @@ Plugin skills and connectors: `/log-decision`. No design or library skill.
 | 5 Import pipeline | 5.0 | 22.5 | 11:00 |
 | 6 Insights | 4.0 | 26.5 | 15:00 |
 | 7 Export | 2.0 | 28.5 | 17:00 |
-| 8 Hardening | 2.0 | 30.5 | 19:00 |
-| 9 Ship | 1.5 | 32.0 | 20:30 |
+| 8 Insights, second set | 7.0 | 35.5 | added after step 7 (D62) |
+| 9 Hardening | 2.0 | 37.5 | |
+| 10 Ship | 1.5 | 39.0 | |
 
-Total: 32 hours.
+Total: 39 hours. Step 8 was added after step 7 closed on 8 October (D62), so the planned close column stops at step 7.
 
 Submission target: the morning of 8 October 2026 IST, full scope, per DECISIONS D19 and D23. The owner decides at the end on any overrun. At these estimates and with no breaks from a 12:30 start, steps 1 to 4 close by 06:00 on 8 October, step 5 by 11:00, step 6 by 15:00 and steps 7 to 9 by 20:30; the planned close column is the number D23 asks for, so each step's slip is visible against it at the time, not after. The table assumes continuous work; the owner's own stop time is not in it.
 
-Shrink order if time runs short (SPEC section 15: steps 7 and 8 shrink before anything in 1 to 6 or 9):
+Shrink order if time runs short (SPEC section 15: steps 7 and 9 shrink before anything in 1 to 6, 8 or 10):
 
-1. Step 8 first: the accessibility pass and the per-page state polish drop; `/perf-timing`, the PERFORMANCE row and the README stay, because the `[measured]` criteria and the demo credentials depend on them.
+1. Step 9 first: the accessibility pass and the per-page state polish drop; `/perf-timing`, the PERFORMANCE row and the README stay, because the `[measured]` criteria and the demo credentials depend on them.
 2. Step 7 second: insight exports and the XLSX and JSON writers drop; the directory CSV export stays, because it is the one F6 criterion a reviewer will click.
-3. Nothing in steps 1 to 6 or 9 is cut. Step 10 (P1) does not start.
+3. Nothing in steps 1 to 6, 8 or 10 is cut. Step 11 (P1) does not start.
 
 ## What the owner does by hand
 
@@ -273,7 +306,7 @@ Shrink order if time runs short (SPEC section 15: steps 7 and 8 shrink before an
 4. Start Docker Desktop if a local `docker compose up` check is wanted before the Ship step; CI builds the image on every push either way.
 5. Approve the dependency prompts under rule 9 (`uv add`, `npm install`) as they come, each with its DECISIONS line.
 6. Answer any `Question for the human` a reviewer raises at a step close; the step waits on it.
-7. In step 9: record the demo video on the live URL, give Claude Code the link for the README, and make the GitHub repository public.
+7. In step 10: record the demo video on the live URL, give Claude Code the link for the README, and make the GitHub repository public.
 
 ## Questions for the owner
 
