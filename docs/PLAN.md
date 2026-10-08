@@ -306,7 +306,7 @@ Plugin skills and connectors: `/add-endpoint` for the three routes, `/add-valida
 
 Goal: the measured numbers are in `docs/PERFORMANCE.md`, every page has its error and empty states, keyboard and labels pass, and the README carries demo credentials and how the app was built.
 
-Files to change: `apps/core/management/commands/timing.py` (complete, printing the PERFORMANCE row), `docs/PERFORMANCE.md`, `Dockerfile` and `entrypoint.sh` (an unprivileged user for the app, root kept only to own `/data`, the security reviewer's step 1 note), the pages and components listed in DESIGN 6's state table, `README.md` ("Run", "Test", "Demo credentials", "How this was built"), `.env.example` final, `docs/DECISIONS.md`.
+Files to change: `apps/core/management/commands/timing.py` (complete, printing the PERFORMANCE row), `docs/PERFORMANCE.md`, `Dockerfile` and `entrypoint.sh` (an unprivileged user for the app, root kept only to own `/data`, the security reviewer's step 1 note), the pages and components listed in DESIGN 6's state table, `README.md` ("Run", "Test", "Demo credentials", "How this was built"), `.env.example` final, `docs/DECISIONS.md`. From the step 10 review (D72): the sample files' row builders move out of `make_import_file` into a module of their own that the command and `demo/services.py` both call, since a service importing a management command module is against rule 1.
 
 Tests: the empty and error states of each page (fixture handlers returning empty results and 500), a keyboard test on each dialog (focus moves into the dialog and returns on close), labels present on every input (`getByLabelText` for each form field), no new backend tests beyond any fix a missed target forces.
 
