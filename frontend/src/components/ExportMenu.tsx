@@ -1,16 +1,6 @@
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import {
-  Alert,
-  Button,
-  CircularProgress,
-  IconButton,
-  Menu,
-  MenuItem,
-  Snackbar,
-  Tooltip,
-} from '@mui/material';
+import { Alert, Button, CircularProgress, Menu, MenuItem, Snackbar, Tooltip } from '@mui/material';
 import { type MouseEvent, useId, useState } from 'react';
 
 import { EXPORT_FILES, type ExportFile } from '../api/exports';
@@ -19,19 +9,19 @@ import { EXPORT_FILES, type ExportFile } from '../api/exports';
 const FORMATS: Record<ExportFile, string> = { csv: 'CSV', xlsx: 'Excel (.xlsx)', json: 'JSON' };
 
 interface ExportMenuProps {
-  /** The trigger's accessible name, which also names its menu, and the kebab's tooltip:
-   * "Export summary". */
+  /** The button's accessible name and tooltip, which also names its menu: "Export summary". The
+   * button itself reads "Export". */
   label: string;
   /** What a failure names: "Could not export the summary." */
   what: string;
-  /** A labelled button for a page header, or a kebab for a card (DESIGN section 8). */
-  variant?: 'button' | 'icon';
+  /** `small` on the dashboard's cards and rate month line, the default in a page header. */
+  size?: 'small' | 'medium';
   onExport: (file: ExportFile) => Promise<void>;
 }
 
 /** CSV, Excel or JSON of what the page shows (SPEC F6). A large file takes a few seconds, so the
  * trigger shows a spinner meanwhile and ignores a second click; it keeps its focus throughout. */
-export function ExportMenu({ label, what, variant = 'icon', onExport }: ExportMenuProps) {
+export function ExportMenu({ label, what, size = 'medium', onExport }: ExportMenuProps) {
   const menuId = useId();
   const triggerId = useId();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -50,36 +40,34 @@ export function ExportMenu({ label, what, variant = 'icon', onExport }: ExportMe
       .catch(() => setFailed(true))
       .finally(() => setBusy(false));
   };
-  const trigger = {
-    id: triggerId,
-    'aria-label': label,
-    'aria-haspopup': 'menu' as const,
-    'aria-expanded': anchor ? true : undefined,
-    'aria-controls': anchor ? menuId : undefined,
-    'aria-busy': busy || undefined,
-    onClick: open,
-  };
-  const spinner = <CircularProgress size={16} aria-hidden />;
 
   return (
     <>
-      {variant === 'button' ? (
+      <Tooltip title={label}>
         <Button
+          id={triggerId}
           variant="outlined"
-          startIcon={busy ? spinner : <FileDownloadOutlinedIcon fontSize="small" />}
+          size={size}
+          // Beside a long card title the button keeps its width and the title wraps instead.
+          sx={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+          startIcon={
+            busy ? (
+              <CircularProgress size={16} aria-hidden />
+            ) : (
+              <FileDownloadOutlinedIcon fontSize="small" />
+            )
+          }
           endIcon={<ArrowDropDownIcon />}
-          {...trigger}
+          aria-label={label}
+          aria-haspopup="menu"
+          aria-expanded={anchor ? true : undefined}
+          aria-controls={anchor ? menuId : undefined}
+          aria-busy={busy || undefined}
+          onClick={open}
         >
           Export
         </Button>
-      ) : (
-        <Tooltip title={label}>
-          {/* MUI's CardHeader action margins, so the kebab fits the title's line. */}
-          <IconButton size="small" sx={{ my: -0.5, mr: -1 }} {...trigger}>
-            {busy ? spinner : <MoreVertIcon fontSize="small" />}
-          </IconButton>
-        </Tooltip>
-      )}
+      </Tooltip>
       <Menu
         id={menuId}
         anchorEl={anchor}

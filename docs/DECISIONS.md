@@ -522,6 +522,8 @@ Consequences: a file read on its own says what its figures are in and why any ar
 
 Amended at the step 7 close: asked whether the summary should end like the other five tables, the owner chose that it should, with one test that holds every insight table to Reason, Currency and Rates. After the review, every CSV field is quoted, so text holding a semicolon cannot start a formula where Excel splits on semicolons. A CSV reads its first hundred rows, and checks a rate for every currency a live record is in, before its 200 goes out, so a failure is an error response and never a file cut off part way.
 
+Amended 8 Oct, after the step 7 deploy: the owner asked for an Export button in place of each kebab on the dashboard, with the same three formats. Every export menu is now the same labelled button, small on the cards and the rate month line, named and titled for its table (`Export summary`).
+
 ## D61. The designation filter takes at most 20 titles
 
 Context: the step 7 security review sent the directory 1,100 designations in one 3 KB query string. Each title is one more OR in the query, and SQLite refuses an expression deeper than 1,000 with a 500. Search already stops at ten words for the same reason.

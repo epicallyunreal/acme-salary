@@ -51,7 +51,6 @@ export function Employees() {
         actions={
           <Stack direction="row" spacing={1}>
             <ExportMenu
-              variant="button"
               label="Export employees"
               what="the employees"
               onExport={(file) => exportEmployees(params, file)}

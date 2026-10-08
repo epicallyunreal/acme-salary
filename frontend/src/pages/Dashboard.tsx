@@ -29,7 +29,12 @@ export function Dashboard() {
   const nobody = summary.data?.headcount === 0;
   // Every insight downloads from where it is shown, with the filters on screen (SPEC F6).
   const exportMenu = (name: InsightName, label: string, what: string) => (
-    <ExportMenu label={label} what={what} onExport={(file) => exportInsight(name, filters, file)} />
+    <ExportMenu
+      size="small"
+      label={label}
+      what={what}
+      onExport={(file) => exportInsight(name, filters, file)}
+    />
   );
 
   return (

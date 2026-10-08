@@ -76,7 +76,7 @@ describe('ExportMenu', () => {
     await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
   });
 
-  it("says what it exports in the kebab's tooltip", async () => {
+  it('reads Export and says what it exports in its tooltip', async () => {
     const user = userEvent.setup();
     renderWithProviders(
       <ExportMenu label="Export summary" what="the summary" onExport={() => Promise.resolve()} />,
@@ -84,6 +84,7 @@ describe('ExportMenu', () => {
 
     await user.hover(screen.getByRole('button', { name: 'Export summary' }));
 
+    expect(screen.getByRole('button', { name: 'Export summary' })).toHaveTextContent('Export');
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Export summary');
   });
 
@@ -92,12 +93,7 @@ describe('ExportMenu', () => {
     let finish = () => {};
     const onExport = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     renderWithProviders(
-      <ExportMenu
-        variant="button"
-        label="Export employees"
-        what="the employees"
-        onExport={onExport}
-      />,
+      <ExportMenu label="Export employees" what="the employees" onExport={onExport} />,
     );
     const trigger = screen.getByRole('button', { name: 'Export employees' });
 
