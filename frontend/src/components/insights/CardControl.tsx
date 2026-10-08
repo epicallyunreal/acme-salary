@@ -1,4 +1,12 @@
-import { ToggleButton, ToggleButtonGroup } from '@mui/material';
+import {
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  ToggleButton,
+  ToggleButtonGroup,
+} from '@mui/material';
+import { useId } from 'react';
 
 interface CardControlProps<T extends string> {
   /** The group's accessible name, `Trend measure`. */
@@ -33,5 +41,32 @@ export function CardControl<T extends string>({
         </ToggleButton>
       ))}
     </ToggleButtonGroup>
+  );
+}
+
+/** The same control as a small select, for a choice too long for buttons: the Level. */
+export function CardSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: CardControlProps<T>) {
+  const labelId = useId();
+  return (
+    <FormControl size="small" sx={{ minWidth: 96, flexShrink: 0 }}>
+      <InputLabel id={labelId}>{label}</InputLabel>
+      <Select
+        labelId={labelId}
+        value={value}
+        label={label}
+        onChange={(event) => onChange(event.target.value as T)}
+      >
+        {options.map((option) => (
+          <MenuItem key={option.value} value={option.value}>
+            {option.label}
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
   );
 }

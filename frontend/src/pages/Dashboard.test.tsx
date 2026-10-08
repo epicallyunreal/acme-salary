@@ -16,12 +16,14 @@ const QUESTIONS = [
   'Is there a gender pay gap?',
   'How has total cost moved over two years?',
   'Why did total cost move over the year?',
+  'Does pay rise with tenure?',
 ];
 const SECTIONS = ['What we spend', 'How pay is structured', 'Is pay fair'];
 const INSIGHTS = [
   'by-country',
   'by-department',
   'by-level',
+  'by-tenure',
   'cost-bridge',
   'distribution',
   'gender-gap',
@@ -209,6 +211,22 @@ describe('Dashboard', () => {
     for (const name of INSIGHTS.filter((insight) => insight !== 'trend')) {
       expect(seen[name]).toHaveLength(1);
     }
+  });
+
+  it("the tenure card's Level picks the level, in the URL, refetching that card alone", async () => {
+    const user = userEvent.setup();
+    const seen = recordRequests();
+    const { router } = renderApp('/');
+    const card = await screen.findByRole('region', { name: 'Does pay rise with tenure?' });
+    await waitFor(() => expect(seen['by-tenure']).toHaveLength(1));
+
+    await user.click(within(card).getByRole('combobox', { name: 'Level' }));
+    await user.click(await screen.findByRole('option', { name: 'L3' }));
+
+    await waitFor(() => expect(seen['by-tenure']).toHaveLength(2));
+    expect(seen['by-tenure'][1].get('level')).toBe('3');
+    expect(router.state.location.search).toBe('?tenure.level=3');
+    expect(seen.trend).toHaveLength(1);
   });
 
   it("Clear filters resets the cards' controls with the bar's filters", async () => {

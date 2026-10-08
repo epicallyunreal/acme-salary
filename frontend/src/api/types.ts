@@ -306,7 +306,8 @@ export type InsightName =
   | 'by-level'
   | 'gender-gap'
   | 'trend'
-  | 'cost-bridge';
+  | 'cost-bridge'
+  | 'by-tenure';
 
 /** A card's own control on the wire, `{ measure: 'headcount' }`: what it measures or how it
  * slices, never who is counted (D62). */
@@ -427,6 +428,19 @@ export interface CostBridgeInsight extends InsightHeader {
   parts: BridgePart[];
 }
 
+export interface TenureRow {
+  band: 'under_1' | '1_to_3' | '3_to_5' | '5_to_10' | '10_plus';
+  label: string;
+  headcount: number;
+  median_gross: string | null;
+}
+
+/** Median gross by completed years of service, within one level or all of them (D62). */
+export interface ByTenureInsight extends InsightHeader {
+  level: string;
+  rows: TenureRow[];
+}
+
 export interface InsightPayloads {
   summary: SummaryInsight;
   'by-country': InsightHeader & { rows: CountryRow[] };
@@ -436,6 +450,7 @@ export interface InsightPayloads {
   'gender-gap': InsightHeader & { rows: GapRow[] };
   trend: TrendInsight;
   'cost-bridge': CostBridgeInsight;
+  'by-tenure': ByTenureInsight;
 }
 
 export interface ExchangeRates {

@@ -247,6 +247,19 @@ export const costBridgeShown: InsightPayloads['cost-bridge'] = {
   ],
 };
 
+/** Five tenure bands, the shortest under five people and the longest empty. */
+export const byTenure: InsightPayloads['by-tenure'] = {
+  ...USD,
+  level: 'all',
+  rows: [
+    { band: 'under_1', label: 'Under 1 year', headcount: 3, median_gross: null },
+    { band: '1_to_3', label: '1 to 3 years', headcount: 8, median_gross: '62500.00' },
+    { band: '3_to_5', label: '3 to 5 years', headcount: 6, median_gross: '70000.00' },
+    { band: '5_to_10', label: '5 to 10 years', headcount: 10, median_gross: '90000.00' },
+    { band: '10_plus', label: '10 years or more', headcount: 0, median_gross: null },
+  ],
+};
+
 /** Each insight's payload, by the name in its URL. */
 export function insightFor(name: string, includeExited: boolean): JsonBodyType | undefined {
   const payloads: Record<string, unknown> = {
@@ -258,6 +271,7 @@ export function insightFor(name: string, includeExited: boolean): JsonBodyType |
     'gender-gap': genderGap,
     trend,
     'cost-bridge': costBridge,
+    'by-tenure': byTenure,
   };
   return payloads[name] as JsonBodyType | undefined;
 }

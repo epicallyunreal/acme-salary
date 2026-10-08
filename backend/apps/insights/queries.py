@@ -42,6 +42,14 @@ BANDS = 12
 LEVELS = range(1, 7)
 TREND_MONTHS = 24
 BRIDGE_MONTHS = 12
+# Tenure bands in completed years (D62): each from its lower bound up to, not including, its upper.
+TENURE_BANDS = (
+    ("under_1", "Under 1 year", 0),
+    ("1_to_3", "1 to 3 years", 1),
+    ("3_to_5", "3 to 5 years", 3),
+    ("5_to_10", "5 to 10 years", 5),
+    ("10_plus", "10 years or more", 10),
+)
 GENDERS = tuple(choice.value for choice in Gender)
 
 COUNTRY = "employee__country_id"
@@ -610,6 +618,50 @@ def cost_bridge(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dic
     }
 
 
+def completed_years(start: date, end: date) -> int:
+    """Whole years from `start` to `end`, counted on anniversaries, so 29 February's falls on 28
+    February in the years without one."""
+    try:
+        anniversary = start.replace(year=end.year)
+    except ValueError:
+        anniversary = date(end.year, 2, 28)
+    return end.year - start.year - (1 if end < anniversary else 0)
+
+
+def tenure_band(years: int) -> str:
+    """The last band whose lower bound the years reach."""
+    return [key for key, _, low in TENURE_BANDS if years >= low][-1]
+
+
+def by_tenure(
+    f: InsightFilters, rates: fx.RateTable, lookups: Lookups, *, level: str = "all"
+) -> dict:
+    """Question 9: median gross by completed years of service at `on`, or at the last date for
+    someone who left, within one level or all of them (D62). Under five people a band shows its
+    headcount alone."""
+    convert = Converter(f, rates)
+    records = population(f)
+    if level != "all":
+        records = records.filter(employee__level=int(level))
+    values: dict[str, list[Decimal]] = {key: [] for key, _, _ in TENURE_BANDS}
+    for gross, currency, joined, left in records.values_list(
+        "gross_annual", "currency_code", "employee__joining_date", "employee__last_date"
+    ):
+        until = min(f.on, left) if left else f.on
+        band = tenure_band(completed_years(joined, until))
+        values[band].append(q2(gross * convert.rate(currency)))
+    rows = [
+        {
+            "band": key,
+            "label": label,
+            "headcount": len(values[key]),
+            "median_gross": median(values[key]) if len(values[key]) >= SMALL_GROUP else None,
+        }
+        for key, label, _ in TENURE_BANDS
+    ]
+    return {**header(f, rates), "level": level, "rows": rows}
+
+
 INSIGHTS: dict[str, Callable[..., dict]] = {
     "summary": summary,
     "by-country": by_country,
@@ -619,10 +671,12 @@ INSIGHTS: dict[str, Callable[..., dict]] = {
     "gender-gap": gender_gap,
     "trend": trend,
     "cost-bridge": cost_bridge,
+    "by-tenure": by_tenure,
 }
 
 # Each card's control (D62): the parameter, then its values, the first being the default. It
 # slices or measures, and never decides who is counted.
 CONTROLS: dict[str, tuple[str, tuple[str, ...]]] = {
     "trend": ("measure", ("total_cost", "headcount")),
+    "by-tenure": ("level", ("all", "1", "2", "3", "4", "5", "6")),
 }

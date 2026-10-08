@@ -41,9 +41,11 @@ def filters(**given) -> queries.InsightFilters:
     )
 
 
-def insight(name: str, **given) -> dict:
+def insight(name: str, control: dict | None = None, **given) -> dict:
+    """An insight for the given filters and, where the card has one, its control (D62)."""
     f = filters(**given)
-    return render(queries.INSIGHTS[name](f, fx.RateTable.load(f.on), queries.Lookups.load()))
+    rates, lookups = fx.RateTable.load(f.on), queries.Lookups.load()
+    return render(queries.INSIGHTS[name](f, rates, lookups, **(control or {})))
 
 
 def country_row(code, name, headcount, total, median, share):
@@ -1046,3 +1048,72 @@ def test_include_exited_does_not_apply_to_the_bridge(lookups):
     build_history(with_leavers=True)
 
     assert insight("cost-bridge", include_exited=True) == insight("cost-bridge")
+
+
+# by-tenure (D62)
+
+
+def tenure(*headcounts_and_medians):
+    keys = ("under_1", "1_to_3", "3_to_5", "5_to_10", "10_plus")
+    labels = ("Under 1 year", "1 to 3 years", "3 to 5 years", "5 to 10 years", "10 years or more")
+    return [
+        {"band": key, "label": label, "headcount": headcount, "median_gross": median}
+        for key, label, (headcount, median) in zip(
+            keys, labels, headcounts_and_medians, strict=True
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("level", "rows"),
+    [
+        ("all", tenure((0, None), (0, None), (0, None), (27, "75000.00"), (0, None))),
+        ("3", tenure((0, None), (0, None), (0, None), (5, "87500.00"), (0, None))),
+        ("6", tenure((0, None), (0, None), (0, None), (3, None), (0, None))),
+    ],
+)
+def test_by_tenure_within_a_level(people, level, rows):
+    """DESIGN 9's people joined on 1 January 2020, six years before `on`. Level 3 is U5, U6, I3,
+    I9 and D2, whose median is D2's 87,500. Level 6 has three, under five (D59)."""
+    result = insight("by-tenure", control={"level": level})
+
+    assert (result["level"], result["rows"]) == (level, rows)
+
+
+def test_each_tenure_band_starts_on_its_anniversary(lookups):
+    """On 7 October 2026: a day short of a year is under 1, exactly 1 year is 1 to 3, exactly 3
+    is 3 to 5, exactly 5 is 5 to 10, a day short of 10 years is 5 to 10, and exactly 10 is 10 or
+    more."""
+    for joined in (
+        date(2025, 10, 8),
+        date(2025, 10, 7),
+        date(2023, 10, 7),
+        date(2021, 10, 7),
+        date(2016, 10, 8),
+        date(2016, 10, 7),
+    ):
+        CompensationRecordFactory(
+            employee=EmployeeFactory(country=country("US"), joining_date=joined),
+            lines={"BASE": Decimal(100_000)},
+        )
+
+    rows = insight("by-tenure")["rows"]
+
+    assert [row["headcount"] for row in rows] == [1, 1, 1, 2, 1]
+
+
+def test_a_leavers_tenure_is_counted_to_their_last_date(lookups):
+    """Joined 1 March 2016 and left 31 January 2026: 9 years at the last date, though 10 by
+    `on`, so 5 to 10 with Include exited."""
+    employee = EmployeeFactory(
+        country=country("US"), joining_date=date(2016, 3, 1), last_date=date(2026, 1, 31)
+    )
+    CompensationRecordFactory(
+        employee=employee,
+        lines={"BASE": Decimal(100_000)},
+        effective_to=date(2026, 2, 1),
+    )
+
+    rows = insight("by-tenure", include_exited=True)["rows"]
+
+    assert [row["headcount"] for row in rows] == [0, 0, 0, 1, 0]

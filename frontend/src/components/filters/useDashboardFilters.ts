@@ -19,6 +19,11 @@ export const DASHBOARD_DEFAULTS: DashboardFilters = {
  * It slices or measures and never decides who is counted. */
 export const CARD_CONTROLS = {
   trend: { key: 'trend.measure', param: 'measure', values: ['total_cost', 'headcount'] },
+  tenure: {
+    key: 'tenure.level',
+    param: 'level',
+    values: ['all', '1', '2', '3', '4', '5', '6'],
+  },
 } as const;
 
 export type CardName = keyof typeof CARD_CONTROLS;

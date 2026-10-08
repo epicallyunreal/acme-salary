@@ -373,6 +373,31 @@ def cost_bridge_table(payload: dict) -> Table:
     return table(BRIDGE_COLUMNS, rows)
 
 
+TENURE_COLUMNS = (
+    ("Tenure", "tenure"),
+    ("Headcount", "headcount"),
+    ("Median gross", "median_gross"),
+    ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
+)
+
+
+def by_tenure_table(payload: dict) -> Table:
+    """One row per band, for the level the card picked, which the JSON filters name (D62)."""
+    rows = [
+        (
+            row["label"],
+            row["headcount"],
+            row["median_gross"],
+            withheld(row["headcount"], row["median_gross"], SMALL_GROUP),
+            *currency_and_rates(payload),
+        )
+        for row in payload["rows"]
+    ]
+    return table(TENURE_COLUMNS, rows)
+
+
 INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "summary": summary_table,
     "by-country": by_country_table,
@@ -382,4 +407,5 @@ INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "gender-gap": gender_gap_table,
     "trend": trend_table,
     "cost-bridge": cost_bridge_table,
+    "by-tenure": by_tenure_table,
 }

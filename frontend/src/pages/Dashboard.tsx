@@ -10,7 +10,8 @@ import { controlQuery, useDashboardFilters } from '../components/filters/useDash
 import { ByCountryCard } from '../components/insights/ByCountryCard';
 import { ByDepartmentCard } from '../components/insights/ByDepartmentCard';
 import { ByLevelCard } from '../components/insights/ByLevelCard';
-import { CardControl } from '../components/insights/CardControl';
+import { ByTenureCard } from '../components/insights/ByTenureCard';
+import { CardControl, CardSelect } from '../components/insights/CardControl';
 import { CostBridgeCard } from '../components/insights/CostBridgeCard';
 import { DistributionCard } from '../components/insights/DistributionCard';
 import { GenderGapCard } from '../components/insights/GenderGapCard';
@@ -24,6 +25,15 @@ const MEASURES = [
   { value: 'total_cost', label: 'Total cost' },
   { value: 'headcount', label: 'Headcount' },
 ] as const;
+const LEVELS = [
+  { value: 'all', label: 'All' },
+  { value: '1', label: 'L1' },
+  { value: '2', label: 'L2' },
+  { value: '3', label: 'L3' },
+  { value: '4', label: 'L4' },
+  { value: '5', label: 'L5' },
+  { value: '6', label: 'L6' },
+] as const;
 
 /** The questions of SPEC section 9 for the filters in the URL (SPEC F5), under three headings
  * (D62). Each card is its own query, so a filter change refetches every card, and a card's own
@@ -31,6 +41,7 @@ const MEASURES = [
 export function Dashboard() {
   const { filters, controls, set, setControl, reset, filtered } = useDashboardFilters();
   const trendControl = controlQuery('trend', controls);
+  const tenureControl = controlQuery('tenure', controls);
   const summary = useInsight('summary', filters);
   const trend = useInsight('trend', filters, trendControl);
   const costBridge = useInsight('cost-bridge', filters);
@@ -38,6 +49,7 @@ export function Dashboard() {
   const byDepartment = useInsight('by-department', filters);
   const distribution = useInsight('distribution', filters);
   const byLevel = useInsight('by-level', filters);
+  const byTenure = useInsight('by-tenure', filters, tenureControl);
   const genderGap = useInsight('gender-gap', filters);
   const nobody = summary.data?.headcount === 0;
   // Every insight downloads from where it is shown, with the filters and its control on screen
@@ -121,6 +133,25 @@ export function Dashboard() {
               <ByLevelCard
                 query={byLevel}
                 actions={exportMenu('by-level', 'Export pay by level', 'the pay by level')}
+              />
+              <ByTenureCard
+                query={byTenure}
+                actions={
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                    <CardSelect
+                      label="Level"
+                      value={controls.tenure}
+                      options={LEVELS}
+                      onChange={(level) => setControl('tenure', level)}
+                    />
+                    {exportMenu(
+                      'by-tenure',
+                      'Export pay by tenure',
+                      'the pay by tenure',
+                      tenureControl,
+                    )}
+                  </Stack>
+                }
               />
             </CardGrid>
           </Section>

@@ -684,3 +684,19 @@ def test_the_bridge_exports_one_row_per_part(api, people):
         ["Pay changes", "", "27", "", "withheld with the leavers", "USD", RATES],
         ["End", "2026-10-07", "27", "2435450.00", "", "USD", RATES],
     ]
+
+
+def test_by_tenure_exports_its_bands_for_the_level_picked(api, people):
+    """D62: level 3 of DESIGN 9's fixture, five people joined six years ago."""
+    body = json_body(api.get(INSIGHT.format("by-tenure"), {"file": "json", "level": "3"}))
+
+    assert body["filters"] == {"level": "3", "on": "2026-10-07", "currency": "USD"}
+    assert body["rows"][3] == {
+        "tenure": "5 to 10 years",
+        "headcount": 5,
+        "median_gross": "87500.00",
+        "reason": None,
+        "currency": "USD",
+        "rates": RATES,
+    }
+    assert [row["headcount"] for row in body["rows"]] == [0, 0, 0, 5, 0]

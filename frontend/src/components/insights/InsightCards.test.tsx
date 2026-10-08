@@ -13,6 +13,7 @@ import { DASHBOARD_DEFAULTS } from '../filters/useDashboardFilters';
 import { ByCountryCard } from './ByCountryCard';
 import { ByDepartmentCard } from './ByDepartmentCard';
 import { ByLevelCard } from './ByLevelCard';
+import { ByTenureCard } from './ByTenureCard';
 import { CostBridgeCard } from './CostBridgeCard';
 import { DistributionCard } from './DistributionCard';
 import { GenderGapCard } from './GenderGapCard';
@@ -42,6 +43,10 @@ function Levels() {
 function Gap() {
   const query = useInsight('gender-gap', DASHBOARD_DEFAULTS);
   return <GenderGapCard query={query} />;
+}
+function Tenures() {
+  const query = useInsight('by-tenure', DASHBOARD_DEFAULTS, { level: 'all' });
+  return <ByTenureCard query={query} />;
 }
 function Bridge({ includeExited = false }: { includeExited?: boolean }) {
   const query = useInsight('cost-bridge', DASHBOARD_DEFAULTS);
@@ -299,6 +304,15 @@ describe('insight cards', () => {
     expect(
       screen.getByText("Counts people employed on each date; Include exited doesn't apply"),
     ).toBeInTheDocument();
+  });
+
+  it('by tenure gives each band and names the short one', async () => {
+    renderWithProviders(<Tenures />);
+
+    expect(await row('Median gross by tenure', 'Under 1 year')).toEqual(['3', UNDER_FIVE]);
+    expect(await row('Median gross by tenure', '5 to 10 years')).toEqual(['10', 'USD 90,000']);
+    expect(await row('Median gross by tenure', '10 years or more')).toEqual(['0', '—']);
+    expect(screen.getByText('Not shown, fewer than 5 people: Under 1 year.')).toBeInTheDocument();
   });
 
   it('a card that fails to load says so, and its Retry loads it', async () => {
