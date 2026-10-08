@@ -1,8 +1,18 @@
 #!/bin/sh
 # Container start (SPEC section 14): migrate, drop expired tokens, seed once, serve. gunicorn
 # waits 600 s on a request so a throttled approve is never killed (D72).
+#
+# The volume mounts root-owned, so the first run is root: it hands /data to acme and starts
+# over as acme, who owns nothing else and runs everything below (D73).
 set -eu
 cd /app
+
+if [ "$(id -u)" = "0" ]; then
+  DATA_DIR="$(dirname "${DATABASE_PATH:-/data/db.sqlite3}")"
+  mkdir -p "$DATA_DIR"
+  chown -R acme:acme "$DATA_DIR"
+  exec setpriv --reuid=acme --regid=acme --init-groups "$0" "$@"
+fi
 
 python manage.py migrate --noinput
 python manage.py flushexpiredtokens

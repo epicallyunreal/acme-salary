@@ -22,13 +22,20 @@ ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
 RUN uv sync --frozen --no-dev
-COPY backend/ ./
+# The runtime alone: no tests, no .env.example (D73).
+COPY backend/manage.py ./
+COPY backend/acme_salary ./acme_salary
+COPY backend/apps ./apps
+COPY backend/seed ./seed
 COPY --from=web /web/dist /app/spa
 # The Demo data page's committed base file (SPEC F9, D72).
 COPY sample-data/base-15000.xlsx /app/sample-data/
 # Pre-compress the bundle so WhiteNoise serves gzip and brotli variants.
 RUN python -m whitenoise.compress /app/spa
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+# The app runs as acme. The entrypoint starts as root only to hand it the volume (D73).
+RUN chmod +x /app/entrypoint.sh \
+    && useradd --system --uid 1000 --user-group --home-dir /app --shell /usr/sbin/nologin acme \
+    && chown -R acme:acme /app/sample-data
 EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -952,11 +952,17 @@ RUN pip install --no-cache-dir uv                  # or COPY --from=ghcr.io/astr
 WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock backend/.python-version ./
 RUN uv sync --frozen --no-dev
-COPY backend/ ./
+COPY backend/manage.py ./                          # the runtime alone: no tests, no .env.example (D73)
+COPY backend/acme_salary ./acme_salary
+COPY backend/apps ./apps
+COPY backend/seed ./seed
 COPY --from=web /web/dist /app/spa
 RUN .venv/bin/python -m whitenoise.compress /app/spa   # gzip and brotli beside each asset
 COPY sample-data/base-15000.xlsx /app/sample-data/   # the Demo data page's base file (D72)
 COPY entrypoint.sh /app/entrypoint.sh
+RUN useradd --system --uid 1000 --user-group acme    # the app's user; the entrypoint starts as
+                                                     # root only to chown the volume, then
+                                                     # re-executes itself through setpriv (D73)
 ENV PATH=/app/.venv/bin:$PATH DJANGO_SETTINGS_MODULE=acme_salary.settings.prod SPA_DIR=/app/spa
 EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]
@@ -995,7 +1001,7 @@ Volume: `fly.toml` mounts volume `data` at `/data`; the database, its WAL and sh
 
 Fly setup, done by the owner on 7 October before step 1 (D29, D30): the volume `data` in `sin`, the secrets above, `fly certs add acme.nutanprabhat.dev` (issued and verified on IPv4 and IPv6), and a Cloudflare CNAME `acme` to `acme-salary.fly.dev` with the proxy off. The step 1 deploy could not place a 1 GB machine on that volume's host, so a second empty volume named `data` was created in `sin`, the machine runs on it, and the first, never-attached volume was destroyed, leaving one machine and one volume (D31). `fly deploy --remote-only` builds on Fly's builder, and the ask rule prompts for it at the close of every step that adds a page. `.dev` is HSTS-preloaded, so the site is reachable only over the issued certificate. The health check in `fly.toml` hits `/healthz` every 30 s and sends `Host: acme.nutanprabhat.dev` through `[http_service.checks.headers]`, because Fly's checker otherwise sends the machine's internal address as `Host` and `ALLOWED_HOSTS` answers 400 (D29). Fly caps an HTTP service check grace at 60 s and `fly.toml` says `grace_period = '60s'` (D31). A failed check does not restart the machine, it only stops routing and makes `fly deploy` wait, so the seeded first boot, once per volume, runs with `fly deploy --remote-only --wait-timeout 10m` and its measured boot goes into `docs/PERFORMANCE.md`; later boots skip the seed and were healthy 6 s after init.
 
-CI (`.github/workflows/ci.yml`): `backend` job (`setup-python` 3.14, `astral-sh/setup-uv`, `uv sync`, `ruff format --check`, `ruff check`, `pytest -q`), `frontend` job (`setup-node` with `node-version-file: frontend/.nvmrc` and `cache: npm`, `npm ci`, `npm run lint`, `npm test -- --run`, `npm run build`), `docker` job after both (`docker build .`). `npm install` never runs in CI.
+CI (`.github/workflows/ci.yml`), every action pinned by commit SHA with the tag beside it and every checkout with `persist-credentials: false` (D73): `backend` job (`setup-python` 3.14, `astral-sh/setup-uv`, `uv sync`, `ruff format --check`, `ruff check`, `pytest -q`, then `uv export --frozen --no-dev --no-hashes` and `uvx pip-audit --strict` on it, so any known vulnerability in a locked runtime dependency fails the build), `frontend` job (`setup-node` with `node-version-file: frontend/.nvmrc` and `cache: npm`, `npm ci`, `npm audit --omit=dev`, which fails the same way, `npm run lint`, `npm test -- --run`, `npm run build`), `docker` job after both (`docker build .`). `npm install` never runs in CI. Both audits were clean on 8 October.
 
 ## Questions for the owner
 
