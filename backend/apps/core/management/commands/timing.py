@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -151,6 +152,67 @@ def exported_rows(file: str, body: bytes) -> int:
     return len(json.loads(body)["rows"])
 
 
+# The worst sheet the upload limits let through (D68): every cell of every row points at one long
+# shared string. The parts are the fewest openpyxl reads.
+CRAFTED_CELL = 10_000
+SHEET_NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+
+def crafted_sheet(rows: int, columns: list[str], length: int = CRAFTED_CELL) -> bytes:
+    """An .xlsx of the template's `columns` and `rows` rows, each cell the one shared string of
+    `length` characters."""
+    from openpyxl.utils import get_column_letter
+
+    letters = [get_column_letter(index + 1) for index in range(len(columns))]
+    strings = ["x" * length, *columns]
+    head = "".join(f'<c r="{c}1" t="s"><v>{i + 1}</v></c>' for i, c in enumerate(letters))
+    body = [f'<row r="1">{head}</row>']
+    for number in range(2, rows + 2):
+        cells = "".join(f'<c r="{c}{number}" t="s"><v>0</v></c>' for c in letters)
+        body.append(f'<row r="{number}">{cells}</row>')
+    types = "application/vnd.openxmlformats-officedocument.spreadsheetml"
+    parts = {
+        "[Content_Types].xml": (
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" '
+            'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            f'<Override PartName="/xl/workbook.xml" ContentType="{types}.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" '
+            f'ContentType="{types}.worksheet+xml"/>'
+            '<Override PartName="/xl/sharedStrings.xml" '
+            f'ContentType="{types}.sharedStrings+xml"/></Types>'
+        ),
+        "_rels/.rels": (
+            f'<Relationships xmlns="{PKG_REL_NS}"><Relationship Id="rId1" '
+            f'Type="{REL_NS}/officeDocument" Target="xl/workbook.xml"/></Relationships>'
+        ),
+        "xl/workbook.xml": (
+            f'<workbook {SHEET_NS} xmlns:r="{REL_NS}"><sheets>'
+            '<sheet name="Employees" sheetId="1" r:id="rId1"/></sheets></workbook>'
+        ),
+        "xl/_rels/workbook.xml.rels": (
+            f'<Relationships xmlns="{PKG_REL_NS}">'
+            f'<Relationship Id="rId1" Type="{REL_NS}/worksheet" Target="worksheets/sheet1.xml"/>'
+            f'<Relationship Id="rId2" Type="{REL_NS}/sharedStrings" Target="sharedStrings.xml"/>'
+            "</Relationships>"
+        ),
+        "xl/worksheets/sheet1.xml": (
+            f"<worksheet {SHEET_NS}><sheetData>{''.join(body)}</sheetData></worksheet>"
+        ),
+        "xl/sharedStrings.xml": (
+            f"<sst {SHEET_NS}>{''.join(f'<si><t>{text}</t></si>' for text in strings)}</sst>"
+        ),
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, text in parts.items():
+            archive.writestr(name, '<?xml version="1.0"?>' + text)
+    return buffer.getvalue()
+
+
 def time_seed(scratch_db: Path, active: int, exited: int, seed: int) -> float:
     """Wall time of `seed_data --reset` in a fresh process against a scratch database."""
     env = {**os.environ, "DATABASE_PATH": str(scratch_db)}
@@ -187,7 +249,9 @@ class Command(BaseCommand):
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--repeats", type=int, default=20)
         # Each import sheet can run alone, so its peak memory is its own (D64).
-        parser.add_argument("--sheet", choices=("both", "all", "new"), default="both")
+        parser.add_argument("--sheet", choices=("both", "all", "new", "crafted"), default="both")
+        # The period cases alone spend less of a shared CPU's burst balance on Fly (D65, D70).
+        parser.add_argument("--insights", choices=("all", "periods"), default="all")
 
     def require_seed(self, active: int, exited: int) -> None:
         from apps.employees.models import Employee
@@ -214,11 +278,13 @@ class Command(BaseCommand):
                 worst = (p50, p95)
         return f"{worst[0]:.0f} / {worst[1]:.0f}"
 
-    def time_insights(self, repeats: int) -> str:
-        """p50 / p95 of the slowest insight and filter; every one is printed."""
+    def time_insights(self, repeats: int, which: str = "all") -> str:
+        """p50 / p95 of the slowest insight and filter; every one is printed. `periods` times
+        only the presets and the cut-off to today, for the insights whose work grows with them."""
         client = api_client()
         worst = (0.0, 0.0)
-        cases = [(name, "") for name in INSIGHT_NAMES] + list(INSIGHT_CONTROLS)
+        cases = [] if which == "periods" else [(name, "") for name in INSIGHT_NAMES]
+        cases += [] if which == "periods" else list(INSIGHT_CONTROLS)
         for name, control in cases:
             for label, query in INSIGHT_FILTERS.items():
                 path = f"/api/v1/insights/{name}/?{'&'.join(q for q in (query, control) if q)}"
@@ -276,14 +342,46 @@ class Command(BaseCommand):
     def time_import(self, seed: int, sheet: str) -> str:
         """Stage and approve the two 15,000-row sheets (D64): `make_import_file --all --raises
         1000`, the whole organisation with a thousand raises, whose times are the row's, and
-        `--new 15000`, the heaviest approve. Each runs inside a transaction that is rolled back,
-        so the database is left as it was."""
+        `--new 15000`, the heaviest approve. `--sheet crafted` stages the crafted sheet alone
+        (D68). Each runs inside a transaction that is rolled back, so the database is left as it
+        was."""
         everyone = ""
         if sheet in ("both", "all"):
             everyone = self.time_sheet("--all --raises 1000", {"all": True, "raises": 1000}, seed)
         if sheet in ("both", "new"):
             self.time_sheet("--new 15000", {"new": 15000}, seed)
+        if sheet == "crafted":
+            self.time_crafted()
         return everyone
+
+    def time_crafted(self) -> None:
+        """Stage the crafted sheet through the API, 15,000 rows of one 10,000-character shared
+        string, rolled back (D68). Every row is an error, so there is nothing to approve. Prints
+        the time and the process's peak memory, which on Fly must stay under 700 MB."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.db import transaction
+
+        from apps.compensation.validators import template_columns
+        from apps.core import queries as core_queries
+        from apps.imports.parser import ROW_LIMIT, XLSX_TYPE
+
+        columns = template_columns(c.code for c in core_queries.active_components())
+        data = crafted_sheet(ROW_LIMIT, columns)
+        client = api_client()
+        with transaction.atomic():
+            upload = SimpleUploadedFile("crafted.xlsx", data, content_type=XLSX_TYPE)
+            started = time.perf_counter()
+            response = client.post("/api/v1/imports/", {"file": upload})
+            staging = time.perf_counter() - started
+            transaction.set_rollback(True)
+        if response.status_code != 201:
+            raise CommandError(f"staging answered {response.status_code}: {response.content[:300]}")
+        body = response.json()
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
+        self.stdout.write(
+            f"import crafted sheet of {len(data):,} bytes, staging {body['total_rows']} rows "
+            f"({body['error_rows']} error): {staging:.1f} s, process peak {peak / 2**20:.0f} MB"
+        )
 
     def time_sheet(self, name: str, options: dict, seed: int) -> str:
         """Stage one sheet through the API and approve it, rolled back. Prints both times, how
@@ -337,7 +435,7 @@ class Command(BaseCommand):
 
         if "insights" in wanted:
             self.require_seed(options["active"], options["exited"])
-            results["insights"] = self.time_insights(options["repeats"])
+            results["insights"] = self.time_insights(options["repeats"], options["insights"])
 
         if "import" in wanted:
             self.require_seed(options["active"], options["exited"])

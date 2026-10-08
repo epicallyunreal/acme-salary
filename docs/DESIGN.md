@@ -355,7 +355,7 @@ The insights read a period. `InsightFilters` gains `start` and `end` in place of
 
 `summary` adds what the period cost, from the same spans: each record's annual total cost times the days it was current within `[start, end]`, a day costing the annual figure divided by the days in its calendar year, 365 or 366, summed per currency, converted once and quantised once. `{..., spent: {headcount, total_cost}}`, `headcount` being everyone employed on any day of the period and `total_cost` `None` when 1 to 4 people were employed on any day of it, since that day's cost is part of the total and two totals, or one and trend's points, would give it back (D59, D68). Include exited does not apply, as for trend. The KPI card that showed the total is labelled `Annual cost on <to>`.
 
-Queries per request stay pinned. `timing` times each insight on the default period, and the summary, trend and the bridge, whose work grows with the period, on each preset and on 1 April 2020, the reporting cut-off, to today (D69, D70).
+Queries per request stay pinned. `timing` times each insight on the default period, and the summary, trend and the bridge, whose work grows with the period, on each preset and on 1 April 2020, the reporting cut-off, to today (D69, D70). `--insights periods` times those alone, and `--case import --sheet crafted` stages the worst sheet the limits let through, every cell of 15,000 rows one 10,000-character shared string, rolled back, so both run on Fly's shared CPU without spending its burst balance on the rest (D65, D68).
 
 ### 1.7 exports
 
