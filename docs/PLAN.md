@@ -1,4 +1,4 @@
-Owner decision: approved. Steps 1 to 7 on 7 October, steps 8 and 9 on 8 October with the changes recorded in D62 and D64.
+Owner decision: approved. Steps 1 to 7 on 7 October, steps 8 to 10 on 8 October with the changes recorded in D62, D64 and D72.
 
 # ACME Salary Management: Plan
 
@@ -271,19 +271,19 @@ Plugin skills and connectors: `/add-insight` and `/add-endpoint` for the period 
 
 ## Step 10. Demo data
 
-Added by the owner before Hardening (D72), which becomes step 11 and Ship step 12. Built in five slices, each end to end with its tests, then the close: six commits.
+Added by the owner before Hardening (D72), which becomes step 11 and Ship step 12, and approved with the owner's changes: gunicorn waits 600 s, the pages treat a cut request as still running and poll, the cap is re-checked at approve, and a reset during an approve is a 409. Built in five slices, each end to end with its tests, then the close: six commits.
 
 Goal: a reviewer can empty the database and run the 10,000-employee import the brief names, then exercise every kind of row with files generated from the live data. A Demo data page after Imports offers the committed `base-15000.xlsx` and six files generated on demand, each drawing from its own share of the directory so they import cleanly in any order, and a danger zone that empties the database behind the user's password and `RESET`. Two rules go with it: no import may take the organisation past 25,000 employees, and a revision that lowers gross is a warning naming both figures.
 
 Files to change:
 
-- Rules. `apps/compensation/validators.py` (`check_gross_not_lower`, the no-op on a repeated scheduled revision), `apps/compensation/messages.py`, `apps/imports/services.py` (the 25,000 cap before the batch is written), `tests/compensation/test_validators.py`, `tests/imports/test_staging.py`.
+- Rules. `apps/compensation/validators.py` (`check_gross_not_lower`, the no-op on a repeated scheduled revision), `apps/compensation/messages.py`, `apps/imports/services.py` and `applier.py` (the 25,000 cap before the batch is written and again at approve), `tests/compensation/test_validators.py`, `tests/imports/test_staging.py`.
 - Files. `apps/imports/management/commands/make_import_file.py` (`--base`, `--bonus`, `--promotions`, `--exits`, `--effective`, `--share`, raises of 3 to 8%), `seed/generator.py` (new hires joining within a window), `sample-data/base-15000.xlsx` (committed, regenerated with the seed), `sample-data/acme-sample-50.*` (regenerated once more), `tests/imports/test_make_import_file.py`, `tests/seed/test_base_file.py` (slow).
 - Reset. `apps/demo/` (`services.py`, `views.py`, `serializers.py`, `urls.py`), `seed/management/commands/seed_data.py` (the truncation takes the tables to empty), `seed/profiles.py` (`PAY_TABLES`), `apps/audit/models.py` (the `demo_reset` action, a choices-only migration), `acme_salary/settings/base.py` (throttle scope `reset`, `SAMPLE_DATA_DIR`), `acme_salary/urls.py`, `tests/demo/`.
 - Page. `src/pages/DemoData.tsx`, `src/components/demo/SampleFiles.tsx` and `ResetDialog.tsx`, `src/api/demo.ts`, `src/components/layout/AppShell.tsx` (the nav item), `src/router.tsx`, `src/pages/Imports.tsx` (the message after a reset), `src/lib/poll.ts` with the review and Imports pages (waiting through a cut connection), fixtures, handlers and tests.
-- Deployment and timing. `Dockerfile` (the base file in the image), `entrypoint.sh` (gunicorn's timeout, only if measured necessary), `apps/core/management/commands/timing.py` (`--case demo-files`, `--case base-import`), `docs/PERFORMANCE.md`.
+- Deployment and timing. `Dockerfile` (the base file in the image), `entrypoint.sh` (gunicorn's timeout to 600 s), `apps/core/management/commands/timing.py` (`--case demo-files`, `--case base-import`), `docs/PERFORMANCE.md`.
 
-Tests: the warning on a gross one cent lower and none on an equal gross, through the API, an import and a seed entry; the cap at exactly 25,000 and refused at 25,001, updates and revisions not counted, no batch written; each generator option's row shape, its share of the directory and its determinism for a seed, newhires' joining window, promotions skipping L6; the base file against the seed, row by row (slow); the reset endpoint's 403 for a wrong password and for a `confirm` that is not `RESET`, the 429 on the sixth attempt in an hour, the 409 while an upload is being read, the counts returned, every pay table empty and `sqlite_sequence` cleared so the next employee is ACME-1, lookups, rates and the user kept, the user still able to log in, and the one `demo_reset` audit entry; the sample-file list with the generated files unavailable on an empty database; the page's download links and their one-line descriptions, the dialog's counts, its button disabled until both fields are filled, the field messages on 403, and the move to Imports with its message; the review page and the Imports page polling after a cut request.
+Tests: the warning on a gross one cent lower and none on an equal gross, through the API, an import and a seed entry; the cap at exactly 25,000 and refused at 25,001, updates and revisions not counted, no batch written, and refused again at approve with a 409 when another batch filled the room meanwhile; each generator option's row shape, its share of the directory and its determinism for a seed, newhires' joining window, promotions skipping L6; the base file against the seed, row by row (slow); the reset endpoint's 403 for a wrong password and for a `confirm` that is not `RESET`, the 429 on the sixth attempt in an hour, the 409 while an upload is being read, the 409 when the truncation meets SQLite's locked error, simulated, the counts returned, every pay table empty and `sqlite_sequence` cleared so the next employee is ACME-1, lookups, rates and the user kept, the user still able to log in, and the one `demo_reset` audit entry; the sample-file list with the generated files unavailable on an empty database; the page's download links and their one-line descriptions, the dialog's counts, its button disabled until both fields are filled, the field messages on 403, and the move to Imports with its message; the review page and the Imports page polling after a cut request.
 
 Commits:
 
@@ -291,8 +291,8 @@ Commits:
 2. `feat(demo): the base file and six sample files generated from the live data`
 3. `feat(demo): a reset endpoint that empties the database`
 4. `feat(demo): the Demo data page`
-5. `fix(import): the pages wait through a cut connection` (with the timing cases)
-6. `feat: demo data (step 10)` (finish-step: `/perf-timing`'s new cases locally and on Fly, the base import with the balance in hand and with it spent, gunicorn's timeout raised to 300 s only if a throttled approve is killed past 120 s, deploy, `reset_demo` on the live machine once the balance has refilled, then the machine left idle before anyone reviews)
+5. `fix(import): the pages wait through a cut connection, and gunicorn waits 600 s` (with the timing cases and the local check that a gthread worker lets a request outlast its timeout)
+6. `feat: demo data (step 10)` (finish-step: `/perf-timing`'s new cases locally and on Fly, the base import with the balance in hand and with it spent, deploy, `reset_demo` on the live machine once the balance has refilled, then the machine left idle before anyone reviews)
 
 Hours: 9.
 

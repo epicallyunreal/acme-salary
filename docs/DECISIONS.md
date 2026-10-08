@@ -642,6 +642,8 @@ Decision: a Demo data page after Imports, behind the login. Its first section of
 
 Consequences: records a base import creates start at joining and carry no 1 April 2020 split, and the insights stay correct because they count records by the days they cover (D70). A real reset flow asks a reviewer for about 30 s of CPU, and a shared CPU's burst balance refills at about 1 s for each 16 s idle (D65), so the base import is timed with the balance spent as well, through `timing`'s own case, and the owner leaves the machine idle before anyone reviews. Fly's proxy closes a connection that carries no data for 60 s, which the step's design answers with pages that keep waiting. Approve stays one transaction, with no chunking.
 
+Approved on 8 October with the owner's changes: gunicorn waits 600 s and the step confirms locally that a gthread worker lets a request outlast its timeout, the pages treat a network error, a 502 or a 504 on upload, approve or reset as still running and poll, saying after ten minutes that the server may still be working or the request was refused and where to look. The cap is re-checked at approve with the batch's non-error create rows, a 409 with the same wording, so two batches in review cannot pass it together. A reset that waits out SQLite's 20 s lock answers 409 `an import is being applied; try again in a moment`. The other defaults stand.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.
