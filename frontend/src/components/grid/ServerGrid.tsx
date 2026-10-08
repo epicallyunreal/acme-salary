@@ -1,5 +1,6 @@
+import SwapVertIcon from '@mui/icons-material/SwapVert';
 import ViewColumnOutlinedIcon from '@mui/icons-material/ViewColumnOutlined';
-import { Tooltip } from '@mui/material';
+import { type SvgIconProps, Tooltip } from '@mui/material';
 import {
   ColumnsPanelTrigger,
   DataGrid,
@@ -59,7 +60,22 @@ interface ServerGridProps<Row extends GridValidRowModel> {
 // jsdom has no layout, so the virtualiser would render no rows under Vitest.
 const inTests = import.meta.env.MODE === 'test';
 
-const SLOTS: DataGridProps['slots'] = { toolbar: GridToolbar, noRowsOverlay: NoRowsOverlay };
+/** The faint up-down icon a sortable column shows at rest, about 3.4:1 on white (D63). */
+function UnsortedIcon({ className, fontSize }: Pick<SvgIconProps, 'className' | 'fontSize'>) {
+  return (
+    <SwapVertIcon
+      className={className}
+      fontSize={fontSize}
+      sx={{ color: 'text.secondary', opacity: 0.7 }}
+    />
+  );
+}
+
+const SLOTS: DataGridProps['slots'] = {
+  toolbar: GridToolbar,
+  noRowsOverlay: NoRowsOverlay,
+  columnUnsortedIcon: UnsortedIcon,
+};
 
 /** The column chooser lists only the columns it can hide, so an action column stays out of it. */
 function togglable(columns: GridColDef[]): string[] {
@@ -118,6 +134,16 @@ export function ServerGrid<Row extends GridValidRowModel>({
         bgcolor: 'background.paper',
         borderColor: 'divider',
         '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 },
+        // MUI hides a column's sort icon until hover. Every sortable column keeps it at rest
+        // instead, faint until sorted, and the sorted one shows its arrow in full ink (D63).
+        '& .MuiDataGrid-columnHeader--sortable .MuiDataGrid-iconButtonContainer': {
+          visibility: 'visible',
+          width: 'auto',
+        },
+        '&& .MuiDataGrid-columnHeader.MuiDataGrid-columnHeader--sortable .MuiDataGrid-sortButton': {
+          opacity: 1,
+        },
+        '& .MuiDataGrid-columnHeader--sorted .MuiDataGrid-sortIcon': { color: 'text.primary' },
       }}
     />
   );

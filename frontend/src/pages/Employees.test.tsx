@@ -38,6 +38,12 @@ function recordRequests({ rows = 4 } = {}) {
   return seen;
 }
 
+/** A column header by its title. A sortable one's name ends with its sort button's label. */
+function columnHeader(title: string) {
+  const escaped = title.replace(/[()]/g, '\\$&');
+  return screen.getByRole('columnheader', { name: new RegExp(`^${escaped}( Sort)?$`) });
+}
+
 async function rowsShown() {
   await screen.findByText('Asha Rao');
   return screen.getAllByRole('row').slice(1); // the first row is the header
@@ -241,7 +247,7 @@ describe('Employees', () => {
     // One request for the whole word, not one per keystroke.
     expect(seen.map((params) => params.get('search'))).toEqual([null, 'rao']);
 
-    await user.click(screen.getByRole('columnheader', { name: 'Gross (USD)' }));
+    await user.click(columnHeader('Gross (USD)'));
     await waitFor(() => expect(seen.at(-1)?.get('ordering')).toBe('gross'));
     expect(seen.at(-1)?.get('search')).toBe('rao');
   });
@@ -258,6 +264,21 @@ describe('Employees', () => {
     await user.click(edit);
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/employees/2'));
+  });
+
+  it('marks each sortable column with an icon at rest and the sorted one with its arrow', async () => {
+    renderApp('/employees?ordering=-gross');
+    await rowsShown();
+    const header = columnHeader;
+
+    expect(within(header('Gross (USD)')).getByTestId('ArrowDownwardIcon')).toBeInTheDocument();
+    for (const name of ['Code', 'Name', 'Department', 'Country', 'Level', 'Joined']) {
+      expect(within(header(name)).getByTestId('SwapVertIcon')).toBeInTheDocument();
+    }
+    for (const name of ['Edit', 'Status']) {
+      expect(within(header(name)).queryByRole('button', { name: 'Sort' })).not.toBeInTheDocument();
+      expect(within(header(name)).queryByTestId('SwapVertIcon')).not.toBeInTheDocument();
+    }
   });
 
   it('opens nothing from a click on the rest of the row', async () => {
