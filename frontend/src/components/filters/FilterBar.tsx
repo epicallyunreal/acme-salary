@@ -15,8 +15,8 @@ import {
 import { type ChangeEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 
 import { useCountries, useDepartments } from '../../api/meta';
-import type { EmployeeStatus, ReportingCurrency } from '../../api/types';
-import { EMPLOYEE_STATUSES, LEVELS } from '../../lib/constants';
+import type { DirectoryStatus, ReportingCurrency } from '../../api/types';
+import { DIRECTORY_STATUSES, LEVELS } from '../../lib/constants';
 import type { DirectoryFilters } from '../grid/serverModel';
 import type { DashboardFilters } from './useDashboardFilters';
 
@@ -187,10 +187,11 @@ export function DepartmentSelect({ value, onChange }: CodeSelectProps) {
   );
 }
 
-const STATUS_LABELS: Record<EmployeeStatus, string> = {
+const STATUS_LABELS: Record<DirectoryStatus, string> = {
   active: 'Active',
   exited: 'Exited',
   upcoming: 'Upcoming',
+  any: 'Any',
 };
 
 /** The directory's filters (SPEC F4). Every control writes straight to the URL state. */
@@ -239,7 +240,7 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         width={110}
       />
       <FormControl sx={{ width: 130 }}>
-        {/* "Any" shows when no status is chosen, so the label stays above it, never over it. */}
+        {/* Active by default, with Any one click away (D64). The label stays above the value. */}
         <InputLabel id="filter-status-label" shrink>
           Status
         </InputLabel>
@@ -250,10 +251,9 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
           label="Status"
           notched
           displayEmpty
-          onChange={(event) => onChange({ status: event.target.value as EmployeeStatus | '' })}
+          onChange={(event) => onChange({ status: event.target.value as DirectoryStatus })}
         >
-          <MenuItem value="">Any</MenuItem>
-          {EMPLOYEE_STATUSES.map((status) => (
+          {DIRECTORY_STATUSES.map((status) => (
             <MenuItem key={status} value={status}>
               {STATUS_LABELS[status]}
             </MenuItem>

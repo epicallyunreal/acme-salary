@@ -3,10 +3,10 @@
 
 import type { GridPaginationModel, GridSortModel } from '@mui/x-data-grid';
 
-import type { EmployeeStatus, ListParams, ReportingCurrency } from '../../api/types';
+import type { DirectoryStatus, ListParams, ReportingCurrency } from '../../api/types';
 import {
   DEFAULT_PAGE_SIZE,
-  EMPLOYEE_STATUSES,
+  DIRECTORY_STATUSES,
   LEVELS,
   PAGE_SIZES,
   REPORTING_CURRENCIES,
@@ -18,7 +18,7 @@ export interface DirectoryFilters {
   department: string[];
   designation: string[];
   level: number[];
-  status: EmployeeStatus | '';
+  status: DirectoryStatus;
   gross_min: string;
   gross_max: string;
   joined_after: string;
@@ -53,7 +53,8 @@ export const DEFAULT_STATE: GridState = {
   department: [],
   designation: [],
   level: [],
-  status: '',
+  // The employees on staff: the URL leaves Active out, and the API applies it unasked (D64).
+  status: 'active',
   gross_min: '',
   gross_max: '',
   joined_after: '',
@@ -127,7 +128,7 @@ export function fromSearchParams(params: URLSearchParams): GridState {
       .filter((level): level is (typeof LEVELS)[number] =>
         (LEVELS as readonly number[]).includes(level),
       ),
-    status: oneOf(params.get('status'), EMPLOYEE_STATUSES, '' as const),
+    status: oneOf(params.get('status'), DIRECTORY_STATUSES, DEFAULT_STATE.status),
     gross_min: matching(params.get('gross_min'), AMOUNT),
     gross_max: matching(params.get('gross_max'), AMOUNT),
     joined_after: matching(params.get('joined_after'), ISO_DATE),
@@ -203,7 +204,7 @@ export function toListParams({
     department: filters.department.length ? filters.department : undefined,
     designation: filters.designation.length ? filters.designation : undefined,
     level: filters.level.length ? filters.level : undefined,
-    status: filters.status || undefined,
+    status: filters.status === DEFAULT_STATE.status ? undefined : filters.status,
     gross_min: filters.gross_min || undefined,
     gross_max: filters.gross_max || undefined,
     joined_after: filters.joined_after || undefined,
@@ -212,11 +213,12 @@ export function toListParams({
   };
 }
 
-/** True when any filter or the search is set, so the empty state can say "clear a filter". */
+/** True when any filter or the search differs from its default, so the empty state can say
+ * "clear a filter" and Clear filters shows. The currency is not a filter here. */
 export function isFiltered(state: DirectoryFilters): boolean {
   return FILTER_KEYS.some((key) => {
     if (key === 'currency') return false;
     const value = state[key];
-    return Array.isArray(value) ? value.length > 0 : value !== '';
+    return Array.isArray(value) ? value.length > 0 : value !== DEFAULT_STATE[key];
   });
 }

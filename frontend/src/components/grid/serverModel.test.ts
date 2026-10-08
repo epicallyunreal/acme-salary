@@ -127,7 +127,7 @@ describe('URL round trip', () => {
 
     expect(state.page).toBe(1);
     expect(state.page_size).toBe(25);
-    expect(state.status).toBe('');
+    expect(state.status).toBe('active');
     expect(state.currency).toBe('usd');
     expect(state.level).toEqual([1]);
     expect(state.ordering).toBe('employee_code');
@@ -194,5 +194,25 @@ describe('isFiltered', () => {
     expect(isFiltered(paged)).toBe(false);
     expect(isFiltered({ ...DEFAULT_STATE, search: 'x' })).toBe(true);
     expect(isFiltered({ ...DEFAULT_STATE, level: [2] })).toBe(true);
+    expect(isFiltered({ ...DEFAULT_STATE, status: 'any' })).toBe(true);
+  });
+});
+
+describe('the Status default (D64)', () => {
+  it('is Active, left out of the URL and the request, with Any sent as any', () => {
+    const state = fromSearchParams(new URLSearchParams());
+    const status = (value: GridState['status']) =>
+      toListParams({
+        paginationModel: toPaginationModel(1, 25),
+        sortModel: [],
+        filters: { ...state, status: value },
+        search: '',
+      }).status;
+
+    expect(state.status).toBe('active');
+    expect(toSearchParams(state).toString()).toBe('');
+    expect(status('active')).toBeUndefined();
+    expect(status('any')).toBe('any');
+    expect(fromSearchParams(new URLSearchParams('status=any')).status).toBe('any');
   });
 });

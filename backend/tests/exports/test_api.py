@@ -92,7 +92,8 @@ def json_body(response) -> dict:
 
 @pytest.mark.parametrize("file", ["csv", "xlsx", "json"])
 def test_a_filtered_export_has_exactly_the_rows_the_pages_show(api, people, file):
-    """SPEC F6: the whole filtered set in the grid's order, whatever page was asked for."""
+    """SPEC F6: the whole filtered set in the grid's order, whatever page was asked for, on
+    Active as the grid opens, so X1 and X2, who left, are in neither (D64)."""
     query = {"country": "IN,US", "level": "1,2,3", "ordering": "-gross"}
     codes = []
     for page in (1, 2, 3):
@@ -107,7 +108,7 @@ def test_a_filtered_export_has_exactly_the_rows_the_pages_show(api, people, file
         exported = [row[0] for row in xlsx_rows(response)[1:]]
     else:
         exported = [row["employee_code"] for row in json_body(response)["rows"]]
-    assert (body["count"], len(codes)) == (14, 14)
+    assert (body["count"], len(codes)) == (12, 12)
     assert exported == codes
 
 
@@ -162,7 +163,13 @@ def test_the_json_names_each_value_and_the_filters_it_applied(api, asha):
 
     assert body == {
         "generated_at": "2026-10-07T09:00:00+00:00",
-        "filters": {"search": "asha", "country": "IN", "on": "2026-10-07", "currency": "USD"},
+        "filters": {
+            "search": "asha",
+            "country": "IN",
+            "on": "2026-10-07",
+            "currency": "USD",
+            "status": "active",
+        },
         "rows": [
             {
                 "employee_code": asha.employee_code,
@@ -218,7 +225,13 @@ def test_the_directory_export_shows_each_record_as_on_its_reporting_date(api, pe
     query = {"file": "json", "country": "US", "level": "1", "on": "2027-01-01"}
     body = json_body(api.get(EMPLOYEES, query))
 
-    assert body["filters"] == {"country": "US", "level": "1", "on": "2027-01-01", "currency": "USD"}
+    assert body["filters"] == {
+        "country": "US",
+        "level": "1",
+        "on": "2027-01-01",
+        "currency": "USD",
+        "status": "active",
+    }
     assert [
         (row["full_name"], row["gross_local"], row["effective_from"], row["version"])
         for row in body["rows"]
@@ -250,15 +263,27 @@ def test_a_row_that_fails_fails_before_the_csv_starts(api, people, monkeypatch):
         api.get(EMPLOYEES, {"file": "csv"})
 
 
+def test_the_default_directory_export_holds_the_active_employees_and_any_holds_everyone(
+    api, people
+):
+    """F6's measured criterion reads the default export (D64): 27 active here, 30 with `any`."""
+    active = csv_rows(api.get(EMPLOYEES, {"file": "csv"}))[1:]
+    everyone = csv_rows(api.get(EMPLOYEES, {"file": "csv", "status": "any"}))[1:]
+
+    assert (len(active), len(everyone)) == (27, 30)
+    assert {row[12] for row in active} == {"active"}
+
+
 def test_the_directory_export_reads_in_a_fixed_number_of_queries(
     api, people, django_assert_num_queries
 ):
     """The user, the rates, the currencies of the live records, the employees and their records:
-    one prefetch a chunk of 1,000."""
+    one prefetch a chunk of 1,000. The 27 active employees and the header: X1 and X2 have left
+    and D5 joins in December (D64)."""
     with django_assert_num_queries(5):
         rows = csv_rows(api.get(EMPLOYEES, {"file": "csv"}))
 
-    assert len(rows) == 31
+    assert len(rows) == 28
 
 
 @pytest.mark.parametrize(

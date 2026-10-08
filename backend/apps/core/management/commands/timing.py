@@ -35,6 +35,8 @@ DIRECTORY_CASES = {
     # Every term is matched against the name, the email, legacy_code and ACME-<id> (D48).
     "search by name": "search=rao",
     "search by code": "search=ACME-17",
+    # The directory opens on Active (D64); everyone is one choice away.
+    "everyone": "status=any",
 }
 
 # Each insight is timed unfiltered and with one country (the /perf-timing skill names them).
@@ -213,9 +215,18 @@ class Command(BaseCommand):
         return f"{worst[0]:.0f} / {worst[1]:.0f}"
 
     def time_export(self) -> None:
-        """The unfiltered directory in each format: rows, size, wall time and how far it raised
-        the process's peak memory. SPEC F6 asks for every row, so a short file is an error."""
+        """The default directory export, on Active, in each format: rows, size, wall time and
+        how far it raised the process's peak memory. SPEC F6 asks for every active employee,
+        10,000 on the seed, so a short file is an error (D64)."""
+        from django.db.models import Q
+
+        from apps.core.dates import today_utc
         from apps.employees.models import Employee
+
+        today = today_utc()
+        active = Employee.objects.filter(
+            Q(last_date__isnull=True) | Q(last_date__gte=today), joining_date__lte=today
+        ).count()
 
         client = api_client()
         for file in EXPORT_FILES:
@@ -228,8 +239,10 @@ class Command(BaseCommand):
             if response.status_code != 200:
                 raise CommandError(f"the {file} export answered {response.status_code}")
             rows = exported_rows(file, body)
-            if rows != Employee.objects.count():
-                raise CommandError(f"the {file} export holds {rows:,} rows, not every employee")
+            if rows != active:
+                raise CommandError(
+                    f"the {file} export holds {rows:,} rows, not the {active:,} active employees"
+                )
             self.stdout.write(
                 f"export, employees as {file}: {rows:,} rows, "
                 f"{len(body) / 2**20:.1f} MB in {elapsed:.1f} s, "

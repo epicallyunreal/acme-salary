@@ -90,6 +90,8 @@ class ExportEmployeesView(DirectoryMixin, GenericAPIView):
         employees = self.filter_queryset(self.get_queryset())
         table = tables.directory_table(employees, on=on, rates=rates, currency=currency)
         filters = applied(request.query_params, DIRECTORY_FILTERS, on, currency)
+        # The status the rows are in, Active when none was given (D64).
+        filters["status"] = request.query_params.get("status") or "active"
         return respond(table, file, "employees", filters)
 
 

@@ -18,6 +18,9 @@ from tests.factories import EmployeeFactory, country, department
 pytestmark = pytest.mark.django_db
 
 LIST = "/api/v1/employees/"
+# The directory holds its active employees unless `status` says otherwise (D64), and these tests
+# read everyone.
+EVERYONE = {"status": "any"}
 
 
 def record_input(effective_from=None, bonus="0", **lines) -> RecordInput:
@@ -85,7 +88,7 @@ def names(response) -> list[str]:
 
 
 def test_list_shape_and_default_order(api, cast):
-    response = api.get(LIST)
+    response = api.get(LIST, EVERYONE)
 
     body = response.json()
     assert response.status_code == 200
@@ -122,7 +125,7 @@ def test_list_shape_and_default_order(api, cast):
 
 
 def test_shown_record_for_an_exited_and_a_future_joiner(api, cast):
-    rows = {row["full_name"]: row for row in api.get(LIST).json()["results"]}
+    rows = {row["full_name"]: row for row in api.get(LIST, EVERYONE).json()["results"]}
 
     dev, esha, farah = rows["Dev Mehta"], rows["Esha Nair"], rows["Farah Khan"]
     assert dev["status"] == "exited"
@@ -139,13 +142,24 @@ def test_shown_record_for_an_exited_and_a_future_joiner(api, cast):
 
 
 def test_the_reporting_date_moves_the_shown_record_and_the_status(api, cast):
-    rows = {row["full_name"]: row for row in api.get(LIST, {"on": "2026-11-15"}).json()["results"]}
+    rows = {
+        row["full_name"]: row
+        for row in api.get(LIST, {**EVERYONE, "on": "2026-11-15"}).json()["results"]
+    }
 
     assert rows["Farah Khan"]["shown"]["version"] == 2
     assert rows["Farah Khan"]["shown"]["gross_reporting"] == "13200.00"
     assert rows["Esha Nair"]["status"] == "upcoming"
-    later = api.get(LIST, {"on": "2027-02-01", "status": "active"})
+    later = api.get(LIST, {**EVERYONE, "on": "2027-02-01", "status": "active"})
     assert names(later) == ["Asha Rao", "Ben Carter", "Chloe Davies", "Esha Nair", "Farah Khan"]
+
+
+def test_without_status_the_directory_holds_the_active_employees(api, cast):
+    """D64: Active by default, as the grid opens, and `any` for everyone. Dev left in June and
+    Esha joins in January."""
+    assert names(api.get(LIST)) == ["Asha Rao", "Ben Carter", "Chloe Davies", "Farah Khan"]
+    assert len(names(api.get(LIST, EVERYONE))) == 6
+    assert names(api.get(LIST, {"status": "exited"})) == ["Dev Mehta"]
 
 
 def test_without_ordering_the_directory_is_in_code_order(api, rates):
@@ -154,13 +168,15 @@ def test_without_ordering_the_directory_is_in_code_order(api, rates):
     for name in ("Zara Ali", "Adam Brook", "Mia Chen"):
         person(name)
 
-    assert names(api.get(LIST)) == ["Zara Ali", "Adam Brook", "Mia Chen"]
-    assert names(api.get(LIST, {"ordering": "employee_code"})) == names(api.get(LIST))
+    assert names(api.get(LIST, EVERYONE)) == ["Zara Ali", "Adam Brook", "Mia Chen"]
+    assert names(api.get(LIST, {**EVERYONE, "ordering": "employee_code"})) == names(
+        api.get(LIST, EVERYONE)
+    )
 
 
 def test_ordering_by_reporting_gross_crosses_currencies(api, cast):
-    ascending = names(api.get(LIST, {"ordering": "gross"}))
-    descending = names(api.get(LIST, {"ordering": "-gross"}))
+    ascending = names(api.get(LIST, {**EVERYONE, "ordering": "gross"}))
+    descending = names(api.get(LIST, {**EVERYONE, "ordering": "-gross"}))
 
     assert ascending == [
         "Dev Mehta",
@@ -211,7 +227,7 @@ def test_ordering_by_reporting_gross_crosses_currencies(api, cast):
     ],
 )
 def test_ordering_aliases(api, cast, ordering, expected):
-    assert names(api.get(LIST, {"ordering": ordering})) == expected
+    assert names(api.get(LIST, {**EVERYONE, "ordering": ordering})) == expected
 
 
 @pytest.mark.parametrize(
@@ -240,24 +256,26 @@ def test_ordering_aliases(api, cast, ordering, expected):
     ],
 )
 def test_each_filter(api, cast, params, expected):
-    assert names(api.get(LIST, params)) == expected
+    assert names(api.get(LIST, {**EVERYONE, **params})) == expected
 
 
 def test_search_reads_an_acme_code_as_a_number_and_a_legacy_code_in_any_case(api, cast):
     dev = cast["dev"]
 
     for term in (f"ACME-{dev.pk}", f"acme-{dev.pk:04d}", "hr-58213", "HR-58213"):
-        assert names(api.get(LIST, {"search": term})) == ["Dev Mehta"], term
-    assert names(api.get(LIST, {"search": "HR-5821"})) == []
-    assert names(api.get(LIST, {"search": f"ACME-{dev.pk} dev@"})) == ["Dev Mehta"]
+        assert names(api.get(LIST, {**EVERYONE, "search": term})) == ["Dev Mehta"], term
+    assert names(api.get(LIST, {**EVERYONE, "search": "HR-5821"})) == []
+    assert names(api.get(LIST, {**EVERYONE, "search": f"ACME-{dev.pk} dev@"})) == ["Dev Mehta"]
 
 
 def test_filters_combine_with_and_and_survive_paging_and_sorting(api, cast):
     """SPEC F4 acceptance: filters combine with AND and survive page changes and sorting."""
     base = {"country": "IN", "department": "engineering", "level": "3"}
 
-    assert names(api.get(LIST, base)) == ["Asha Rao", "Farah Khan"]
-    page_two = api.get(LIST, {**base, "ordering": "-gross", "page_size": "1", "page": "2"})
+    assert names(api.get(LIST, {**EVERYONE, **base})) == ["Asha Rao", "Farah Khan"]
+    page_two = api.get(
+        LIST, {**EVERYONE, **base, "ordering": "-gross", "page_size": "1", "page": "2"}
+    )
     assert page_two.json()["count"] == 2
     assert names(page_two) == ["Farah Khan"]
     previous = page_two.json()["previous"]
@@ -267,8 +285,8 @@ def test_filters_combine_with_and_and_survive_paging_and_sorting(api, cast):
 
 
 def test_page_size_defaults_to_25_and_is_a_parameter(api, cast):
-    default = api.get(LIST).json()
-    small = api.get(LIST, {"page_size": "5"}).json()
+    default = api.get(LIST, EVERYONE).json()
+    small = api.get(LIST, {**EVERYONE, "page_size": "5"}).json()
 
     assert default["next"] is None and len(default["results"]) == 6
     assert len(small["results"]) == 5
@@ -276,7 +294,7 @@ def test_page_size_defaults_to_25_and_is_a_parameter(api, cast):
 
 
 def test_currency_eur(api, cast):
-    rows = api.get(LIST, {"currency": "eur", "ordering": "gross"}).json()["results"]
+    rows = api.get(LIST, {**EVERYONE, "currency": "eur", "ordering": "gross"}).json()["results"]
 
     assert [row["full_name"] for row in rows] == [
         "Dev Mehta",
@@ -292,7 +310,7 @@ def test_currency_eur(api, cast):
 
 
 def test_currency_local_with_one_country(api, cast):
-    response = api.get(LIST, {"currency": "local", "country": "IN"})
+    response = api.get(LIST, {**EVERYONE, "currency": "local", "country": "IN"})
 
     rows = response.json()["results"]
     assert [row["full_name"] for row in rows] == [
@@ -324,7 +342,7 @@ def test_currency_local_with_one_country(api, cast):
     ],
 )
 def test_bad_reporting_parameters_are_400(api, cast, params, field, message):
-    response = api.get(LIST, params)
+    response = api.get(LIST, {**EVERYONE, **params})
 
     assert response.status_code == 400
     assert response.json() == {field: [message]}
@@ -346,7 +364,7 @@ CHOICE = "Select a valid choice. {} is not one of the available choices."
     ],
 )
 def test_bad_filter_values_are_400_per_field(api, cast, params, message):
-    response = api.get(LIST, params)
+    response = api.get(LIST, {**EVERYONE, **params})
 
     assert response.status_code == 400
     assert response.json() == {next(iter(params)): [message]}
@@ -354,7 +372,7 @@ def test_bad_filter_values_are_400_per_field(api, cast, params, message):
 
 def test_twenty_titles_are_one_filter(api, cast):
     """D61: each title is one more OR, and past a thousand SQLite answers with a 500."""
-    response = api.get(LIST, {"designation": ",".join(["Engineer"] * 20)})
+    response = api.get(LIST, {**EVERYONE, "designation": ",".join(["Engineer"] * 20)})
 
     assert response.status_code == 200
 
@@ -367,18 +385,19 @@ def test_gross_range_includes_a_figure_that_rounds_onto_the_bound(api, rates):
     compensation.add_first_record(meera, record_input(BASE="1234568.00"))  # USD 14,814.816
 
     rows = {
-        row["full_name"]: row["shown"]["gross_reporting"] for row in api.get(LIST).json()["results"]
+        row["full_name"]: row["shown"]["gross_reporting"]
+        for row in api.get(LIST, EVERYONE).json()["results"]
     }
 
     assert rows == {"Lata Iyer": "14814.81", "Meera Pillai": "14814.82"}
-    assert names(api.get(LIST, {"gross_max": "14814.81"})) == ["Lata Iyer"]
-    assert names(api.get(LIST, {"gross_min": "14814.82"})) == ["Meera Pillai"]
+    assert names(api.get(LIST, {**EVERYONE, "gross_max": "14814.81"})) == ["Lata Iyer"]
+    assert names(api.get(LIST, {**EVERYONE, "gross_min": "14814.82"})) == ["Meera Pillai"]
 
 
 def test_an_employee_without_records_has_no_shown_block(api, lookups):
     EmployeeFactory(full_name="Gina Lopez")
 
-    row = api.get(LIST).json()["results"][0]
+    row = api.get(LIST, EVERYONE).json()["results"][0]
     assert row["shown"] is None
     assert row["status"] == "active"
 
@@ -386,11 +405,14 @@ def test_an_employee_without_records_has_no_shown_block(api, lookups):
 def test_list_query_count(api, cast, django_assert_num_queries):
     """User from the JWT, rates, count, page, prefetch of the page's live records."""
     with django_assert_num_queries(5):
-        api.get(LIST)
+        api.get(LIST, EVERYONE)
     with django_assert_num_queries(5):
-        api.get(LIST, {"country": "IN", "ordering": "-gross", "search": "a", "page_size": "2"})
+        api.get(
+            LIST,
+            {**EVERYONE, "country": "IN", "ordering": "-gross", "search": "a", "page_size": "2"},
+        )
     with django_assert_num_queries(6):
-        api.get(LIST, {"currency": "local", "country": "IN"})
+        api.get(LIST, {**EVERYONE, "currency": "local", "country": "IN"})
 
 
 def test_detail_shape(api, cast):
@@ -558,7 +580,7 @@ def test_create_never_takes_either_code(api, cast, extra, errors):
     response = api.post(LIST, new_employee(**extra), format="json")
 
     assert (response.status_code, response.json()) == (400, errors)
-    assert api.get(LIST).json()["count"] == 6
+    assert api.get(LIST, EVERYONE).json()["count"] == 6
 
 
 def test_create_reports_shape_and_rule_errors_per_field(api, cast):
@@ -835,7 +857,7 @@ def test_an_exit_before_pay_starts_leaves_an_employee_who_still_shows(api, cast,
         "exited",
         None,
     )
-    rows = api.get(LIST, {"search": "Gita"}).json()["results"]
+    rows = api.get(LIST, {**EVERYONE, "search": "Gita"}).json()["results"]
     assert [(row["full_name"], row["status"], row["shown"]) for row in rows] == [
         ("Gita Rao", "exited", None)
     ]

@@ -8,7 +8,8 @@ from apps.core.filters import BoundedSearchFilter, CharInFilter, ChoiceInFilter
 from apps.employees.models import Employee
 from apps.employees.queries import STATUSES, gross_bound, parse_employee_code
 
-STATUS_CHOICES = [(status, status) for status in STATUSES]
+# `any` returns everyone, since without `status` the directory holds its active employees (D64).
+STATUS_CHOICES = [(status, status) for status in (*STATUSES, "any")]
 # Each title is one more OR, and SQLite refuses an expression deeper than 1,000 with a 500 (D61).
 MAX_DESIGNATIONS = 20
 
@@ -28,7 +29,7 @@ class DirectoryFilterSet(FilterSet):
     department = CharInFilter(field_name="department__code")
     designation = CharInFilter(method="filter_designation")
     level = ChoiceInFilter(field_name="level", choices=[(str(n), str(n)) for n in range(1, 7)])
-    status = ChoiceFilter(field_name="status", choices=STATUS_CHOICES)
+    status = ChoiceFilter(method="filter_status", choices=STATUS_CHOICES)
     gross_min = NumberFilter(method="filter_gross_min")
     gross_max = NumberFilter(method="filter_gross_max")
     joined_after = DateFilter(field_name="joining_date", lookup_expr="gte")
@@ -50,6 +51,17 @@ class DirectoryFilterSet(FilterSet):
     class Meta:
         model = Employee
         fields: list[str] = []
+
+    def __init__(self, data=None, *args, **kwargs):
+        """Active when `status` is not given, so the directory and its export open on the
+        employees on staff, as the grid does (D64)."""
+        if data is not None and not data.get("status"):
+            data = data.copy()
+            data["status"] = "active"
+        super().__init__(data, *args, **kwargs)
+
+    def filter_status(self, queryset, name, value):
+        return queryset if value == "any" else queryset.filter(status=value)
 
     def filter_designation(self, queryset, name, values):
         """Each title exactly, in any case: `product manager` finds `Product Manager`."""

@@ -10,6 +10,8 @@ export const DEFAULT_PAGE_SIZE = 25;
 
 export const REPORTING_CURRENCIES = ['usd', 'eur', 'local'] as const;
 export const EMPLOYEE_STATUSES = ['active', 'exited', 'upcoming'] as const;
+/** The directory's Status filter: Active by default, and Any for everyone (D64). */
+export const DIRECTORY_STATUSES = [...EMPLOYEE_STATUSES, 'any'] as const;
 export const LEVELS = [1, 2, 3, 4, 5, 6] as const;
 
 /** The genders the API accepts, in the order the forms offer them (SPEC section 5). */

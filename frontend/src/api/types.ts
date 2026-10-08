@@ -31,6 +31,8 @@ export interface Department {
 }
 
 export type EmployeeStatus = 'active' | 'exited' | 'upcoming';
+/** The directory's Status filter: one status, or `any` for everyone (D64). */
+export type DirectoryStatus = EmployeeStatus | 'any';
 export type ReportingCurrency = 'usd' | 'eur' | 'local';
 
 /** The record the directory shows: current on the reporting date, else the latest with a label. */
@@ -75,7 +77,7 @@ export type ListParams = {
   department?: string[];
   designation?: string[];
   level?: number[];
-  status?: EmployeeStatus;
+  status?: DirectoryStatus;
   gross_min?: string;
   gross_max?: string;
   joined_after?: string;

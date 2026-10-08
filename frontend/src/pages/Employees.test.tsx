@@ -110,16 +110,30 @@ describe('Employees', () => {
     expect(within(ben).queryByText(/USD/)).not.toBeInTheDocument();
   });
 
-  it('keeps the Status label above Any instead of over it', async () => {
-    renderApp('/employees');
-
-    await screen.findAllByText('Asha Rao');
+  it('opens on Active, with Any one click away and Clear filters back to Active', async () => {
+    const seen = recordRequests();
+    const { router } = renderApp('/employees');
+    const user = userEvent.setup();
+    await rowsShown();
     const status = screen.getByRole('combobox', { name: 'Status' });
-    expect(status).toHaveTextContent('Any');
+
+    expect(status).toHaveTextContent('Active');
     expect(screen.getByText('Status', { selector: 'label' })).toHaveAttribute(
       'data-shrink',
       'true',
     );
+    expect(seen[0].has('status')).toBe(false);
+
+    await user.click(status);
+    await user.click(await screen.findByRole('option', { name: 'Any' }));
+
+    await waitFor(() => expect(seen.at(-1)?.get('status')).toBe('any'));
+    expect(router.state.location.search).toBe('?status=any');
+
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Active');
   });
 
   it('keeps a deep link on its page and pages forward with the filters kept', async () => {
