@@ -386,16 +386,17 @@ class Command(BaseCommand):
             )
 
     def time_import(self, seed: int, sheet: str) -> str:
-        """Stage and approve the two 15,000-row sheets (D64): `make_import_file --all --raises
-        1000`, the whole organisation with a thousand raises, whose times are the row's, and
-        `--new 15000`, the heaviest approve. `--sheet crafted` stages the crafted sheet alone
-        (D68). Each runs inside a transaction that is rolled back, so the database is left as it
-        was."""
+        """Stage and approve the import sheets (D64): `make_import_file --all --raises 1000`,
+        the whole organisation with a thousand raises, 15,000 rows whose times are the row's,
+        and `--new 10000`, the heaviest create-import the cap of 25,000 leaves room for on the
+        seed (D72, D73); the 15,000 creates of the base file have the base-import case. `--sheet
+        crafted` stages the crafted sheet alone (D68). Each runs inside a transaction that is
+        rolled back, so the database is left as it was."""
         everyone = ""
         if sheet in ("both", "all"):
             everyone = self.time_sheet("--all --raises 1000", {"all": True, "raises": 1000}, seed)
         if sheet in ("both", "new"):
-            self.time_sheet("--new 15000", {"new": 15000}, seed)
+            self.time_sheet("--new 10000", {"new": 10000}, seed)
         if sheet == "crafted":
             self.time_crafted()
         return everyone

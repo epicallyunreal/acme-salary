@@ -10,6 +10,15 @@ import { redirectToLoginOnSecond401 } from '../lib/session';
 import { theme } from '../lib/theme';
 import { SessionGate } from '../components/layout/SessionGate';
 import { routes } from '../router';
+// The routes load each page on first use (D73). Imported here, every page sits in the module
+// cache, so a test never waits on a chunk, however loaded the machine running the suite is.
+import '../pages/Dashboard';
+import '../pages/DemoData';
+import '../pages/EmployeeDetail';
+import '../pages/Employees';
+import '../pages/ImportReview';
+import '../pages/Imports';
+import '../pages/NewEmployee';
 
 /** Retries off so a failing request fails the test at once. */
 export function createTestQueryClient() {
