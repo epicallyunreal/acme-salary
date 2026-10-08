@@ -76,7 +76,7 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
       >
         <UploadFileOutlinedIcon color="action" />
         <Typography id="upload-title">
-          Drop a .xlsx or .csv here, or choose a file. Up to 10,000 rows.
+          Drop a .xlsx or .csv here, or choose a file. Up to 15,000 rows and 10 MB.
         </Typography>
         <Button
           variant="outlined"

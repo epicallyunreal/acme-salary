@@ -462,18 +462,19 @@ def test_an_unreadable_or_headerless_file_is_refused(upload, name, message):
     assert excinfo.value.errors == {"file": [message]}
 
 
-def test_more_than_ten_thousand_data_rows_are_refused_with_the_true_count():
-    """Counting goes on past the limit, so the message gives the real size (SPEC section 8)."""
-    rows = [asha(legacy_code=f"HR-{n}") for n in range(10_450)]
+def test_more_than_fifteen_thousand_data_rows_are_refused_with_the_true_count():
+    """Counting goes on past the limit, so the message gives the real size (SPEC section 8).
+    15,000 holds the whole seeded organisation (D64)."""
+    rows = [asha(legacy_code=f"HR-{n}") for n in range(15_450)]
 
     with pytest.raises(Invalid) as excinfo:
         read(csv_file(HEADER, *rows), "big.csv", "text/csv")
 
-    assert excinfo.value.errors == {"rows": ["file has 10,450 data rows, limit 10,000"]}
+    assert excinfo.value.errors == {"rows": ["file has 15,450 data rows, limit 15,000"]}
     with pytest.raises(Invalid) as just_over:
-        read(csv_file(HEADER, *rows[:10_001]), "over.csv", "text/csv")
-    assert just_over.value.errors == {"rows": ["file has 10,001 data rows, limit 10,000"]}
-    assert read(csv_file(HEADER, *rows[:10_000]), "ok.csv", "text/csv").row_count == 10_000
+        read(csv_file(HEADER, *rows[:15_001]), "over.csv", "text/csv")
+    assert just_over.value.errors == {"rows": ["file has 15,001 data rows, limit 15,000"]}
+    assert read(csv_file(HEADER, *rows[:15_000]), "ok.csv", "text/csv").row_count == 15_000
 
 
 def test_data_under_no_header_is_named_by_its_column_letter():

@@ -119,6 +119,16 @@ describe('Imports', () => {
     expect(summary).toHaveFocus();
   });
 
+  it('says what the upload box takes', async () => {
+    renderApp('/imports');
+
+    expect(
+      await screen.findByText(
+        'Drop a .xlsx or .csv here, or choose a file. Up to 15,000 rows and 10 MB.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('refuses a file over 10 MB without sending it', async () => {
     let posted = false;
     server.use(

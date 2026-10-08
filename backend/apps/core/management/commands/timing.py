@@ -166,6 +166,8 @@ class Command(BaseCommand):
         parser.add_argument("--exited", type=int, default=5000)
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--repeats", type=int, default=20)
+        # Each import sheet can run alone, so its peak memory is its own (D64).
+        parser.add_argument("--sheet", choices=("both", "all", "new"), default="both")
 
     def require_seed(self, active: int, exited: int) -> None:
         from apps.employees.models import Employee
@@ -234,10 +236,21 @@ class Command(BaseCommand):
                 f"peak memory up {(peak_after - peak_before) / 2**20:.0f} MB"
             )
 
-    def time_import(self, seed: int) -> str:
-        """Stage `make_import_file --all --raises 1000` through the API, then approve it, inside
-        a transaction that is rolled back, so the database is left as it was. Prints both times
-        and how far staging raised the process's peak memory."""
+    def time_import(self, seed: int, sheet: str) -> str:
+        """Stage and approve the two 15,000-row sheets (D64): `make_import_file --all --raises
+        1000`, the whole organisation with a thousand raises, whose times are the row's, and
+        `--new 15000`, the heaviest approve. Each runs inside a transaction that is rolled back,
+        so the database is left as it was."""
+        everyone = ""
+        if sheet in ("both", "all"):
+            everyone = self.time_sheet("--all --raises 1000", {"all": True, "raises": 1000}, seed)
+        if sheet in ("both", "new"):
+            self.time_sheet("--new 15000", {"new": 15000}, seed)
+        return everyone
+
+    def time_sheet(self, name: str, options: dict, seed: int) -> str:
+        """Stage one sheet through the API and approve it, rolled back. Prints both times, how
+        far staging raised the process's peak memory and the peak itself."""
         from django.core.management import call_command
         from django.db import transaction
 
@@ -245,12 +258,7 @@ class Command(BaseCommand):
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / "import.xlsx"
             call_command(
-                "make_import_file",
-                out=str(path),
-                all=True,
-                raises=1000,
-                seed=seed,
-                stdout=io.StringIO(),
+                "make_import_file", out=str(path), seed=seed, stdout=io.StringIO(), **options
             )
             peak_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
             with transaction.atomic(), path.open("rb") as handle:
@@ -269,14 +277,16 @@ class Command(BaseCommand):
         if approved.status_code != 200:
             raise CommandError(f"approve answered {approved.status_code}: {approved.content[:300]}")
         body, applied = response.json(), approved.json()
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
         self.stdout.write(
-            f"import, staging {body['total_rows']} rows ({body['valid_rows']} valid, "
+            f"import {name}, staging {body['total_rows']} rows ({body['valid_rows']} valid, "
             f"{body['warning_rows']} warning, {body['error_rows']} error, {body['noop_rows']} "
             f"no-op): {staging:.1f} s, peak memory up {(peak_after - peak_before) / 2**20:.0f} MB"
         )
         self.stdout.write(
-            f"import, approve of {applied['applied_rows']} rows ({applied['revised_rows']} "
-            f"revised, {applied['created_rows']} created): {approving:.1f} s, rolled back"
+            f"import {name}, approve of {applied['applied_rows']} rows ({applied['revised_rows']} "
+            f"revised, {applied['created_rows']} created): {approving:.1f} s, rolled back, "
+            f"process peak {peak / 2**20:.0f} MB"
         )
         return f"{staging:.1f} / {approving:.1f}"
 
@@ -294,7 +304,7 @@ class Command(BaseCommand):
 
         if "import" in wanted:
             self.require_seed(options["active"], options["exited"])
-            results["import"] = self.time_import(options["seed"])
+            results["import"] = self.time_import(options["seed"], options["sheet"])
 
         if "export" in wanted:
             self.require_seed(options["active"], options["exited"])

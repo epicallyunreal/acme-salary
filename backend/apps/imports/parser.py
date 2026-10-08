@@ -32,14 +32,15 @@ from apps.compensation.validators import IDENTITY_COLUMNS, Message, NormalizedRo
 from apps.core.exceptions import Invalid
 
 DATE_COLUMNS = ("joining_date", "last_date", "effective_from")
-ROW_LIMIT = 10_000
-# What a sheet may cost before openpyxl reads it (D56). A full 10,000-row template unpacks to
-# about 15 MB and is 22 columns wide.
+# The whole seeded organisation, 10,000 on staff and 5,000 who left, in one file (D64).
+ROW_LIMIT = 15_000
+# What a sheet may cost before openpyxl reads it (D56). A full 15,000-row template unpacks to
+# about 10 MB and is 22 columns wide.
 MAX_UNPACKED_BYTES = 50 * 1024 * 1024
 MAX_ROW_CELLS = 200
 EXCEL_MAX_ROW = 1_048_576
-# openpyxl builds some parts as a whole tree, at about 100 bytes an element; a full 10,000-row
-# template has under 400,000 of them.
+# openpyxl builds some parts as a whole tree, at about 100 bytes an element; a full 15,000-row
+# template has about 560,000 of them.
 MAX_ELEMENTS = 2_000_000
 # Cell contents and shared strings openpyxl streams. Anything else, style formats, merged ranges
 # and defined names among them, it builds into objects at 560 to 680 bytes each; a full template
