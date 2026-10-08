@@ -18,7 +18,14 @@ from apps.compensation.validators import NormalizedRow, ValidationContext
 from apps.core.dates import today_utc
 from apps.core.exceptions import ApplyFailed, Conflict
 from apps.imports.models import ImportBatch, ImportRow
-from apps.imports.services import CHUNK_SIZE, classify, recount, require_review, row_from_json
+from apps.imports.services import (
+    CHUNK_SIZE,
+    classify,
+    organisation_cap_breach,
+    recount,
+    require_review,
+    row_from_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +151,11 @@ def approve(
             ]
             applied = [staged for staged, _ in applying]
             rows = [row for _, row in applying]
+            # The cap again, with what the database holds now, so two batches staged under it
+            # cannot pass it together (D72).
+            creates = sum(staged.action == ImportRow.Action.CREATE for staged in applied)
+            if (message := organisation_cap_breach(creates)) is not None:
+                raise Conflict(message)
             result = compensation.bulk_apply(
                 build_entries(applied, rows, ctx),
                 actor=actor,

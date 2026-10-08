@@ -167,6 +167,10 @@ class ValidationContext:
     open_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     current_by_employee: dict[int, CompensationRecord] = field(default_factory=dict)
     scheduled_by_employee: dict[int, list[date]] = field(default_factory=dict)
+    # Each scheduled record's bonus and lines by its start, for a row that repeats one (D72).
+    scheduled_pay_by_employee: dict[int, dict[date, tuple[Decimal, dict[str, Decimal]]]] = field(
+        default_factory=dict
+    )
     current_lines_by_employee: dict[int, dict[str, Decimal]] = field(default_factory=dict)
     current_bonus_by_employee: dict[int, Decimal] = field(default_factory=dict)
     rows_of_legacy: dict[str, list[int]] = field(default_factory=dict)
@@ -254,6 +258,7 @@ def build_context(
             ctx.email_owner[email.lower()] = owner
 
     ids = list(by_id)
+    scheduled: dict[int, tuple[int, date, Decimal]] = {}
     for start in range(0, len(ids), CHUNK):
         # The author comes along: bulk_apply snapshots these records for its audit entries.
         records = (
@@ -272,6 +277,11 @@ def build_context(
                 ctx.scheduled_by_employee.setdefault(record.employee_id, []).append(
                     record.effective_from
                 )
+                scheduled[record.pk] = (
+                    record.employee_id,
+                    record.effective_from,
+                    record.bonus_annual,
+                )
             if record.effective_from <= today and (
                 record.effective_to is None or record.effective_to > today
             ):
@@ -281,18 +291,26 @@ def build_context(
         employee_id: ctx.current_by_employee.get(employee_id, latest)
         for employee_id, latest in ctx.latest_by_employee.items()
     }
-    record_to_employee = {record.pk: employee_id for employee_id, record in comparison.items()}
+    # The dicts each record's lines fill: the comparison record's, and a scheduled one's (D72).
+    # A future joiner's only record can be both.
+    targets: dict[int, list[dict[str, Decimal]]] = {}
     for employee_id, record in comparison.items():
         ctx.current_bonus_by_employee[employee_id] = record.bonus_annual
-    record_ids = list(record_to_employee)
+        lines: dict[str, Decimal] = {}
+        ctx.current_lines_by_employee[employee_id] = lines
+        targets.setdefault(record.pk, []).append(lines)
+    for record_id, (employee_id, starts, bonus) in scheduled.items():
+        lines = {}
+        ctx.scheduled_pay_by_employee.setdefault(employee_id, {})[starts] = (bonus, lines)
+        targets.setdefault(record_id, []).append(lines)
+    record_ids = list(targets)
     for start in range(0, len(record_ids), CHUNK):
-        lines = CompensationLine.objects.filter(
+        found_lines = CompensationLine.objects.filter(
             record_id__in=record_ids[start : start + CHUNK]
         ).values_list("record_id", "component__code", "annual_amount")
-        for record_id, code, amount in lines:
-            ctx.current_lines_by_employee.setdefault(record_to_employee[record_id], {})[code] = (
-                amount
-            )
+        for record_id, code, amount in found_lines:
+            for lines in targets[record_id]:
+                lines[code] = amount
 
     for row in rows:
         if row.row_number is None:
@@ -718,18 +736,29 @@ def _comparable(value: Decimal | None) -> Decimal | None:
     return q2(value)
 
 
+def _same_pay(row: NormalizedRow, bonus: Decimal, lines: Mapping[str, Decimal]) -> bool:
+    codes = set(lines) | {code for code, value in row.amounts.items() if value is not None}
+    if any(_comparable(row.amounts.get(code)) != _comparable(lines.get(code)) for code in codes):
+        return False
+    return _comparable(row.bonus_annual or ZERO) == _comparable(bonus)
+
+
 def check_amounts_changed(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """Against the current record, else the latest. A row whose `effective_from` and amounts
+    repeat a scheduled revision already on file changes nothing either, so a generated file
+    imported twice is a no-op, april-raises included, whose rows are dated on the revision they
+    made (D72)."""
     employee = ctx.employee_for(row)
     if employee is None:
         row.amounts_changed = True
         return []
     current_lines = ctx.current_lines_by_employee.get(employee.pk, {})
     current_bonus = ctx.current_bonus_by_employee.get(employee.pk, ZERO)
-    codes = set(current_lines) | {code for code, value in row.amounts.items() if value is not None}
-    changed = any(
-        _comparable(row.amounts.get(code)) != _comparable(current_lines.get(code)) for code in codes
-    )
-    changed = changed or _comparable(row.bonus_annual or ZERO) != _comparable(current_bonus)
+    changed = not _same_pay(row, current_bonus, current_lines)
+    if changed and row.effective_from is not None:
+        scheduled = ctx.scheduled_pay_by_employee.get(employee.pk, {}).get(row.effective_from)
+        if scheduled is not None and _same_pay(row, *scheduled):
+            changed = False
     row.amounts_changed = changed
     return []
 
@@ -1006,6 +1035,29 @@ def check_gross_vs_country_bounds(row: NormalizedRow, ctx: ValidationContext) ->
     return messages
 
 
+def check_gross_not_lower(row: NormalizedRow, ctx: ValidationContext) -> list[Message]:
+    """A revision whose gross is below the record it replaces, the employee's latest live one,
+    warns naming both figures (D72). It catches a stale generated file, whose raise imported
+    meanwhile would otherwise be reverted silently, and a typo in a hand-made sheet. Through the
+    API, an import and the seed alike, as every rule here."""
+    employee = ctx.employee_for(row)
+    totals = _gross_and_deductions(row, ctx)
+    if employee is None or totals is None:
+        return []
+    latest = ctx.latest_by_employee.get(employee.pk)
+    if latest is None or totals[0] >= latest.gross_annual:
+        return []
+    return [
+        warning(
+            "gross",
+            "gross_falls",
+            before=format_cents(latest.gross_annual),
+            after=format_cents(totals[0]),
+            currency=latest.currency_code,
+        )
+    ]
+
+
 Rule = Callable[[NormalizedRow, ValidationContext], list[Message]]
 
 
@@ -1059,6 +1111,7 @@ RULES: list[RuleSpec] = [
     rule(check_bonus_above_base, "warnings", "import", "record"),
     rule(check_deductions_above_base, "warnings", "import", "record"),
     rule(check_gross_vs_country_bounds, "warnings", "import", "record"),
+    rule(check_gross_not_lower, "warnings", "import", "record"),
 ]
 
 CONFLICT_CODES = {"already_exited", "last_date_scheduled", "revision_after_exit"}

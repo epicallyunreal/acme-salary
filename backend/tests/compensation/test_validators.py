@@ -744,6 +744,79 @@ def test_gross_above_ten_times_the_country_median_warns(existing):
     )
 
 
+def test_a_revision_whose_gross_falls_warns_naming_both_figures(existing):
+    """D72: the India lines gross 2,392,500.00. One cent under it warns, both figures to two
+    decimals with the currency after. The same gross spread differently does not."""
+    lower = {**INDIA_LINES, "BASE": Decimal("1449999.99")}
+    moved = {**INDIA_LINES, "BASE": Decimal("1449000"), "HRA": Decimal("581000")}
+
+    found = messages(matched_row(existing, effective_from=date(2026, 11, 1), amounts=lower))
+    equal = messages(matched_row(existing, effective_from=date(2026, 11, 1), amounts=moved))
+
+    assert_message(
+        found,
+        "gross_falls",
+        "gross",
+        "warning",
+        "gross falls from 2,392,500.00 to 2,392,499.99 INR",
+    )
+    assert find(equal, "gross_falls") is None
+    assert find(equal, "noop") is None
+
+
+def test_the_api_and_the_seed_see_the_falling_gross_too(existing):
+    """D72: one rule, the record scope the API and the seed's bulk entries run. The API returns
+    it as a warning, and a seed entry with it is written, never refused."""
+    ctx = build_context(employees=[existing])
+    lower = {**INDIA_LINES, "BASE": Decimal("1000000")}
+
+    warnings = v.validate_record(
+        ctx,
+        employee=existing,
+        country_code="IN",
+        joining_date=existing.joining_date,
+        effective_from=date(2026, 11, 1),
+        bonus_annual=Decimal("0"),
+        lines=lower,
+    )
+    result = services.bulk_apply(
+        [
+            services.BulkEntry(
+                ref=1, employee=existing, records=[record_input(date(2026, 11, 1), lower)]
+            )
+        ],
+        source="seed",
+        today=date(2026, 10, 7),
+    )
+
+    assert [w.message for w in warnings] == ["gross falls from 2,392,500.00 to 1,942,500.00 INR"]
+    assert len(result.revised) == 1
+
+
+def test_a_row_that_repeats_a_scheduled_revision_is_a_noop(with_scheduled):
+    """D72: a generated file imported twice. The row's date and amounts are the scheduled
+    revision's, so it changes nothing and the date rules do not run. Another amount on that date
+    is still a revision dated on the latest record."""
+    repeat = messages(matched_row(with_scheduled, effective_from=date(2027, 4, 1), amounts=RAISED))
+    other = messages(
+        matched_row(
+            with_scheduled,
+            effective_from=date(2027, 4, 1),
+            amounts={**RAISED, "BASE": Decimal("1600000")},
+        )
+    )
+
+    assert_message(repeat, "noop", "row", "info", "No changes, row will be skipped on apply")
+    assert find(repeat, "effective_not_after_latest") is None
+    assert_message(
+        other,
+        "effective_not_after_latest",
+        "effective_from",
+        "error",
+        "effective_from must be after 2027-04-01 (latest record)",
+    )
+
+
 def test_warnings_are_skipped_when_a_matched_row_leaves_amounts_alone(lookups):
     low = EmployeeFactory(
         legacy_code="HR-10020", email="low@acme.example", joining_date=date(2024, 3, 1)

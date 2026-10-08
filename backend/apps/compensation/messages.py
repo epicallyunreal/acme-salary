@@ -72,6 +72,11 @@ MESSAGES = {
     "bonus_invalid": "bonus_annual must be a non-negative number, got {value}",
     "deductions_exceed_gross": "deductions exceed gross",
     "gross_below_minimum": "gross {gross} {currency} is below the {country} minimum {minimum}",
+    "gross_falls": "gross falls from {before} to {after} {currency}",
+    "org_cap": (
+        "No more data can be imported: this file would take ACME past {cap} employees "
+        "(now {now}, this file adds {adds})"
+    ),
     "gross_above_median": (
         "gross {gross} {currency} is above ten times the {country} median {median}"
     ),

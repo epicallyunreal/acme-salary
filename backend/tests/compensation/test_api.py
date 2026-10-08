@@ -380,7 +380,13 @@ def test_warnings_come_back_with_the_new_record(api, asha):
             "field": "gross",
             "severity": "warning",
             "message": "gross 300,000 INR is below the India minimum 400,000",
-        }
+        },
+        # The revision also lowers gross from the current 2,392,500 (D72).
+        {
+            "field": "gross",
+            "severity": "warning",
+            "message": "gross falls from 2,392,500.00 to 300,000.00 INR",
+        },
     ]
 
 

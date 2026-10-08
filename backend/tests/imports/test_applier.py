@@ -14,6 +14,7 @@ from apps.compensation.services import RecordInput
 from apps.core.exceptions import ApplyFailed, Conflict
 from apps.employees import services as employees_services
 from apps.employees.models import Employee
+from apps.imports import services as services_module
 from apps.imports.applier import approve
 from apps.imports.models import ImportBatch
 from apps.imports.services import discard, skip_row, stage_upload, unskip_row
@@ -231,6 +232,34 @@ def test_a_blank_required_cell_refuses_the_approve_and_never_fails_it(staff, hr_
 
     batch.refresh_from_db()
     assert (batch.status, batch.error_rows) == ("review", 2)
+
+
+def test_the_organisation_cap_is_checked_again_at_approve(lookups, hr_user, monkeypatch):
+    """D72: two batches each staged under the cap cannot pass it together. The second approve is
+    a 409 with the same wording, nothing is written and the batch stays in review."""
+    monkeypatch.setattr(services_module, "ORGANISATION_CAP", 3)
+    first = stage_upload(
+        upload_of(new_row(), new_row(legacy_code="HR-20002", email="two@acme.example")),
+        actor=hr_user,
+    )
+    second = stage_upload(
+        upload_of(
+            new_row(legacy_code="HR-20003", email="three@acme.example"),
+            new_row(legacy_code="HR-20004", email="four@acme.example"),
+        ),
+        actor=hr_user,
+    )
+
+    approve(first, actor=hr_user)
+    with pytest.raises(Conflict) as refused:
+        approve(second, actor=hr_user)
+
+    second.refresh_from_db()
+    assert refused.value.detail == (
+        "No more data can be imported: this file would take ACME past 3 employees "
+        "(now 2, this file adds 2)"
+    )
+    assert (second.status, Employee.objects.count()) == ("review", 2)
 
 
 def test_approving_an_approved_batch_is_a_409(lookups, hr_user):

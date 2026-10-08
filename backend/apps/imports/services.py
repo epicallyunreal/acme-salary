@@ -23,7 +23,7 @@ from apps.compensation.messages import msg
 from apps.compensation.validators import NormalizedRow, ValidationContext
 from apps.core import queries as core_queries
 from apps.core.exceptions import Conflict, Invalid, PayloadTooLarge, clip
-from apps.employees.models import LEGACY_CODE_MAX
+from apps.employees.models import LEGACY_CODE_MAX, Employee
 from apps.imports import parser
 from apps.imports.models import ImportBatch, ImportRow
 
@@ -32,6 +32,9 @@ CHUNK_SIZE = 1000
 # A staged row keeps at most this much of a cell (D56). A longer value is an error of its own,
 # so approve, which reads only accepted rows, never reads a capped one.
 STORED_CELL_LIMIT = parser.CELL_KEPT
+# The most employees an import may leave in the database, leavers included (D72): a demo cap
+# for the 1 GB machine, checked at staging and again at approve.
+ORGANISATION_CAP = 25_000
 FULL_NAME_MAX = ImportRow._meta.get_field("full_name").max_length
 FILE_NAME_MAX = ImportBatch._meta.get_field("file_name").max_length
 _reading = threading.Lock()
@@ -198,6 +201,25 @@ def stage_upload(upload, *, actor, today: date | None = None) -> ImportBatch:
         return _stage(upload, actor=actor, today=today)
 
 
+def organisation_cap_message(now: int, adds: int) -> str:
+    return msg("org_cap", cap=f"{ORGANISATION_CAP:,}", now=f"{now:,}", adds=f"{adds:,}")
+
+
+def organisation_cap_breach(creates: int) -> str | None:
+    """The cap's message when `creates` new employees would take the employees in the database,
+    leavers included, past it, else None. Updates and revisions do not count (D72)."""
+    now = Employee.objects.count()
+    if now + creates > ORGANISATION_CAP:
+        return organisation_cap_message(now, creates)
+    return None
+
+
+def check_organisation_cap(creates: int) -> None:
+    """At staging: a file past the cap is refused with no batch (D72)."""
+    if (message := organisation_cap_breach(creates)) is not None:
+        raise Invalid({"rows": [message]})
+
+
 def _stage(upload, *, actor, today: date | None) -> ImportBatch:
     parsed = parser.read(upload, upload.name, getattr(upload, "content_type", None))
     component_codes = [component.code for component in core_queries.active_components()]
@@ -228,6 +250,12 @@ def _stage(upload, *, actor, today: date | None) -> ImportBatch:
                 matched_employee=ctx.employee_for(row),
             )
         )
+    check_organisation_cap(
+        sum(
+            item.action == ImportRow.Action.CREATE and item.status != ImportRow.Status.ERROR
+            for item in staged
+        )
+    )
     with transaction.atomic():
         batch = ImportBatch.objects.create(
             file_name=upload.name[:FILE_NAME_MAX],
