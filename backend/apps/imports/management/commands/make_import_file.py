@@ -47,14 +47,16 @@ def existing_rows(limit: int | None, raise_count: int, raise_date: date) -> list
     """Every existing employee with the amounts the validators compare a row against: the
     record current on the reference date, else the latest live one (an exited employee's last).
     The raises go to the first employees still employed on the raise date, so every raise is a
-    revision the rules accept."""
+    revision the rules accept. With a `limit`, only those employees are written, so `--raises N`
+    alone writes N raises, whoever has left among the earliest joiners (D64)."""
     employees = (
         Employee.objects.select_related("country", "department")
         .filter(legacy_code__isnull=False)
         .order_by("pk")
     )
     if limit is not None:
-        employees = employees[:limit]
+        employed = Q(last_date__isnull=True) | Q(last_date__gte=raise_date)
+        employees = employees.filter(employed)[:limit]
     employees = list(employees)
     on = profiles.REFERENCE_DATE
     current = (

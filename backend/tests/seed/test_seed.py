@@ -1,6 +1,7 @@
 """Determinism and invariants of seed_data (SPEC section 11 rule 8).
 
-The two 500-employee tests are marked slow; the command's contracts run on every commit.
+The two tests of 500 active and 250 exited employees are marked slow; the command's contracts
+run on every commit.
 """
 
 from collections import Counter
@@ -25,19 +26,19 @@ GOLDEN = Path(__file__).with_name("golden.txt")
 pytestmark = pytest.mark.django_db
 
 
-def seed(employees: int, **options) -> str:
+def seed(active: int, exited: int = 0, **options) -> str:
     out = StringIO()
-    call_command("seed_data", employees=employees, seed=42, stdout=out, **options)
+    call_command("seed_data", active=active, exited=exited, seed=42, stdout=out, **options)
     return out.getvalue()
 
 
 @pytest.mark.slow
 def test_seed_matches_the_golden_hash_and_a_reset_reproduces_it():
-    seed(500)
+    seed(500, 250)
 
     assert dump_hash() == GOLDEN.read_text().strip()
 
-    seed(500, reset=True)
+    seed(500, 250, reset=True)
 
     assert dump_hash() == GOLDEN.read_text().strip()
     assert Employee.objects.order_by("id").first().pk == 1
@@ -46,33 +47,36 @@ def test_seed_matches_the_golden_hash_and_a_reset_reproduces_it():
 
 @pytest.mark.slow
 def test_shares_and_invariants():
-    seed(500)
+    seed(500, 250)
 
-    assert Employee.objects.count() == 500
+    assert Employee.objects.count() == 750
+    assert Employee.objects.filter(last_date__isnull=True).count() == 500
+    assert Employee.objects.filter(last_date__lt=profiles.REFERENCE_DATE).count() == 250
     assert dict(Counter(Employee.objects.values_list("country_id", flat=True))) == {
-        "DE": 50,
-        "GB": 66,
-        "IN": 226,
-        "NL": 42,
-        "SG": 19,
-        "US": 97,
+        "DE": 81,
+        "GB": 99,
+        "IN": 327,
+        "NL": 62,
+        "SG": 32,
+        "US": 149,
     }
     assert dict(Counter(Employee.objects.values_list("level", flat=True))) == {
-        1: 106,
-        2: 147,
-        3: 84,
-        4: 81,
-        5: 52,
-        6: 30,
+        1: 229,
+        2: 186,
+        3: 137,
+        4: 104,
+        5: 66,
+        6: 28,
     }
     assert dict(Counter(Employee.objects.values_list("gender", flat=True))) == {
-        "female": 229,
-        "male": 260,
-        "other": 4,
-        "undisclosed": 7,
+        "female": 343,
+        "male": 389,
+        "other": 12,
+        "undisclosed": 6,
     }
-    assert Employee.objects.filter(last_date__isnull=False).count() == 36
-    assert CompensationRecord.objects.count() == 1799
+    # Every revision since joining is kept, 583 of them promotions (D64).
+    assert CompensationRecord.objects.count() == 2878
+    assert CompensationRecord.objects.filter(note__startswith="promotion to L").count() == 583
 
     for employee in Employee.objects.prefetch_related("compensation_records"):
         records = sorted(employee.compensation_records.all(), key=lambda r: r.effective_from)
@@ -85,17 +89,21 @@ def test_shares_and_invariants():
         else:
             assert records[-1].effective_to == employee.last_date + timedelta(days=1)
         assert [record.version for record in records] == list(range(1, len(records) + 1))
+        # Each promotion names the next level up, the last of them the level now (D64).
+        promoted = [int(r.note[-1]) for r in records if r.note.startswith("promotion to L")]
+        joined_at = employee.level - len(promoted)
+        assert joined_at >= 1 and promoted == list(range(joined_at + 1, employee.level + 1))
 
-    # The database numbered them in joining order, so ACME-1 is the longest-serving, and each
-    # carries its own HR- legacy_code (D48).
+    # The database numbered them in joining order, leavers among them, so ACME-1 is the earliest
+    # joiner, and each carries its own HR- legacy_code (D48).
     joined = list(Employee.objects.order_by("pk").values_list("joining_date", flat=True))
     assert joined == sorted(joined)
     codes = list(Employee.objects.values_list("legacy_code", flat=True))
-    assert len(set(codes)) == 500
+    assert len(set(codes)) == 750
     assert all(code and code.startswith("HR-") and len(code) == 8 for code in codes)
 
-    # 500 create entries, 1,799 revise entries and 16 set_rate entries.
-    assert AuditLog.objects.count() == 2315
+    # 750 create entries, 2,878 revise entries and 16 set_rate entries.
+    assert AuditLog.objects.count() == 3644
     assert set(AuditLog.objects.values_list("timestamp", flat=True)) == {
         profiles.REFERENCE_DATETIME
     }
@@ -104,28 +112,28 @@ def test_shares_and_invariants():
 
 
 def test_if_empty_skips_and_a_bare_rerun_is_refused():
-    seed(30)
+    seed(20, 10)
     hash_before = dump_hash()
 
-    assert "nothing to do" in seed(30, if_empty=True)
+    assert "nothing to do" in seed(20, 10, if_empty=True)
     assert dump_hash() == hash_before
     with pytest.raises(CommandError, match="pass --reset"):
-        seed(30)
+        seed(20, 10)
 
 
 def test_reset_and_if_empty_exclude_each_other():
     with pytest.raises(CommandError, match="exclude each other"):
-        seed(30, reset=True, if_empty=True)
+        seed(20, 10, reset=True, if_empty=True)
 
 
 def test_a_reset_keeps_the_users_and_their_passwords():
-    seed(30)
+    seed(20, 10)
     user_model = get_user_model()
     hr = user_model.objects.get(email=profiles.HR_MANAGER_EMAIL)
     hr.set_password("owner-chosen-password")
     hr.save()
 
-    seed(30, reset=True)
+    seed(20, 10, reset=True)
 
     assert user_model.objects.get(pk=hr.pk).check_password("owner-chosen-password")
     assert user_model.objects.count() == 1
@@ -136,15 +144,15 @@ def test_reset_demo_runs_the_fixed_seed(monkeypatch):
     calls = []
     monkeypatch.setattr(
         "seed.management.commands.reset_demo.seed",
-        lambda employees, seed_value, *, reset, stdout=None: (
-            calls.append((employees, seed_value, reset)) or 1.5
+        lambda active, exited, seed_value, *, reset, stdout=None: (
+            calls.append((active, exited, seed_value, reset)) or 1.5
         ),
     )
 
     out = StringIO()
     call_command("reset_demo", stdout=out)
 
-    assert calls == [(10000, 42, True)]
+    assert calls == [(10000, 5000, 42, True)]
     assert "demo reset in 1.5 s" in out.getvalue()
 
 
@@ -162,7 +170,7 @@ def test_a_failure_mid_seed_leaves_every_business_table_empty(monkeypatch):
     monkeypatch.setattr(seed_module, "bulk_apply", flaky)
 
     with pytest.raises(RuntimeError, match="disk full"):
-        seed(30)
+        seed(20, 10)
 
     assert calls["n"] == 2
     assert Employee.objects.count() == 0

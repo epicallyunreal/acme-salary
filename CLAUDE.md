@@ -31,7 +31,7 @@ Salary management for ACME, 10,000 employees across six countries. One HR Manage
 Backend, from `backend/`. The virtualenv is `backend/.venv`, created with `uv venv` and populated with `uv sync`. The session-start hook puts it on PATH.
 
 - `uv sync` then `python manage.py migrate`
-- `python manage.py seed_data --employees 10000 --seed 42` (add `--reset` to wipe and rebuild)
+- `python manage.py seed_data --active 10000 --exited 5000 --seed 42` (add `--reset` to wipe and rebuild)
 - `pytest` runs the whole suite in under 60 s. `pytest -m "not slow"` skips the seed test.
 - `ruff format . && ruff check .`
 

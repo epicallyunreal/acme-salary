@@ -131,7 +131,7 @@ def exported_rows(file: str, body: bytes) -> int:
     return len(json.loads(body)["rows"])
 
 
-def time_seed(scratch_db: Path, employees: int, seed: int) -> float:
+def time_seed(scratch_db: Path, active: int, exited: int, seed: int) -> float:
     """Wall time of `seed_data --reset` in a fresh process against a scratch database."""
     env = {**os.environ, "DATABASE_PATH": str(scratch_db)}
     manage = str(Path(__file__).resolve().parents[4] / "manage.py")
@@ -142,8 +142,10 @@ def time_seed(scratch_db: Path, employees: int, seed: int) -> float:
             sys.executable,
             manage,
             "seed_data",
-            "--employees",
-            str(employees),
+            "--active",
+            str(active),
+            "--exited",
+            str(exited),
             "--seed",
             str(seed),
             "--reset",
@@ -160,18 +162,20 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--case", choices=("all", *CASES), default="all")
-        parser.add_argument("--employees", type=int, default=10000)
+        parser.add_argument("--active", type=int, default=10000)
+        parser.add_argument("--exited", type=int, default=5000)
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--repeats", type=int, default=20)
 
-    def require_seed(self, employees: int) -> None:
+    def require_seed(self, active: int, exited: int) -> None:
         from apps.employees.models import Employee
 
         count = Employee.objects.count()
-        if count < employees:
+        if count < active + exited:
             raise CommandError(
-                f"the database has {count} employees; the timings need the {employees}-row seed "
-                "(python manage.py seed_data --employees 10000 --seed 42)"
+                f"the database has {count} employees; the timings need the seed of {active} "
+                f"active and {exited} exited (python manage.py seed_data --active {active} "
+                f"--exited {exited} --seed 42)"
             )
 
     def time_directory(self, repeats: int) -> str:
@@ -281,32 +285,36 @@ class Command(BaseCommand):
         results: dict[str, str] = {case: "" for case in CASES}
 
         if "directory" in wanted:
-            self.require_seed(options["employees"])
+            self.require_seed(options["active"], options["exited"])
             results["directory"] = self.time_directory(options["repeats"])
 
         if "insights" in wanted:
-            self.require_seed(options["employees"])
+            self.require_seed(options["active"], options["exited"])
             results["insights"] = self.time_insights(options["repeats"])
 
         if "import" in wanted:
-            self.require_seed(options["employees"])
+            self.require_seed(options["active"], options["exited"])
             results["import"] = self.time_import(options["seed"])
 
         if "export" in wanted:
-            self.require_seed(options["employees"])
+            self.require_seed(options["active"], options["exited"])
             self.time_export()
 
         if "seed" in wanted:
             with tempfile.TemporaryDirectory() as scratch:
                 try:
                     seconds = time_seed(
-                        Path(scratch) / "timing.sqlite3", options["employees"], options["seed"]
+                        Path(scratch) / "timing.sqlite3",
+                        options["active"],
+                        options["exited"],
+                        options["seed"],
                     )
                 except subprocess.CalledProcessError as exc:
                     raise CommandError(f"seed failed: {exc.stderr[-2000:]}") from exc
             results["seed"] = f"{seconds:.1f}"
             self.stdout.write(
-                f"seed: {options['employees']} employees with seed {options['seed']} in "
+                f"seed: {options['active']} active and {options['exited']} exited employees "
+                f"with seed {options['seed']} in "
                 f"{seconds:.1f} s (fresh process, migrate excluded, --reset included)"
             )
 

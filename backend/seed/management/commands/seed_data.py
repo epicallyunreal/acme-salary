@@ -1,4 +1,4 @@
-"""`seed_data --employees N --seed S [--reset | --if-empty]` (SPEC section 11).
+"""`seed_data --active N --exited M --seed S [--reset | --if-empty]` (SPEC section 11).
 
 Builds the demo dataset in one transaction through compensation.services.bulk_apply, so seeded
 rows obey the same rules and audit as the UI. --reset and reset_demo are the only code that
@@ -54,8 +54,9 @@ def ensure_hr_manager(password: str):
     return user
 
 
-def seed(employees: int, seed_value: int, *, reset: bool, stdout=None) -> float:
-    """The whole seed in one transaction. Returns the elapsed seconds."""
+def seed(active: int, exited: int, seed_value: int, *, reset: bool, stdout=None) -> float:
+    """The whole seed in one transaction: `active` employees on staff on the reference date
+    and `exited` who left before it (D64). Returns the elapsed seconds."""
     password = settings.SEED_ADMIN_PASSWORD
     if not password:
         raise CommandError("SEED_ADMIN_PASSWORD must be set")
@@ -72,7 +73,7 @@ def seed(employees: int, seed_value: int, *, reset: bool, stdout=None) -> float:
         ensure_rates(at=profiles.REFERENCE_DATETIME)
         ensure_hr_manager(password)
         ctx = validators.build_context(today=profiles.REFERENCE_DATE)
-        entries = iter(ordered_entries(employees, seed_value))
+        entries = iter(ordered_entries(active, seed_value, exited=exited))
         while chunk := list(islice(entries, CHUNK)):
             bulk_apply(
                 chunk,
@@ -90,7 +91,8 @@ class Command(BaseCommand):
     help = "Seed the demo dataset deterministically."
 
     def add_arguments(self, parser):
-        parser.add_argument("--employees", type=int, default=10000)
+        parser.add_argument("--active", type=int, default=profiles.ACTIVE_EMPLOYEES)
+        parser.add_argument("--exited", type=int, default=profiles.EXITED_EMPLOYEES)
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--reset", action="store_true", help="wipe the business tables first")
         parser.add_argument(
@@ -108,7 +110,8 @@ class Command(BaseCommand):
                 raise CommandError(
                     "the database has employees; pass --reset to rebuild it or --if-empty to skip"
                 )
-        elapsed = seed(
-            options["employees"], options["seed"], reset=options["reset"], stdout=self.stdout
+        active, exited = options["active"], options["exited"]
+        elapsed = seed(active, exited, options["seed"], reset=options["reset"], stdout=self.stdout)
+        self.stdout.write(
+            f"seeded {active} active and {exited} exited employees in {elapsed:.1f} s"
         )
-        self.stdout.write(f"seeded {options['employees']} employees in {elapsed:.1f} s")

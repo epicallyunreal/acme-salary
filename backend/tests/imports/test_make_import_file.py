@@ -95,8 +95,8 @@ def test_all_writes_every_employee_with_raises_errors_and_new_rows(thirty, tmp_p
     # Seed 42 is fixed, so the raised row is known by name too.
     assert (rows[3]["legacy_code"], rows[3]["full_name"], rows[3]["BASE"]) == (
         "HR-90977",
-        "Abdul Hopkins",
-        122955,
+        "Alexander Chander",
+        1172220,
     )
     # New joiners get fresh HR- codes that no employee holds.
     fresh = [row["legacy_code"] for row in rows[30:]]
@@ -157,7 +157,7 @@ def test_csv_output_matches_the_template(thirty, tmp_path):
     assert reader[0][: len(IDENTITY_COLUMNS)] == list(IDENTITY_COLUMNS)
     assert len(reader) == 31
     first = dict(zip(reader[0], reader[1], strict=True))
-    # ACME-1 is the longest-serving employee (D48), and the row carries the current record.
+    # ACME-1 is the earliest joiner (D48), and the row carries the current record.
     earliest = Employee.objects.order_by("pk").first()
     assert earliest.joining_date == min(Employee.objects.values_list("joining_date", flat=True))
     assert first["legacy_code"] == earliest.legacy_code
@@ -167,9 +167,9 @@ def test_csv_output_matches_the_template(thirty, tmp_path):
     assert Decimal(first["BASE"]) == current_base(earliest)
     assert (first["legacy_code"], first["full_name"], first["joining_date"], first["BASE"]) == (
         "HR-62905",
-        "Sian Cox",
-        "2015-08-09",
-        "326200.00",
+        "Robert Smith",
+        "2016-06-19",
+        "182500.00",
     )
 
 
@@ -196,6 +196,20 @@ def test_raises_alone_writes_only_the_raised_employees(thirty, tmp_path):
     out = run(path, raises=7)
 
     assert "wrote 7 rows" in out
+
+
+def test_raises_alone_pass_over_the_leavers(thirty, tmp_path):
+    """The seed's earliest joiners include leavers (D64): `--raises 2` still writes two raises,
+    to the first two still employed."""
+    first, second, third = Employee.objects.order_by("pk")[:3]
+    employees.exit_employee(first, date(2026, 6, 30))
+    path = tmp_path / "raises.xlsx"
+
+    run(path, raises=2)
+
+    _, rows = rows_of_xlsx(path)
+    assert [row["legacy_code"] for row in rows] == [second.legacy_code, third.legacy_code]
+    assert [row["effective_from"] for row in rows] == [datetime(2026, 11, 1)] * 2
 
 
 def test_the_output_extension_must_be_xlsx_or_csv(thirty, tmp_path):

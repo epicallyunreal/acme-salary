@@ -177,11 +177,22 @@ BONUS_RANGE = (0.05, 0.15)  # share of base, for employees who get one
 
 GENDER_SHARES = {"female": 0.48, "male": 0.50, "other": 0.01, "undisclosed": 0.01}
 
-JOINING_RANGE = (date(2015, 1, 1), date(2026, 9, 30))
-EXIT_SHARE = 0.08
-EXIT_MIN_TENURE_DAYS = 30
-RAISE_RANGE = (0.04, 0.12)
-KEPT_RAISES = 3  # the joining record plus the three most recent raises
+# 10,000 on staff on the reference date and 5,000 who left before it (D64).
+ACTIVE_EMPLOYEES = 10_000
+EXITED_EMPLOYEES = 5_000
+HISTORY_START = date(2015, 1, 1)  # the earliest joining date
+MIN_TENURE_DAYS = 30  # nobody leaves in their first 30 days
+
+# Years of total experience, before joining and at ACME, for each level. Neighbours overlap by
+# about a year, where the promotion between them falls, and L1 and L2 meet at 3 years (D64).
+LADDER = {1: (0, 3), 2: (3, 6), 3: (5, 8), 4: (7, 11), 5: (10, 13), 6: (12, 30)}
+# How much likelier each level is to leave than L3 to L6 (D64).
+LEAVE_WEIGHTS = {1: 2.0, 2: 1.5, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0}
+
+RAISE_RANGE = (0.03, 0.08)  # an ordinary April raise
+PROMOTION_RANGE = (0.12, 0.20)  # the April revision where the ladder moves someone up
+EXPERIENCE_PAY = 0.02  # a year of experience above the level's floor
+EXPERIENCE_PAY_CAP = 0.20
 
 # Sixteen monthly rows (D22): four currencies to USD and four to EUR, September and October 2026.
 RATES = (

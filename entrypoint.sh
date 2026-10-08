@@ -5,7 +5,7 @@ cd /app
 
 python manage.py migrate --noinput
 python manage.py flushexpiredtokens
-python manage.py seed_data --employees 10000 --seed 42 --if-empty
+python manage.py seed_data --active 10000 --exited 5000 --seed 42 --if-empty
 
 exec gunicorn acme_salary.wsgi:application \
   --bind "0.0.0.0:${PORT:-8000}" \
