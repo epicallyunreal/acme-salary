@@ -21,7 +21,7 @@ import statistics
 from bisect import bisect_left
 from collections import defaultdict
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
@@ -29,10 +29,10 @@ from typing import Any
 from django.db.models import Count, F, Q, QuerySet, Sum
 
 from apps.compensation.messages import msg
-from apps.compensation.models import CompensationRecord
+from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core import fx
 from apps.core.exceptions import Invalid
-from apps.core.models import Country, Department
+from apps.core.models import Country, Department, SalaryComponent
 from apps.core.money import q1, q2
 from apps.employees.models import Gender
 
@@ -662,6 +662,112 @@ def by_tenure(
     return {**header(f, rates), "level": level, "rows": rows}
 
 
+EARNING = SalaryComponent.Kind.EARNING
+DEDUCTION = SalaryComponent.Kind.DEDUCTION
+EMPLOYER = SalaryComponent.Kind.EMPLOYER_CONTRIBUTION
+
+
+@dataclass(frozen=True)
+class Component:
+    code: str
+    name: str
+    kind: str
+    sort_order: int
+
+
+@dataclass
+class Mix:
+    """One country's pay in the reporting currency: each component, then bonus, gross and cost."""
+
+    headcount: int = 0
+    components: dict[Component, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
+    bonus: Decimal = Decimal(0)
+    gross: Decimal = Decimal(0)
+    total_cost: Decimal = Decimal(0)
+
+
+def cost_mix(
+    f: InsightFilters, rates: fx.RateTable, lookups: Lookups, *, view: str = "cost"
+) -> dict:
+    """Question 10: one bar per country in the filter, all six without one, in name order (D62).
+    `view=cost` gives base, each allowance of the country, bonus and the employer contribution
+    as shares of total cost, `view=take_home` net pay and each deduction as shares of gross. The
+    amounts are summed per country and currency and converted, so a country whose records are in
+    two currencies still adds up, and each share is rounded to one decimal on its own. Under five
+    people a country shows its headcount alone."""
+    convert = Converter(f, rates)
+    records = population(f)
+    mixes: dict[str, Mix] = defaultdict(Mix)
+    for row in records.values(COUNTRY, "currency_code").annotate(
+        people=Count("id"),
+        bonus=Sum("bonus_annual"),
+        gross=Sum("gross_annual"),
+        cost=Sum("total_cost_annual"),
+    ):
+        rate = convert.rate(row["currency_code"])
+        mix = mixes[row[COUNTRY]]
+        mix.headcount += row["people"]
+        mix.bonus += row["bonus"] * rate
+        mix.gross += row["gross"] * rate
+        mix.total_cost += row["cost"] * rate
+    lines = (
+        CompensationLine.objects.filter(record__in=records)
+        .order_by()
+        .values(
+            "record__employee__country_id",
+            "record__currency_code",
+            "component__code",
+            "component__name",
+            "component__kind",
+            "component__sort_order",
+        )
+        .annotate(amount=Sum("annual_amount"))
+    )
+    for row in lines:
+        component = Component(
+            row["component__code"],
+            row["component__name"],
+            row["component__kind"],
+            row["component__sort_order"],
+        )
+        rate = convert.rate(row["record__currency_code"])
+        mixes[row["record__employee__country_id"]].components[component] += row["amount"] * rate
+    rows = []
+    for code in f.country or tuple(lookups.countries):
+        mix = mixes.get(code, Mix())
+        shown = mix.headcount >= SMALL_GROUP and mix.total_cost > 0 and mix.gross > 0
+        rows.append(
+            {
+                "country": {"code": code, "name": lookups.countries[code].name},
+                "headcount": mix.headcount,
+                "segments": mix_segments(mix, view) if shown else None,
+            }
+        )
+    rows.sort(key=lambda row: row["country"]["name"])
+    return {**header(f, rates), "view": view, "rows": rows}
+
+
+def mix_segments(mix: Mix, view: str) -> list[dict]:
+    """The bar's segments in component order, each a share of total cost or of gross."""
+    present = sorted(mix.components, key=lambda c: (c.sort_order, c.code))
+
+    def segment(code: str, name: str, amount: Decimal, whole: Decimal) -> dict:
+        return {"code": code, "name": name, "share_pct": q1(amount / whole * 100)}
+
+    if view == "take_home":
+        deductions = [c for c in present if c.kind == DEDUCTION]
+        net = mix.gross - sum((mix.components[c] for c in deductions), Decimal(0))
+        return [segment("NET", "Net pay", net, mix.gross)] + [
+            segment(c.code, c.name, mix.components[c], mix.gross) for c in deductions
+        ]
+    cost = mix.total_cost
+    return (
+        [segment(c.code, c.name, mix.components[c], cost) for c in present if c.kind == EARNING]
+        + [segment("BONUS", "Bonus", mix.bonus, cost)]
+        + [segment(c.code, c.name, mix.components[c], cost) for c in present if c.kind == EMPLOYER]
+    )
+
+
 INSIGHTS: dict[str, Callable[..., dict]] = {
     "summary": summary,
     "by-country": by_country,
@@ -672,6 +778,7 @@ INSIGHTS: dict[str, Callable[..., dict]] = {
     "trend": trend,
     "cost-bridge": cost_bridge,
     "by-tenure": by_tenure,
+    "cost-mix": cost_mix,
 }
 
 # Each card's control (D62): the parameter, then its values, the first being the default. It
@@ -679,4 +786,5 @@ INSIGHTS: dict[str, Callable[..., dict]] = {
 CONTROLS: dict[str, tuple[str, tuple[str, ...]]] = {
     "trend": ("measure", ("total_cost", "headcount")),
     "by-tenure": ("level", ("all", "1", "2", "3", "4", "5", "6")),
+    "cost-mix": ("view", ("cost", "take_home")),
 }

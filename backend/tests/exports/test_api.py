@@ -700,3 +700,32 @@ def test_by_tenure_exports_its_bands_for_the_level_picked(api, people):
         "rates": RATES,
     }
     assert [row["headcount"] for row in body["rows"]] == [0, 0, 0, 5, 0]
+
+
+def test_cost_mix_exports_one_row_per_country_and_segment(api, people):
+    """D62: the take-home view of India, then the United States."""
+    query = {"file": "csv", "view": "take_home", "country": "IN,US"}
+    rows = csv_rows(api.get(INSIGHT.format("cost-mix"), query))
+
+    assert rows == [
+        [
+            "Country code",
+            "Country",
+            "Headcount",
+            "Segment",
+            "Share %",
+            "Reason",
+            "Currency",
+            "Rates",
+        ],
+        ["IN", "India", "12", "Net pay", "90.0", "", "USD", RATES],
+        ["IN", "India", "12", "Income tax", "10.0", "", "USD", RATES],
+        ["US", "United States", "10", "Net pay", "80.0", "", "USD", RATES],
+        ["US", "United States", "10", "Income tax", "20.0", "", "USD", RATES],
+    ]
+
+
+def test_a_withheld_country_is_one_row_of_its_headcount(api, people):
+    rows = csv_rows(api.get(INSIGHT.format("cost-mix"), {"file": "csv", "country": "GB"}))
+
+    assert rows[1] == ["GB", "United Kingdom", "1", "", "", "fewer than 5 people", "USD", RATES]

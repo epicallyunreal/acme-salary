@@ -191,6 +191,7 @@ describe('Export menus on the pages', () => {
     ['How has total cost moved over two years?', 'Export cost trend', 'trend'],
     ['Why did total cost move over the year?', 'Export cost bridge', 'cost-bridge'],
     ['Does pay rise with tenure?', 'Export pay by tenure', 'by-tenure'],
+    ['What is pay made of?', 'Export cost mix', 'cost-mix'],
   ])('the card "%s" exports its own table', async (question, label, name) => {
     const user = userEvent.setup();
     const saved = catchSaves();

@@ -46,6 +46,7 @@ INSIGHT_NAMES = (
     "trend",
     "cost-bridge",
     "by-tenure",
+    "cost-mix",
 )
 INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
 

@@ -31,3 +31,22 @@ export function plot(value: string | null): number | null {
 export function compactTick(currency: string) {
   return (value: number) => formatCompact(String(value), currency);
 }
+
+/** The cost mix's segments (D62): base and net in the first series, each allowance a lighter
+ * tint of it, bonus and tax in the second, other deductions a tint of that, and the employer's
+ * contribution in the marker grey. */
+export const MIX_COLORS: Record<string, string> = {
+  BASE: tokens.series[0],
+  NET: tokens.series[0],
+  HRA: '#6FA3E3',
+  HOLIDAY_ALLOWANCE: '#6FA3E3',
+  AWS: '#6FA3E3',
+  ALLOWANCES: '#A9C9EF',
+  BONUS: tokens.series[1],
+  TAX: tokens.series[1],
+  NATIONAL_INSURANCE: '#F3A27F',
+  SOCIAL_INSURANCE: '#F3A27F',
+  CPF: '#F3A27F',
+  EMPLOYER_CONTRIBUTION: tokens.chart.marker,
+};
+export const MIX_OTHER = '#9AA1AB';

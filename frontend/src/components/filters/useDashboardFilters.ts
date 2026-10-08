@@ -19,6 +19,7 @@ export const DASHBOARD_DEFAULTS: DashboardFilters = {
  * It slices or measures and never decides who is counted. */
 export const CARD_CONTROLS = {
   trend: { key: 'trend.measure', param: 'measure', values: ['total_cost', 'headcount'] },
+  mix: { key: 'mix.view', param: 'view', values: ['cost', 'take_home'] },
   tenure: {
     key: 'tenure.level',
     param: 'level',

@@ -1117,3 +1117,71 @@ def test_a_leavers_tenure_is_counted_to_their_last_date(lookups):
     rows = insight("by-tenure", include_exited=True)["rows"]
 
     assert [row["headcount"] for row in rows] == [0, 0, 0, 1, 0]
+
+
+# cost-mix (D62)
+
+
+def segment(code, name, share):
+    return {"code": code, "name": name, "share_pct": share}
+
+
+def mix(code, name, headcount, segments=None):
+    return {"country": {"code": code, "name": name}, "headcount": headcount, "segments": segments}
+
+
+def test_cost_mix_gives_each_country_its_shares_of_total_cost(people):
+    """DESIGN 9's lines are fixed shares of gross. India: base 0.6, HRA 0.25, allowances 0.15
+    and employer 0.12, of a total cost of 1.12. The US: base 1, employer 0.1, of 1.1. Nobody has
+    a bonus. Germany has four people and the UK one, so they show their headcount alone."""
+    result = insight("cost-mix")
+
+    assert result["view"] == "cost"
+    assert result["rows"] == [
+        mix("DE", "Germany", 4),
+        mix(
+            "IN",
+            "India",
+            12,
+            [
+                segment("BASE", "Base salary", "53.6"),
+                segment("HRA", "House rent allowance", "22.3"),
+                segment("ALLOWANCES", "Allowances", "13.4"),
+                segment("BONUS", "Bonus", "0.0"),
+                segment("EMPLOYER_CONTRIBUTION", "Employer contribution", "10.7"),
+            ],
+        ),
+        mix("NL", "Netherlands", 0),
+        mix("SG", "Singapore", 0),
+        mix("GB", "United Kingdom", 1),
+        mix(
+            "US",
+            "United States",
+            10,
+            [
+                segment("BASE", "Base salary", "90.9"),
+                segment("BONUS", "Bonus", "0.0"),
+                segment("EMPLOYER_CONTRIBUTION", "Employer contribution", "9.1"),
+            ],
+        ),
+    ]
+
+
+def test_cost_mix_take_home_splits_gross_into_net_and_each_deduction(people):
+    """India's tax is 0.1 of gross and the US's 0.2."""
+    rows = insight("cost-mix", control={"view": "take_home"}, country=["IN", "US"])["rows"]
+
+    assert rows == [
+        mix(
+            "IN",
+            "India",
+            12,
+            [segment("NET", "Net pay", "90.0"), segment("TAX", "Income tax", "10.0")],
+        ),
+        mix(
+            "US",
+            "United States",
+            10,
+            [segment("NET", "Net pay", "80.0"), segment("TAX", "Income tax", "20.0")],
+        ),
+    ]

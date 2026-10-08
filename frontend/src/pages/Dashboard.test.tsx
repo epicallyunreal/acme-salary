@@ -17,6 +17,7 @@ const QUESTIONS = [
   'How has total cost moved over two years?',
   'Why did total cost move over the year?',
   'Does pay rise with tenure?',
+  'What is pay made of?',
 ];
 const SECTIONS = ['What we spend', 'How pay is structured', 'Is pay fair'];
 const INSIGHTS = [
@@ -25,6 +26,7 @@ const INSIGHTS = [
   'by-level',
   'by-tenure',
   'cost-bridge',
+  'cost-mix',
   'distribution',
   'gender-gap',
   'summary',
@@ -227,6 +229,20 @@ describe('Dashboard', () => {
     expect(seen['by-tenure'][1].get('level')).toBe('3');
     expect(router.state.location.search).toBe('?tenure.level=3');
     expect(seen.trend).toHaveLength(1);
+  });
+
+  it("the cost mix's control switches it to take-home pay, in the URL", async () => {
+    const user = userEvent.setup();
+    const seen = recordRequests();
+    const { router } = renderApp('/');
+    const control = await screen.findByRole('group', { name: 'Cost mix view' });
+    await waitFor(() => expect(seen['cost-mix']).toHaveLength(1));
+
+    await user.click(within(control).getByRole('button', { name: 'Take-home' }));
+
+    await waitFor(() => expect(seen['cost-mix']).toHaveLength(2));
+    expect(seen['cost-mix'][1].get('view')).toBe('take_home');
+    expect(router.state.location.search).toBe('?mix.view=take_home');
   });
 
   it("Clear filters resets the cards' controls with the bar's filters", async () => {

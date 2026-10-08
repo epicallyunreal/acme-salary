@@ -260,6 +260,38 @@ export const byTenure: InsightPayloads['by-tenure'] = {
   ],
 };
 
+/** DESIGN 9's shares of total cost: India and the US shown, Germany and the UK short. */
+export const costMix: InsightPayloads['cost-mix'] = {
+  ...USD,
+  view: 'cost',
+  rows: [
+    { country: { code: 'DE', name: 'Germany' }, headcount: 4, segments: null },
+    {
+      country: { code: 'IN', name: 'India' },
+      headcount: 12,
+      segments: [
+        { code: 'BASE', name: 'Base salary', share_pct: '53.6' },
+        { code: 'HRA', name: 'House rent allowance', share_pct: '22.3' },
+        { code: 'ALLOWANCES', name: 'Allowances', share_pct: '13.4' },
+        { code: 'BONUS', name: 'Bonus', share_pct: '0.0' },
+        { code: 'EMPLOYER_CONTRIBUTION', name: 'Employer contribution', share_pct: '10.7' },
+      ],
+    },
+    { country: { code: 'NL', name: 'Netherlands' }, headcount: 0, segments: null },
+    { country: { code: 'SG', name: 'Singapore' }, headcount: 0, segments: null },
+    { country: { code: 'GB', name: 'United Kingdom' }, headcount: 1, segments: null },
+    {
+      country: { code: 'US', name: 'United States' },
+      headcount: 10,
+      segments: [
+        { code: 'BASE', name: 'Base salary', share_pct: '90.9' },
+        { code: 'BONUS', name: 'Bonus', share_pct: '0.0' },
+        { code: 'EMPLOYER_CONTRIBUTION', name: 'Employer contribution', share_pct: '9.1' },
+      ],
+    },
+  ],
+};
+
 /** Each insight's payload, by the name in its URL. */
 export function insightFor(name: string, includeExited: boolean): JsonBodyType | undefined {
   const payloads: Record<string, unknown> = {
@@ -272,6 +304,7 @@ export function insightFor(name: string, includeExited: boolean): JsonBodyType |
     trend,
     'cost-bridge': costBridge,
     'by-tenure': byTenure,
+    'cost-mix': costMix,
   };
   return payloads[name] as JsonBodyType | undefined;
 }

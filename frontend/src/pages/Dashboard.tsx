@@ -13,6 +13,7 @@ import { ByLevelCard } from '../components/insights/ByLevelCard';
 import { ByTenureCard } from '../components/insights/ByTenureCard';
 import { CardControl, CardSelect } from '../components/insights/CardControl';
 import { CostBridgeCard } from '../components/insights/CostBridgeCard';
+import { CostMixCard } from '../components/insights/CostMixCard';
 import { DistributionCard } from '../components/insights/DistributionCard';
 import { GenderGapCard } from '../components/insights/GenderGapCard';
 import { KpiRow } from '../components/insights/KpiRow';
@@ -24,6 +25,10 @@ import { PageHeader } from '../components/layout/PageHeader';
 const MEASURES = [
   { value: 'total_cost', label: 'Total cost' },
   { value: 'headcount', label: 'Headcount' },
+] as const;
+const VIEWS = [
+  { value: 'cost', label: 'Cost' },
+  { value: 'take_home', label: 'Take-home' },
 ] as const;
 const LEVELS = [
   { value: 'all', label: 'All' },
@@ -42,11 +47,13 @@ export function Dashboard() {
   const { filters, controls, set, setControl, reset, filtered } = useDashboardFilters();
   const trendControl = controlQuery('trend', controls);
   const tenureControl = controlQuery('tenure', controls);
+  const mixControl = controlQuery('mix', controls);
   const summary = useInsight('summary', filters);
   const trend = useInsight('trend', filters, trendControl);
   const costBridge = useInsight('cost-bridge', filters);
   const byCountry = useInsight('by-country', filters);
   const byDepartment = useInsight('by-department', filters);
+  const costMix = useInsight('cost-mix', filters, mixControl);
   const distribution = useInsight('distribution', filters);
   const byLevel = useInsight('by-level', filters);
   const byTenure = useInsight('by-tenure', filters, tenureControl);
@@ -114,6 +121,20 @@ export function Dashboard() {
                 'Export payroll by department',
                 'the payroll by department',
               )}
+            />
+            <CostMixCard
+              query={costMix}
+              actions={
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                  <CardControl
+                    label="Cost mix view"
+                    value={controls.mix}
+                    options={VIEWS}
+                    onChange={(view) => setControl('mix', view)}
+                  />
+                  {exportMenu('cost-mix', 'Export cost mix', 'the cost mix', mixControl)}
+                </Stack>
+              }
             />
           </CardGrid>
         )}

@@ -307,7 +307,8 @@ export type InsightName =
   | 'gender-gap'
   | 'trend'
   | 'cost-bridge'
-  | 'by-tenure';
+  | 'by-tenure'
+  | 'cost-mix';
 
 /** A card's own control on the wire, `{ measure: 'headcount' }`: what it measures or how it
  * slices, never who is counted (D62). */
@@ -441,6 +442,27 @@ export interface ByTenureInsight extends InsightHeader {
   rows: TenureRow[];
 }
 
+export interface MixSegment {
+  code: string;
+  name: string;
+  share_pct: string;
+}
+
+export interface MixRow {
+  country: { code: string; name: string };
+  headcount: number;
+  /** `null` under five people (D59). */
+  segments: MixSegment[] | null;
+}
+
+export type MixView = 'cost' | 'take_home';
+
+/** One bar per country: shares of total cost, or of gross split into net and deductions (D62). */
+export interface CostMixInsight extends InsightHeader {
+  view: MixView;
+  rows: MixRow[];
+}
+
 export interface InsightPayloads {
   summary: SummaryInsight;
   'by-country': InsightHeader & { rows: CountryRow[] };
@@ -451,6 +473,7 @@ export interface InsightPayloads {
   trend: TrendInsight;
   'cost-bridge': CostBridgeInsight;
   'by-tenure': ByTenureInsight;
+  'cost-mix': CostMixInsight;
 }
 
 export interface ExchangeRates {

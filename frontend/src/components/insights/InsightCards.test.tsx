@@ -15,6 +15,7 @@ import { ByDepartmentCard } from './ByDepartmentCard';
 import { ByLevelCard } from './ByLevelCard';
 import { ByTenureCard } from './ByTenureCard';
 import { CostBridgeCard } from './CostBridgeCard';
+import { CostMixCard } from './CostMixCard';
 import { DistributionCard } from './DistributionCard';
 import { GenderGapCard } from './GenderGapCard';
 import { KpiRow } from './KpiRow';
@@ -43,6 +44,10 @@ function Levels() {
 function Gap() {
   const query = useInsight('gender-gap', DASHBOARD_DEFAULTS);
   return <GenderGapCard query={query} />;
+}
+function Mixes() {
+  const query = useInsight('cost-mix', DASHBOARD_DEFAULTS, { view: 'cost' });
+  return <CostMixCard query={query} />;
 }
 function Tenures() {
   const query = useInsight('by-tenure', DASHBOARD_DEFAULTS, { level: 'all' });
@@ -313,6 +318,20 @@ describe('insight cards', () => {
     expect(await row('Median gross by tenure', '5 to 10 years')).toEqual(['10', 'USD 90,000']);
     expect(await row('Median gross by tenure', '10 years or more')).toEqual(['0', '—']);
     expect(screen.getByText('Not shown, fewer than 5 people: Under 1 year.')).toBeInTheDocument();
+  });
+
+  it('the cost mix gives each country its shares and names the short ones', async () => {
+    renderWithProviders(<Mixes />);
+
+    expect(await row('Shares of total cost by country', 'United States')).toEqual([
+      '10',
+      'Base salary 90.9%, Bonus 0.0%, Employer contribution 9.1%',
+    ]);
+    expect(await row('Shares of total cost by country', 'Germany')).toEqual(['4', UNDER_FIVE]);
+    expect(await row('Shares of total cost by country', 'Netherlands')).toEqual(['0', '—']);
+    expect(
+      screen.getByText('Not shown, fewer than 5 people: Germany, United Kingdom.'),
+    ).toBeInTheDocument();
   });
 
   it('a card that fails to load says so, and its Retry loads it', async () => {

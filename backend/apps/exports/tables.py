@@ -398,6 +398,43 @@ def by_tenure_table(payload: dict) -> Table:
     return table(TENURE_COLUMNS, rows)
 
 
+MIX_COLUMNS = (
+    ("Country code", "country_code"),
+    ("Country", "country"),
+    ("Headcount", "headcount"),
+    ("Segment", "segment"),
+    ("Share %", "share_pct"),
+    ("Reason", "reason"),
+    ("Currency", "currency"),
+    ("Rates", "rates"),
+)
+
+
+def cost_mix_table(payload: dict) -> Table:
+    """One row per country and segment, for the view the card picked, a withheld country one row
+    of its headcount (D62)."""
+    rows = []
+    for row in payload["rows"]:
+        code, name, headcount = row["country"]["code"], row["country"]["name"], row["headcount"]
+        if row["segments"] is None:
+            reason = withheld(headcount, None, SMALL_GROUP)
+            rows.append((code, name, headcount, None, None, reason, *currency_and_rates(payload)))
+            continue
+        for segment in row["segments"]:
+            rows.append(
+                (
+                    code,
+                    name,
+                    headcount,
+                    segment["name"],
+                    segment["share_pct"],
+                    None,
+                    *currency_and_rates(payload),
+                )
+            )
+    return table(MIX_COLUMNS, rows)
+
+
 INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "summary": summary_table,
     "by-country": by_country_table,
@@ -408,4 +445,5 @@ INSIGHT_TABLES: dict[str, Callable[[dict], Table]] = {
     "trend": trend_table,
     "cost-bridge": cost_bridge_table,
     "by-tenure": by_tenure_table,
+    "cost-mix": cost_mix_table,
 }

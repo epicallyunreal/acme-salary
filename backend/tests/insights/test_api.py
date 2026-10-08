@@ -66,6 +66,7 @@ def test_every_filter_reaches_the_query(api, people):
         ("trend", 5),
         ("cost-bridge", 5),
         ("by-tenure", 5),
+        ("cost-mix", 6),
     ],
 )
 def test_an_insight_runs_a_fixed_number_of_queries(
@@ -150,6 +151,11 @@ def test_trend_names_the_measure_its_card_draws(api, people, given, measure):
             "by-tenure",
             {"level": "9"},
             {"level": ["level must be all, 1, 2, 3, 4, 5 or 6, got 9"]},
+        ),
+        (
+            "cost-mix",
+            {"view": "net"},
+            {"view": ["view must be cost or take_home, got net"]},
         ),
     ],
 )
