@@ -16,7 +16,7 @@ from apps.core.exceptions import ApplyFailed, Conflict
 from apps.employees import services as employees_services
 from apps.employees.models import Employee
 from apps.imports import services as services_module
-from apps.imports.applier import approve
+from apps.imports.applier import FAILED_SUMMARY, approve
 from apps.imports.models import ImportBatch
 from apps.imports.services import discard, skip_row, stage_upload, unskip_row
 from tests.factories import EmployeeFactory
@@ -202,8 +202,9 @@ def test_a_simulated_failure_leaves_nothing_and_marks_the_batch_failed(
         approve(batch, actor=hr_user)
 
     batch.refresh_from_db()
-    assert (batch.status, batch.error_summary) == ("failed", "OSError: disk full")
-    assert excinfo.value.detail["error_summary"] == "OSError: disk full"
+    # A fixed sentence: the exception's text could echo a cell, and the log has it (D73).
+    assert (batch.status, batch.error_summary) == ("failed", FAILED_SUMMARY)
+    assert excinfo.value.detail["error_summary"] == FAILED_SUMMARY
     assert (
         Employee.objects.count(),
         CompensationRecord.objects.count(),

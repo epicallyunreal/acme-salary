@@ -39,5 +39,10 @@ class SessionRefreshSerializer(TokenRefreshSerializer):
             raise AuthenticationFailed(
                 self.error_messages["no_active_account"], "no_active_account"
             )
-        access, refresh = services.rotate(refresh)
+        try:
+            access, refresh = services.rotate(refresh)
+        except TokenError:
+            # Rotated out by another request a moment ago: a reuse, so every session ends.
+            services.revoke_on_reuse(attrs["refresh"])
+            raise
         return {"access": str(access), "refresh": str(refresh)}

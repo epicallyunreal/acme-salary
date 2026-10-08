@@ -9,12 +9,16 @@ DEBUG = False
 for _name in ("SECRET_KEY", "ALLOWED_HOSTS", "SEED_ADMIN_PASSWORD"):
     if not globals().get(_name):
         raise ImproperlyConfigured(f"{_name} must be set in the environment")
+# Without it the database would land on the machine's ephemeral root filesystem (D73).
+if not env("DATABASE_PATH"):
+    raise ImproperlyConfigured("DATABASE_PATH must be set in the environment")
 
 # A copied-but-unedited .env.example must not boot in production: the key signs every JWT.
 PLACEHOLDERS = {
     "replace-with-a-long-random-string",
     "change-me",
     "dev-only-insecure-key-do-not-deploy",
+    TEST_ONLY_SECRET_KEY,
 }
 if SECRET_KEY in PLACEHOLDERS or len(SECRET_KEY) < 50 or len(set(SECRET_KEY)) < 5:
     raise ImproperlyConfigured(

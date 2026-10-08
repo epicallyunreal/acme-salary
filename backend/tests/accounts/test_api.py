@@ -167,3 +167,32 @@ def test_revoke_sessions_command_ends_every_session(anon, hr_user):
     assert refresh(anon, phone["refresh"]).status_code == 401
     with pytest.raises(CommandError, match="no user with the email nobody@acme.example"):
         call_command("revoke_sessions", "nobody@acme.example")
+
+
+def test_the_refresh_endpoint_is_throttled_and_takes_json_only(anon, hr_user):
+    """D73: thirty a minute per client address, keyed as the login is, and no multipart body."""
+    token = str(RefreshToken.for_user(hr_user))
+
+    assert anon.post(REFRESH, {"refresh": token}, format="multipart").status_code == 415
+    for _ in range(29):
+        assert refresh(anon, "not-a-token").status_code == 401
+
+    assert refresh(anon, "not-a-token").status_code == 429
+
+
+def test_an_ipv4_mapped_address_is_the_ipv4_client_it_wraps(anon, hr_user):
+    """D73: `::ffff:a.b.c.d` buckets with `a.b.c.d`, not with every other mapped client."""
+
+    def attempt(address):
+        return anon.post(
+            "/api/v1/auth/login/",
+            {"email": hr_user.email, "password": "wrong"},
+            format="json",
+            HTTP_X_FORWARDED_FOR=address,
+        )
+
+    for n in range(5):
+        assert attempt("::ffff:203.0.113.7" if n % 2 else "203.0.113.7").status_code == 401
+
+    assert attempt("::ffff:203.0.113.7").status_code == 429
+    assert attempt("::ffff:203.0.113.8").status_code == 401

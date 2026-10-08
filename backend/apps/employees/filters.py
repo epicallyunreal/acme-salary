@@ -2,10 +2,10 @@
 default is employees/queries.py's, which the export names as well."""
 
 from django.db.models import Q
-from django_filters import ChoiceFilter, DateFilter, FilterSet, NumberFilter, OrderingFilter
+from django_filters import DateFilter, FilterSet, NumberFilter, OrderingFilter
 
 from apps.core.exceptions import Invalid
-from apps.core.filters import BoundedSearchFilter, CharInFilter, ChoiceInFilter
+from apps.core.filters import BoundedSearchFilter, CharInFilter, ChoiceInFilter, ClippedChoiceFilter
 from apps.employees.models import Employee
 from apps.employees.queries import (
     ANY_STATUS,
@@ -35,7 +35,7 @@ class DirectoryFilterSet(FilterSet):
     department = CharInFilter(field_name="department__code")
     designation = CharInFilter(method="filter_designation")
     level = ChoiceInFilter(field_name="level", choices=[(str(n), str(n)) for n in range(1, 7)])
-    status = ChoiceFilter(method="filter_status", choices=STATUS_CHOICES)
+    status = ClippedChoiceFilter(method="filter_status", choices=STATUS_CHOICES)
     gross_min = NumberFilter(method="filter_gross_min")
     gross_max = NumberFilter(method="filter_gross_max")
     joined_after = DateFilter(field_name="joining_date", lookup_expr="gte")

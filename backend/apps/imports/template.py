@@ -9,6 +9,7 @@ from openpyxl import Workbook
 
 from apps.compensation.validators import template_columns
 from apps.core import queries as core_queries
+from apps.core.exceptions import clip
 from apps.core.models import Country
 
 
@@ -18,7 +19,7 @@ def template_country(country_code: str | None) -> str | None:
         return None
     code = country_code.strip().upper()
     if not Country.objects.filter(code=code).exists():
-        raise Http404(f"Unknown country_code: {code}")
+        raise Http404(f"Unknown country_code: {clip(code)}")
     return code
 
 

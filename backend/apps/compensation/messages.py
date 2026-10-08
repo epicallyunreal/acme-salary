@@ -19,6 +19,7 @@ MESSAGES = {
     ),
     "csv_unreadable": "file is not a readable .csv; save it again from Excel and upload it",
     "file_unpacks_large": "file unpacks to more than {limit}",
+    "file_many_parts": "file holds more than {limit} parts",
     "file_too_big": "file is too big to read",
     "upload_busy": "another file is being read; try again in a moment",
     "apply_busy": "an import is being applied; try again in a moment",

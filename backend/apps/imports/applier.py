@@ -31,6 +31,9 @@ from apps.imports.services import (
 
 logger = logging.getLogger(__name__)
 
+# What a failed batch says: the exception's text could echo a cell, and the log has it (D73).
+FAILED_SUMMARY = "the server has logged the cause"
+
 ACCEPTED_STATUSES = (ImportRow.Status.VALID, ImportRow.Status.WARNING)
 APPLIED_ACTIONS = (ImportRow.Action.CREATE, ImportRow.Action.UPDATE, ImportRow.Action.REVISE)
 
@@ -220,7 +223,7 @@ def approve(
             # its whole transaction. This one wrote nothing and the batch waits in review (D72).
             raise Conflict(msg("apply_busy")) from exc
         logger.exception("approve of import batch %s failed", batch.pk)
-        summary = f"{type(exc).__name__}: {exc}"[:2000]
+        summary = FAILED_SUMMARY
         # Only a batch still in review is marked, so an approve that finished meanwhile stands.
         ImportBatch.objects.filter(pk=batch.pk, status=ImportBatch.Status.REVIEW).update(
             status=ImportBatch.Status.FAILED, error_summary=summary

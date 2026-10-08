@@ -37,7 +37,7 @@ from apps.compensation.validators import IDENTITY_COLUMNS, template_columns
 from apps.core.dates import today_utc
 from apps.core.models import SalaryComponent
 from apps.employees.models import Employee
-from apps.exports.writers import XML_ILLEGAL
+from apps.exports.writers import XML_ILLEGAL, escape_cell
 from seed import profiles
 from seed.generator import generate, legacy_codes, ordered_entries
 
@@ -390,7 +390,8 @@ def database_codes() -> list[str]:
 
 def file_bytes(columns: list[str], rows: list[dict], kind: str) -> bytes:
     """The sheet as `.xlsx` or `.csv` bytes, numbers and dates as typed cells, every string as
-    text so a value that begins with `=` is never written as a formula."""
+    text so a value that begins with `=` is never written as a formula, and in the CSV escaped
+    with a quote as the exports escape it, since a CSV has no cell types (D73)."""
     if kind == ".xlsx":
         workbook = Workbook(write_only=True)
         sheet = workbook.create_sheet("employees")
@@ -405,7 +406,7 @@ def file_bytes(columns: list[str], rows: list[dict], kind: str) -> bytes:
         writer = csv.writer(text)
         writer.writerow(columns)
         for row in rows:
-            writer.writerow(["" if row.get(c) is None else _text(row.get(c)) for c in columns])
+            writer.writerow(["" if row.get(c) is None else _csv_text(row.get(c)) for c in columns])
         return text.getvalue().encode("utf-8")
     raise CommandError("--out must end in .xlsx or .csv")
 
@@ -429,6 +430,11 @@ def _text(value):
     if isinstance(value, date):
         return value.isoformat()
     return str(value)
+
+
+def _csv_text(value):
+    """Text that starts like a formula gets the exports' leading quote; a number stays one."""
+    return escape_cell(value) if isinstance(value, str) else _text(value)
 
 
 def generated_rows(

@@ -6,6 +6,7 @@ blacklists the refresh token it is given.
 
 import ipaddress
 
+from rest_framework.parsers import JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -18,7 +19,9 @@ from apps.accounts.serializers import MeSerializer
 
 class LoginRateThrottle(ScopedRateThrottle):
     """The login bucket is keyed on the client address, with an IPv6 address reduced to its /64:
-    a client controls at least that much and could otherwise mint a fresh bucket per request."""
+    a client controls at least that much and could otherwise mint a fresh bucket per request.
+    An IPv4-mapped address (`::ffff:a.b.c.d`) is the IPv4 client it wraps, so it is unmapped
+    first: every mapped client would otherwise fold into the one `::/64` bucket (D73)."""
 
     def get_ident(self, request):
         ident = super().get_ident(request)
@@ -26,9 +29,11 @@ class LoginRateThrottle(ScopedRateThrottle):
             address = ipaddress.ip_address(ident)
         except ValueError:
             return ident
+        if address.version == 6 and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
         if address.version == 6:
             return str(ipaddress.ip_network(f"{address}/64", strict=False))
-        return ident
+        return str(address)
 
 
 class LoginView(TokenObtainPairView):
@@ -39,7 +44,11 @@ class LoginView(TokenObtainPairView):
 
 
 class RefreshView(TokenRefreshView):
-    pass
+    """`{refresh}` to a new pair, JSON only and thirty a minute per client address (D73)."""
+
+    throttle_classes = [LoginRateThrottle]
+    throttle_scope = "refresh"
+    parser_classes = [JSONParser]
 
 
 class LogoutView(TokenBlacklistView):

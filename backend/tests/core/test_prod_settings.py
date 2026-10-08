@@ -35,7 +35,9 @@ def test_prod_settings_load_with_real_values(monkeypatch):
     assert prod.SECURE_PROXY_SSL_HEADER == ("HTTP_X_FORWARDED_PROTO", "https")
 
 
-@pytest.mark.parametrize("missing", ["SECRET_KEY", "ALLOWED_HOSTS", "SEED_ADMIN_PASSWORD"])
+@pytest.mark.parametrize(
+    "missing", ["SECRET_KEY", "ALLOWED_HOSTS", "SEED_ADMIN_PASSWORD", "DATABASE_PATH"]
+)
 def test_prod_settings_require_each_secret(monkeypatch, missing):
     with pytest.raises(ImproperlyConfigured, match=missing):
         load_prod(monkeypatch, **{missing: None})
@@ -43,7 +45,13 @@ def test_prod_settings_require_each_secret(monkeypatch, missing):
 
 @pytest.mark.parametrize(
     "secret_key",
-    ["replace-with-a-long-random-string", "dev-only-insecure-key-do-not-deploy", "short", "a" * 60],
+    [
+        "replace-with-a-long-random-string",
+        "dev-only-insecure-key-do-not-deploy",
+        "short",
+        "a" * 60,
+        "test-only-key-" * 4 + "long-enough-for-hmac-sha256-per-rfc-7518",
+    ],
 )
 def test_prod_settings_reject_placeholder_or_weak_secret_key(monkeypatch, secret_key):
     with pytest.raises(ImproperlyConfigured, match="SECRET_KEY"):

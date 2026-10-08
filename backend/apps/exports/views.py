@@ -12,6 +12,7 @@ from django.utils import timezone
 from rest_framework.generics import GenericAPIView
 from rest_framework.views import APIView
 
+from apps.core.exceptions import clip
 from apps.core.filters import parse_choice
 from apps.employees.queries import DEFAULT_STATUS
 from apps.employees.views import DirectoryMixin
@@ -55,7 +56,7 @@ def applied(params: QueryDict, keys: tuple[str, ...], dates: dict, currency: str
     `to`) and currency as applied, so a JSON file says what its figures are in when the request
     left them to their defaults (D60, D64). A parameter the export does not read is left out
     rather than shown as applied."""
-    given = {key: params.get(key) for key in keys if key in params}
+    given = {key: clip(params.get(key)) for key in keys if key in params}
     return {**given, **dates, "currency": currency}
 
 

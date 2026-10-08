@@ -38,6 +38,8 @@ ROW_LIMIT = 15_000
 # What a sheet may cost before openpyxl reads it (D56). A full 15,000-row template unpacks to
 # about 10 MB and is 22 columns wide.
 MAX_UNPACKED_BYTES = 50 * 1024 * 1024
+# A workbook holds a few dozen parts; past this the archive itself is the cost (D73).
+MAX_ZIP_PARTS = 1_000
 MAX_ROW_CELLS = 200
 EXCEL_MAX_ROW = 1_048_576
 # openpyxl builds some parts as a whole tree, at about 100 bytes an element; a full 15,000-row
@@ -195,6 +197,8 @@ def preflight_xlsx(stream) -> None:
     """
     with zipfile.ZipFile(stream) as archive:
         parts = archive.infolist()
+        if len(parts) > MAX_ZIP_PARTS:
+            raise Invalid({"file": [msg("file_many_parts", limit=f"{MAX_ZIP_PARTS:,}")]})
         if sum(part.file_size for part in parts) > MAX_UNPACKED_BYTES:
             raise Invalid({"file": [msg("file_unpacks_large", limit="50 MB")]})
         scan = _Scan()

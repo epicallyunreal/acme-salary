@@ -29,6 +29,17 @@ describe('safeNext', () => {
     expect(safeNext('')).toBe('/');
   });
 
+  it('sends a dot segment that leaves the path starting with // to the start page', () => {
+    // The parser drops the segment and keeps the host, leaving //evil.example/phish (D73).
+    for (const next of [
+      '/.//evil.example/phish',
+      '/..//evil.example/phish',
+      '/%2e//evil.example/phish',
+    ]) {
+      expect(safeNext(next)).toBe('/');
+    }
+  });
+
   it('is not fooled by characters the URL parser strips or rewrites', () => {
     expect(safeNext('/\\evil.example')).toBe('/');
     expect(safeNext('/\t/evil.example')).toBe('/');

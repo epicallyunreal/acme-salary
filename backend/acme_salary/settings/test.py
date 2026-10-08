@@ -3,7 +3,7 @@
 from .base import *
 
 DEBUG = False
-SECRET_KEY = "test-only-key-" * 4 + "long-enough-for-hmac-sha256-per-rfc-7518"
+SECRET_KEY = TEST_ONLY_SECRET_KEY
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 CORS_ALLOWED_ORIGINS = ["http://localhost:5173"]
 CSRF_TRUSTED_ORIGINS = ["http://localhost:5173"]

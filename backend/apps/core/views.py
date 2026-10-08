@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from apps.core import fx
 from apps.core import queries as core_queries
 from apps.core.dates import parse_on
+from apps.core.exceptions import clip
 from apps.core.models import Country, Department, SalaryComponent
 from apps.core.money import render
 
@@ -67,7 +68,7 @@ class ComponentListView(ListAPIView):
         if not code:
             return core_queries.active_components()
         if not Country.objects.filter(code=code).exists():
-            raise Http404(f"Unknown country_code: {code}")
+            raise Http404(f"Unknown country_code: {clip(code)}")
         return core_queries.components_for_country(code)
 
 

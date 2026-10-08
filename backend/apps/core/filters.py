@@ -2,7 +2,9 @@
 
 from collections.abc import Sequence
 
+from django.core.exceptions import ValidationError
 from django_filters import BaseInFilter, CharFilter, ChoiceFilter, NumberFilter
+from django_filters.fields import ChoiceField
 from rest_framework.filters import SearchFilter
 
 from apps.core.exceptions import Invalid, clip
@@ -18,7 +20,24 @@ class NumberInFilter(BaseInFilter, NumberFilter):
     """`?gross=1,2` on a numeric lookup with no fixed set of values."""
 
 
-class ChoiceInFilter(BaseInFilter, ChoiceFilter):
+class ClippedChoiceField(ChoiceField):
+    """django-filter's choice field, its invalid-choice message echoing the value clipped, as
+    every other echo of a client value is (D68, D73)."""
+
+    def validate(self, value):
+        if value and not self.valid_value(value):
+            raise ValidationError(
+                self.error_messages["invalid_choice"],
+                code="invalid_choice",
+                params={"value": clip(value)},
+            )
+
+
+class ClippedChoiceFilter(ChoiceFilter):
+    field_class = ClippedChoiceField
+
+
+class ChoiceInFilter(BaseInFilter, ClippedChoiceFilter):
     """`?level=1,2` where every value must be one of the choices, so a stray value is a 400 that
     names the field instead of an integer SQLite cannot hold."""
 

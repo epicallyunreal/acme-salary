@@ -11,7 +11,9 @@ export function loginPath(location: { pathname: string; search: string }): strin
 /**
  * Only a same-origin path is a valid `next`; anything else goes to the start page. The value is
  * resolved by the URL parser, which is what the browser would do with it, so a backslash, a tab
- * or a newline cannot smuggle another host past a prefix check.
+ * or a newline cannot smuggle another host past a prefix check. A dot segment can leave the
+ * resolved path starting with `//`, which a later sink could read as a host, so that goes to
+ * the start page too (D73).
  */
 export function safeNext(next: string | null): string {
   if (!next || !next.startsWith('/')) return '/';
@@ -21,6 +23,6 @@ export function safeNext(next: string | null): string {
   } catch {
     return '/';
   }
-  if (url.origin !== window.location.origin) return '/';
+  if (url.origin !== window.location.origin || url.pathname.startsWith('//')) return '/';
   return `${url.pathname}${url.search}${url.hash}`;
 }

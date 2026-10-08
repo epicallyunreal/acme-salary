@@ -24,6 +24,11 @@ def env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_int(name: str, default: int) -> int:
+    raw = env(name)
+    return default if raw is None else int(raw)
+
+
 def env_list(name: str, default: list[str] | None = None) -> list[str]:
     raw = env(name)
     if raw is None:
@@ -59,10 +64,12 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
     "apps.core.middleware.NoStoreApiMiddleware",
+    # Above WhiteNoise, which answers a static file without the middleware below it, so the
+    # bundle carries X-Frame-Options as the API does (D73).
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
 ROOT_URLCONF = "acme_salary.urls"
@@ -148,9 +155,10 @@ REST_FRAMEWORK = {
         "rest_framework.filters.SearchFilter",
     ],
     "EXCEPTION_HANDLER": "apps.core.exceptions.handler",
-    "DEFAULT_THROTTLE_RATES": {"login": "5/min", "reset": "5/hour"},
-    # Fly's proxy is the one trusted hop, so a client cannot mint throttle buckets.
-    "NUM_PROXIES": 1,
+    "DEFAULT_THROTTLE_RATES": {"login": "5/min", "refresh": "30/min", "reset": "5/hour"},
+    # The proxy hops trusted in X-Forwarded-For: Fly's proxy is one, and compose, with nothing
+    # in front of gunicorn, sets 0, so a client cannot mint throttle buckets either way (D73).
+    "NUM_PROXIES": env_int("NUM_PROXIES", 1),
     "COERCE_DECIMAL_TO_STRING": True,
 }
 
@@ -170,6 +178,9 @@ SIMPLE_JWT = {
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 SEED_ADMIN_PASSWORD = env("SEED_ADMIN_PASSWORD")
+
+# The test settings' key, which production refuses like the other placeholders (D73).
+TEST_ONLY_SECRET_KEY = "test-only-key-" * 4 + "long-enough-for-hmac-sha256-per-rfc-7518"
 
 # The Demo data page's committed base file (F9, D72): the repository's folder locally, a copy in
 # the image on Fly.

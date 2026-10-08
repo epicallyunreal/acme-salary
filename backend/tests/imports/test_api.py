@@ -300,7 +300,7 @@ def test_a_failed_approve_is_a_409_with_the_summary(api, lookups, monkeypatch):
         409,
         {
             "detail": "approve failed, the batch is marked failed",
-            "error_summary": "OSError: disk full",
+            "error_summary": "the server has logged the cause",
         },
     )
     assert api.get(f"{LIST}{batch.pk}/").json()["status"] == "failed"
