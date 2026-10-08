@@ -25,6 +25,7 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from faker import Faker
 
 from apps.compensation.services import BulkEntry, RecordInput
+from apps.core.dates import REPORTING_START, months_before
 from seed import profiles
 from seed.profiles import CountrySpec, DepartmentSpec
 
@@ -107,6 +108,33 @@ def april_firsts(after: date, until: date) -> list[date]:
     return days
 
 
+def reviews(joining_date: date, end: date) -> list[date]:
+    """The days someone's pay is set (D64, D70): joining, then every 1 April after it up to `end`,
+    except the first when they joined in the six months before it."""
+    aprils = april_firsts(joining_date, end)
+    if aprils and joining_date >= months_before(aprils[0], profiles.FIRST_REVIEW_MONTHS):
+        aprils = aprils[1:]
+    return [joining_date, *aprils]
+
+
+def with_cutoff(records: list[RecordInput], joining_date: date, end: date) -> list[RecordInput]:
+    """`records`, one per review from the joining date, with one starting on the reporting
+    cut-off for someone employed then (D70). Where the pay running into 1 April 2020 started
+    earlier, a revision that day repeats it, lines and bonus alike, a one-off for that day."""
+    starts = [record.effective_from for record in records]
+    if not joining_date < REPORTING_START <= end or REPORTING_START in starts:
+        return records
+    at = bisect_right(starts, REPORTING_START)
+    running = records[at - 1]
+    cutoff = RecordInput(
+        effective_from=REPORTING_START,
+        bonus_annual=running.bonus_annual,
+        note=profiles.CUTOFF_NOTE,
+        lines=dict(running.lines),
+    )
+    return [*records[:at], cutoff, *records[at:]]
+
+
 def last_april(day: date) -> date:
     """The latest 1 April on or before `day`."""
     return date(day.year if (day.month, day.day) >= (4, 1) else day.year - 1, 4, 1)
@@ -154,8 +182,9 @@ def draw_career(rng: random.Random, level: int, last_date: date | None) -> Caree
     points either side of it, so the level path ends at `level` (D64).
 
     The last review is the latest 1 April on or before the end (the reference date, or the last
-    day), unless they joined after it, when it is the joining date. Years at ACME never exceed
-    total experience, and a leaver stays at least 30 days."""
+    day), unless they joined after it, or in the six months before it, when it is the joining
+    date (D70). Years at ACME never exceed total experience, and a leaver stays at least 30 days.
+    """
     end = last_date or profiles.REFERENCE_DATE
     april = last_april(end)
     low, high = experience_range(level)
@@ -165,7 +194,8 @@ def draw_career(rng: random.Random, level: int, last_date: date | None) -> Caree
     earliest = max(profiles.HISTORY_START, april - timedelta(days=experience))
     latest = end - timedelta(days=profiles.MIN_TENURE_DAYS) if last_date else end
     joining_date = earliest + timedelta(days=rng.randrange((latest - earliest).days + 1))
-    review = max(joining_date, april)
+    schedule = reviews(joining_date, end)
+    review = schedule[-1]
     points = {}
     for promoted_to in profiles.LEVELS[1:]:
         first, last = window(promoted_to)
@@ -174,7 +204,16 @@ def draw_career(rng: random.Random, level: int, last_date: date | None) -> Caree
         elif promoted_to == level + 1:
             first = max(first, experience + 1)
         points[promoted_to] = first + rng.randrange(last - first + 1)
-    return Career(level, joining_date, review - timedelta(days=experience), points)
+    start = review - timedelta(days=experience)
+    # A skipped first April leaves 12 to 18 months between joining and the next review, room for
+    # two promotion points. The lower then falls on the joining day, inside its window since the
+    # windows start at least 730 days apart, so no review moves anyone two levels (D70).
+    if len(schedule) > 1:
+        joined, second = ((day - start).days for day in schedule[:2])
+        for promoted_to in profiles.LEVELS[1:-1]:
+            if joined < points[promoted_to] and points[promoted_to + 1] <= second:
+                points[promoted_to] = joined
+    return Career(level, joining_date, start, points)
 
 
 def base_at_review(
@@ -254,11 +293,9 @@ class People:
             for code in JITTERED
         }
 
-        # One record at joining and one on every 1 April since, every one kept (D64).
-        review_days = [
-            career.joining_date,
-            *april_firsts(career.joining_date, last_date or profiles.REFERENCE_DATE),
-        ]
+        # One record at joining and one at every review since, every one kept (D64, D70).
+        end = last_date or profiles.REFERENCE_DATE
+        review_days = reviews(career.joining_date, end)
         levels = [career.level_on(day) for day in review_days]
         if levels[-1] != level:
             raise RuntimeError(f"a career drawn for L{level} ends at L{levels[-1]}")
@@ -292,6 +329,8 @@ class People:
                     lines=lines_for(country, record_level, base, bonus, jitter),
                 )
             )
+
+        records = with_cutoff(records, career.joining_date, end)
 
         identity = {
             "full_name": f"{first} {last}",

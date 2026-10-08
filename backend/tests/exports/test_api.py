@@ -351,11 +351,11 @@ def test_every_insight_table_ends_with_reason_currency_and_rates(api, people, na
 
 
 def test_the_summary_is_one_row_with_its_currency_and_rates(api, people):
-    """The state on `to` and what the period cost: the 27 for 366 days of a 365-day year,
-    2,435,450 x 366 / 365, and X1 until 30 June, 267 days of 132,000 (D64)."""
+    """The state on `to` and what the period cost: the 27 for all 365 days of the period,
+    2,435,450, and X1 until 30 June, 266 days of 132,000, 96,197.26 (D64, D69)."""
     body = json_body(api.get(INSIGHT.format("summary"), {"file": "json"}))
 
-    assert body["filters"] == {"from": "2025-10-07", "to": "2026-10-07", "currency": "USD"}
+    assert body["filters"] == {"from": "2025-10-08", "to": "2026-10-07", "currency": "USD"}
     assert body["rows"] == [
         {
             "currency": "USD",
@@ -367,7 +367,7 @@ def test_the_summary_is_one_row_with_its_currency_and_rates(api, people):
             "countries": 4,
             "departments": 4,
             "people_in_period": 28,
-            "spent_in_period": "2538681.37",
+            "spent_in_period": "2531647.26",
             "reason": None,
         }
     ]
@@ -661,7 +661,7 @@ def test_local_currency_names_the_currency_and_no_rate_month(api, people):
 
     assert body["filters"] == {
         "country": "IN",
-        "from": "2025-10-07",
+        "from": "2025-10-08",
         "to": "2026-10-07",
         "currency": "INR",
     }
@@ -681,7 +681,7 @@ def test_to_reaches_the_insight_export(api, people):
     """On 1 January 2027 U1 is paid 130,000 and D5 has joined: 28 people (tests/insights)."""
     body = json_body(api.get(INSIGHT.format("summary"), {"file": "json", "to": "2027-01-01"}))
 
-    assert body["filters"] == {"from": "2026-01-01", "to": "2027-01-01", "currency": "USD"}
+    assert body["filters"] == {"from": "2026-01-02", "to": "2027-01-01", "currency": "USD"}
     assert (body["rows"][0]["headcount"], body["rows"][0]["total_cost"]) == (28, "2618450.00")
 
 
@@ -746,11 +746,11 @@ def test_trend_exports_both_figures_whatever_its_card_draws(api, people):
     assert header == ["Date", "Headcount", "Total cost", "Reason", "Currency", "Rates"]
     assert body["filters"] == {
         "measure": "headcount",
-        "from": "2025-10-07",
+        "from": "2025-10-08",
         "to": "2026-10-07",
         "currency": "USD",
     }
-    # 7 October 2025, the twelve month-ends after it and 7 October 2026 (D64).
+    # 8 October 2025, the twelve month-ends after it and 7 October 2026 (D64, D69).
     assert len(body["rows"]) == 14
     assert body["rows"][-1] == {
         "date": "2026-10-07",
@@ -770,7 +770,7 @@ def test_the_bridge_exports_one_row_per_part(api, people):
 
     assert rows == [
         ["Part", "Date", "People", "Amount", "Reason", "Currency", "Rates"],
-        ["Start", "2025-10-07", "28", "2567450.00", "", "USD", RATES],
+        ["Start", "2025-10-08", "28", "2567450.00", "", "USD", RATES],
         ["Leavers", "", "1", "", "fewer than 5 people", "USD", RATES],
         ["Joiners", "", "0", "0.00", "", "USD", RATES],
         ["Pay changes", "", "27", "", "withheld with the leavers", "USD", RATES],
@@ -784,7 +784,7 @@ def test_by_tenure_exports_its_bands_for_the_level_picked(api, people):
 
     assert body["filters"] == {
         "level": "3",
-        "from": "2025-10-07",
+        "from": "2025-10-08",
         "to": "2026-10-07",
         "currency": "USD",
     }
@@ -1017,14 +1017,14 @@ def test_a_file_names_the_control_as_the_insight_applied_it(api, people):
     """D62: the default when none was given, in the list's own spelling when one was."""
     assert json_filters(api, "by-tenure") == {
         "level": "all",
-        "from": "2025-10-07",
+        "from": "2025-10-08",
         "to": "2026-10-07",
         "currency": "USD",
     }
     assert json_filters(api, "gender-gap", view=" BONUS ")["view"] == "bonus"
     assert json_filters(api, "summary", include_exited="true") == {
         "include_exited": "true",
-        "from": "2025-10-07",
+        "from": "2025-10-08",
         "to": "2026-10-07",
         "currency": "USD",
     }

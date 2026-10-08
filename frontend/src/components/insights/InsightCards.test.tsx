@@ -138,8 +138,8 @@ describe('insight cards', () => {
     expect(within(kpis).getByText('Median gross on 7 Oct 2026')).toBeInTheDocument();
     expect(within(kpis).getByText('75,000')).toBeInTheDocument();
     expect(within(kpis).getByText('Spent in period')).toBeInTheDocument();
-    expect(within(kpis).getByTitle(/^USD\s2,538,681$/)).toHaveTextContent('2.5M');
-    expect(within(kpis).getByText('7 Oct 2025 to 7 Oct 2026')).toBeInTheDocument();
+    expect(within(kpis).getByTitle(/^USD\s2,531,647$/)).toHaveTextContent('2.5M');
+    expect(within(kpis).getByText('8 Oct 2025 to 7 Oct 2026')).toBeInTheDocument();
   });
 
   it('the spend is withheld when a day of the period had under five, its dates kept', async () => {
@@ -149,7 +149,7 @@ describe('insight cards', () => {
 
     expect(
       await within(kpis).findByText(
-        '7 Oct 2025 to 7 Oct 2026, shown when each day has 5 people or more',
+        '8 Oct 2025 to 7 Oct 2026, shown when each day has 5 people or more',
       ),
     ).toBeInTheDocument();
     expect(within(kpis).getAllByText('—')).toHaveLength(1);
@@ -415,9 +415,9 @@ describe('insight cards', () => {
     renderWithProviders(<Trend />);
 
     expect(
-      await screen.findByText('From 7 Oct 2025 to 7 Oct 2026, at October 2026 rates.'),
+      await screen.findByText('From 8 Oct 2025 to 7 Oct 2026, at October 2026 rates.'),
     ).toBeInTheDocument();
-    expect(await row('Cost trend by date', '7 Oct 2025')).toEqual(['4', UNDER_FIVE]);
+    expect(await row('Cost trend by date', '8 Oct 2025')).toEqual(['4', UNDER_FIVE]);
     expect(await row('Cost trend by date', '31 Oct 2025')).toEqual(['4', UNDER_FIVE]);
     expect(await row('Cost trend by date', '30 Sep 2026')).toEqual(['27', 'USD 2,435,450']);
     expect(await row('Cost trend by date', '7 Oct 2026')).toEqual(['27', 'USD 2,435,450']);
@@ -430,7 +430,7 @@ describe('insight cards', () => {
   it('the trend by headcount has no gaps to explain, its table unchanged', async () => {
     renderWithProviders(<Trend measure="headcount" />);
 
-    expect(await row('Cost trend by date', '7 Oct 2025')).toEqual(['4', UNDER_FIVE]);
+    expect(await row('Cost trend by date', '8 Oct 2025')).toEqual(['4', UNDER_FIVE]);
     expect(screen.queryByText(/A gap is a date/)).not.toBeInTheDocument();
   });
 
@@ -447,7 +447,7 @@ describe('insight cards', () => {
     renderWithProviders(<Bridge />);
 
     expect(
-      await screen.findByText('From 7 Oct 2025 to 7 Oct 2026, at October 2026 rates.'),
+      await screen.findByText('From 8 Oct 2025 to 7 Oct 2026, at October 2026 rates.'),
     ).toBeInTheDocument();
     expect(await row('Cost bridge for the period', 'Start')).toEqual(['6', 'USD 415,000']);
     expect(await row('Cost bridge for the period', 'Leavers')).toEqual(['0', 'USD 0']);
@@ -483,7 +483,7 @@ describe('insight cards', () => {
     const kpis = await screen.findByRole('region', { name: 'Key figures' });
 
     expect(
-      await within(kpis).findByText("7 Oct 2025 to 7 Oct 2026, Include exited doesn't apply"),
+      await within(kpis).findByText("8 Oct 2025 to 7 Oct 2026, Include exited doesn't apply"),
     ).toBeInTheDocument();
   });
 

@@ -7,6 +7,8 @@ from decimal import Decimal
 
 import pytest
 
+from apps.compensation.services import RecordInput
+from apps.core.dates import REPORTING_START, months_before
 from seed import profiles
 from seed.generator import (
     LEAVER_LEVEL_WEIGHTS,
@@ -25,10 +27,13 @@ from seed.generator import (
     lines_for,
     month_ends,
     ordered_entries,
+    reviews,
     window,
+    with_cutoff,
 )
 
 COUNTRIES = {spec.code: spec for spec in profiles.COUNTRIES}
+END = profiles.REFERENCE_DATE
 DEPARTMENTS = {spec.code: spec for spec in profiles.DEPARTMENTS}
 PROMOTION = re.compile(r"promotion to L(\d)")
 
@@ -76,12 +81,16 @@ def test_emails_and_dates_follow_the_rules():
         )
 
 
-def test_every_revision_since_joining_is_kept_one_each_1_april():
+def test_a_record_at_joining_at_every_review_since_and_on_the_cut_off():
+    """Every revision is kept (D64). Everyone employed on 1 April 2020 has a record starting that
+    day, a review or the cut-off's own (D70)."""
     for entry in entries():
         end = entry.identity["last_date"] or profiles.REFERENCE_DATE
         joined = entry.identity["joining_date"]
-        dates = [record.effective_from for record in entry.records]
-        assert dates == [joined, *april_firsts(joined, end)]
+        expected = set(reviews(joined, end))
+        if joined <= REPORTING_START <= end:
+            expected.add(REPORTING_START)
+        assert [record.effective_from for record in entry.records] == sorted(expected)
         country = COUNTRIES[entry.identity["country_code"]]
         allowed = {"BASE", "TAX", "EMPLOYER_CONTRIBUTION", *country.components}
         for record in entry.records:
@@ -95,19 +104,29 @@ def test_promotions_move_one_level_at_a_time_up_to_the_level_now():
         notes = [record.note for record in entry.records]
         assert notes[0] == "joining"
         promoted = [int(m.group(1)) for note in notes[1:] if (m := PROMOTION.fullmatch(note))]
-        assert all(note == "annual raise" or PROMOTION.fullmatch(note) for note in notes[1:])
+        assert all(
+            note in ("annual raise", profiles.CUTOFF_NOTE) or PROMOTION.fullmatch(note)
+            for note in notes[1:]
+        )
         level = entry.identity["level"]
         joined_at = level - len(promoted)
         assert joined_at >= 1
         assert promoted == list(range(joined_at + 1, level + 1))
 
 
-def test_a_raise_is_3_to_8_percent_and_a_promotion_12_to_20():
-    """Each base is rounded to 100, so the ratio may stray from its range by 100 either way."""
+def test_a_raise_is_3_to_8_percent_a_promotion_12_to_20_and_the_cut_off_no_change():
+    """Each base is rounded to 100, so the ratio may stray from its range by 100 either way. The
+    cut-off's revision is the one that changes nothing, lines and bonus alike (D70)."""
     for entry in entries():
-        for record, before, after in zip(
-            entry.records[1:], bases(entry), bases(entry)[1:], strict=False
+        for previous, record, before, after in zip(
+            entry.records, entry.records[1:], bases(entry), bases(entry)[1:], strict=False
         ):
+            if record.note == profiles.CUTOFF_NOTE:
+                assert (record.lines, record.bonus_annual) == (
+                    previous.lines,
+                    previous.bonus_annual,
+                )
+                continue
             low, high = (
                 profiles.PROMOTION_RANGE
                 if record.note.startswith("promotion")
@@ -148,7 +167,8 @@ def test_a_career_ends_at_its_level_and_fits_the_ladder(level, last_date):
     end = last_date or profiles.REFERENCE_DATE
     for _ in range(100):
         career = draw_career(rng, level, last_date)
-        review = max(career.joining_date, last_april(end))
+        schedule = reviews(career.joining_date, end)
+        review = schedule[-1]
         low, high = experience_range(level)
         assert low <= (review - career.experience_start).days <= high
         assert career.level_on(review) == level
@@ -156,15 +176,96 @@ def test_a_career_ends_at_its_level_and_fits_the_ladder(level, last_date):
         assert profiles.HISTORY_START <= career.joining_date <= end
         if last_date is not None:
             assert (last_date - career.joining_date).days >= 30
-        path = [
-            career.level_on(day)
-            for day in [career.joining_date, *april_firsts(career.joining_date, end)]
-        ]
+        path = [career.level_on(day) for day in schedule]
         assert path == sorted(path)
         assert all(b - a <= 1 for a, b in zip(path, path[1:], strict=False))
         for promoted_to, point in career.points.items():
             first, last = window(promoted_to)
             assert first <= point <= last
+
+
+def test_a_first_april_within_six_months_of_joining_is_skipped():
+    """Joined from 1 October to 31 March, the April that follows brings no raise and no
+    promotion. 30 September is six months and a day before it (D70)."""
+    end = profiles.REFERENCE_DATE
+
+    assert reviews(date(2025, 9, 30), end) == [date(2025, 9, 30), date(2026, 4, 1)]
+    assert reviews(date(2025, 10, 1), end) == [date(2025, 10, 1)]
+    assert reviews(date(2026, 3, 31), end) == [date(2026, 3, 31)]
+    assert reviews(date(2019, 12, 15), end)[:3] == [
+        date(2019, 12, 15),
+        date(2021, 4, 1),
+        date(2022, 4, 1),
+    ]
+    assert reviews(date(2026, 4, 1), end) == [date(2026, 4, 1)]
+
+
+def test_the_cut_off_repeats_the_pay_of_a_joiner_of_the_six_months_before_it():
+    """Of everyone employed on 1 April 2020, only a joiner of October 2019 to March 2020 has no
+    review that day, and gets the cut-off's revision instead (D70)."""
+    people = entries(200, 100)
+    split = [e for e in people if any(r.note == profiles.CUTOFF_NOTE for r in e.records)]
+
+    assert split
+    for entry in split:
+        joined = entry.identity["joining_date"]
+        assert months_before(REPORTING_START, 6) <= joined < REPORTING_START
+        (at,) = [i for i, r in enumerate(entry.records) if r.note == profiles.CUTOFF_NOTE]
+        cutoff, running = entry.records[at], entry.records[at - 1]
+        assert cutoff.effective_from == REPORTING_START
+        assert (cutoff.lines, cutoff.bonus_annual) == (running.lines, running.bonus_annual)
+    for entry in people:
+        end = entry.identity["last_date"] or profiles.REFERENCE_DATE
+        if entry.identity["joining_date"] <= REPORTING_START <= end:
+            assert REPORTING_START in {record.effective_from for record in entry.records}
+
+
+def pay(day, base, note="annual raise"):
+    return RecordInput(
+        effective_from=day, bonus_annual=Decimal(1000), note=note, lines={"BASE": Decimal(base)}
+    )
+
+
+def test_the_cut_off_splits_only_pay_running_into_it_from_earlier():
+    """D70: a December 2019 joiner who left on 1 April 2020 gets a one-day cut-off record that
+    repeats their pay. One who left on 31 March gets none, and neither does anyone with a review
+    or a joining date on 1 April 2020."""
+    joined = pay(date(2019, 12, 15), 50_000, "joining")
+    later = pay(date(2021, 4, 1), 52_000)
+    split = with_cutoff([joined], date(2019, 12, 15), date(2020, 4, 1))
+
+    assert [record.effective_from for record in split] == [date(2019, 12, 15), REPORTING_START]
+    assert split[1] == pay(REPORTING_START, 50_000, profiles.CUTOFF_NOTE)
+    assert with_cutoff([joined], date(2019, 12, 15), date(2020, 3, 31)) == [joined]
+    assert [r.effective_from for r in with_cutoff([joined, later], joined.effective_from, END)] == [
+        date(2019, 12, 15),
+        REPORTING_START,
+        date(2021, 4, 1),
+    ]
+    reviewed = [pay(date(2019, 9, 30), 50_000, "joining"), pay(REPORTING_START, 52_000)]
+    assert with_cutoff(reviewed, date(2019, 9, 30), END) == reviewed
+    started = [pay(REPORTING_START, 50_000, "joining")]
+    assert with_cutoff(started, REPORTING_START, END) == started
+
+
+def test_a_skipped_april_never_moves_anyone_two_levels():
+    """Ten thousand careers. Where a skipped first April left two promotion points before the next
+    review, the lower moved to the joining day, so no review moves anyone two levels (D70)."""
+    rng = random.Random(7)
+    moved = 0
+    for n in range(10_000):
+        level = 2 + n % 5
+        career = draw_career(rng, level, None)
+        schedule = reviews(career.joining_date, profiles.REFERENCE_DATE)
+        path = [career.level_on(day) for day in schedule]
+        assert path[-1] == level
+        assert all(b - a <= 1 for a, b in zip(path, path[1:], strict=False))
+        joined = (career.joining_date - career.experience_start).days
+        moved += len(schedule) > 1 and joined in career.points.values()
+        for promoted_to, point in career.points.items():
+            assert window(promoted_to)[0] <= point <= window(promoted_to)[1]
+
+    assert moved
 
 
 def test_every_active_l1_joined_after_1_april_2023():

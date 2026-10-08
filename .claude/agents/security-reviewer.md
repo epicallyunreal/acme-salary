@@ -13,7 +13,7 @@ Read `backend/acme_salary/settings/*.py`, every `views.py`, `urls.py`, `serializ
 
 1. Authentication. `DEFAULT_PERMISSION_CLASSES` is `IsAuthenticated`. No view sets `AllowAny` except login, token refresh and `/healthz`. Every other URL in `urls.py` resolves to an authenticated view. The login throttle is `5/min` on scope `login` with `NUM_PROXIES = 1`.
 2. Secrets. Grep the repo for `SECRET_KEY =`, `password`, `token`, `api_key` literals. `.env` is not committed. `.env.example` has placeholders only. `SEED_ADMIN_PASSWORD` has no production default.
-3. Uploads. Size limit (10 MB) and row limit (10,000) enforced server-side. Extension and content type checked. `openpyxl` opened with `read_only=True` and `data_only=True`. Uploaded files are not saved outside a temp or media directory, and are deleted or never written when possible.
+3. Uploads. Size limit (10 MB) and row limit (15,000, D64) enforced server-side. Extension and content type checked. `openpyxl` opened with `read_only=True` and `data_only=True`. Uploaded files are not saved outside a temp or media directory, and are deleted or never written when possible.
 4. SQL. No raw SQL built with string formatting. ORM or parameterised queries only.
 5. Settings. `DEBUG` off in prod settings. `ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS` from environment. No wildcard CORS.
 6. Exposure. Serializers do not return fields the UI does not use. No user password hashes, no internal paths, no stack traces in error responses.

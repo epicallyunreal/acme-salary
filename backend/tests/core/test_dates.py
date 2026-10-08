@@ -2,7 +2,14 @@ from datetime import date
 
 import pytest
 
-from apps.core.dates import month_label, months_before, parse_on, parse_period, today_utc
+from apps.core.dates import (
+    month_label,
+    months_before,
+    parse_on,
+    parse_period,
+    period_start,
+    today_utc,
+)
 from apps.core.exceptions import Invalid
 
 
@@ -50,17 +57,30 @@ def test_month_label():
 
 
 def test_a_period_defaults_to_the_twelve_months_ending_today(today):
-    """D64: `to` today in UTC and `from` the same day a year before, the dashboard's default."""
-    assert parse_period(None, None) == (date(2025, 10, 7), date(2026, 10, 7))
+    """D64 and D69: `to` today in UTC and `from` the day after the same day a year before, 365
+    days, the dashboard's default, never before the reporting cut-off, 1 April 2020 (D70)."""
+    assert parse_period(None, None) == (date(2025, 10, 8), date(2026, 10, 7))
     assert parse_period("2026-04-01", "2027-01-01") == (date(2026, 4, 1), date(2027, 1, 1))
-    assert parse_period(None, "2015-06-30") == (date(2015, 1, 1), date(2015, 6, 30))
+    assert parse_period(None, "2020-06-30") == (date(2020, 4, 1), date(2020, 6, 30))
+    assert parse_period(None, "2021-03-31") == (date(2020, 4, 1), date(2021, 3, 31))
+    assert parse_period(None, "2021-04-30") == (date(2020, 5, 1), date(2021, 4, 30))
 
 
 def test_a_period_may_end_on_the_last_day_allowed_and_be_one_day_long(today):
     assert parse_period("2100-12-01", "2100-12-31") == (date(2100, 12, 1), date(2100, 12, 31))
-    assert parse_period(None, "2100-12-31") == (date(2099, 12, 31), date(2100, 12, 31))
+    assert parse_period(None, "2100-12-31") == (date(2100, 1, 1), date(2100, 12, 31))
     assert parse_period("2026-10-07", "2026-10-07") == (date(2026, 10, 7), date(2026, 10, 7))
-    assert parse_period(None, "2015-01-01") == (date(2015, 1, 1), date(2015, 1, 1))
+    assert parse_period(None, "2020-04-01") == (date(2020, 4, 1), date(2020, 4, 1))
+
+
+def test_a_period_of_n_months_starts_the_day_after_the_date_n_months_back():
+    """D69: 12 months ending 8 October 2026 start on 9 October 2025. Where the day does not exist
+    the date back is that month's last day, so 6 months ending 31 October start on 1 May, and one
+    ending 31 March starts on 1 March."""
+    assert period_start(date(2026, 10, 8), 12) == date(2025, 10, 9)
+    assert period_start(date(2026, 10, 31), 6) == date(2026, 5, 1)
+    assert period_start(date(2026, 3, 31), 1) == date(2026, 3, 1)
+    assert period_start(date(2028, 2, 29), 12) == date(2027, 3, 1)
 
 
 def test_a_month_back_lands_on_the_months_last_day_when_the_day_is_not_there():
@@ -77,9 +97,10 @@ def test_a_month_back_lands_on_the_months_last_day_when_the_day_is_not_there():
         ("01/04/2026", None, {"from": ["from must be a date in YYYY-MM-DD form, got 01/04/2026"]}),
         ("20260101", None, {"from": ["from must be a date in YYYY-MM-DD form, got 20260101"]}),
         (None, "2026-W41-3", {"to": ["to must be a date in YYYY-MM-DD form, got 2026-W41-3"]}),
-        (None, "0001-06-15", {"to": ["to must be on or after 2015-01-01, got 0001-06-15"]}),
+        (None, "0001-06-15", {"to": ["to must be on or after 2020-04-01, got 0001-06-15"]}),
         (None, "9999-12-31", {"to": ["to must be on or before 2100-12-31, got 9999-12-31"]}),
-        ("2014-12-31", None, {"from": ["from must be on or after 2015-01-01, got 2014-12-31"]}),
+        ("2020-03-31", None, {"from": ["from must be on or after 2020-04-01, got 2020-03-31"]}),
+        (None, "2020-03-31", {"to": ["to must be on or after 2020-04-01, got 2020-03-31"]}),
         (None, "2101-01-01", {"to": ["to must be on or before 2100-12-31, got 2101-01-01"]}),
         ("2026-10-08", "2026-10-07", {"from": ["from must be on or before to"]}),
     ],

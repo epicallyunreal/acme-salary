@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import { type ChangeEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 
-import { PERIOD_FIRST, PERIOD_LAST } from '../../lib/constants';
+import { PERIOD_LAST, REPORTING_START } from '../../lib/constants';
 import {
   type Period,
   PERIOD_LABELS,
@@ -118,7 +118,7 @@ function CustomRange({ period, onChange }: { period: Period; onChange: (period: 
       slotProps={{
         inputLabel: { shrink: true },
         htmlInput: {
-          min: PERIOD_FIRST,
+          min: REPORTING_START,
           max: PERIOD_LAST,
           'aria-describedby': problem ? problemId : undefined,
         },

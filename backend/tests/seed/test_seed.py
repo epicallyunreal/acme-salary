@@ -53,30 +53,32 @@ def test_shares_and_invariants():
     assert Employee.objects.filter(last_date__isnull=True).count() == 500
     assert Employee.objects.filter(last_date__lt=profiles.REFERENCE_DATE).count() == 250
     assert dict(Counter(Employee.objects.values_list("country_id", flat=True))) == {
-        "DE": 81,
-        "GB": 99,
-        "IN": 327,
+        "DE": 83,
+        "GB": 77,
+        "IN": 358,
         "NL": 62,
-        "SG": 32,
-        "US": 149,
+        "SG": 31,
+        "US": 139,
     }
     assert dict(Counter(Employee.objects.values_list("level", flat=True))) == {
-        1: 229,
-        2: 186,
-        3: 137,
-        4: 104,
-        5: 66,
-        6: 28,
+        1: 239,
+        2: 180,
+        3: 132,
+        4: 111,
+        5: 58,
+        6: 30,
     }
     assert dict(Counter(Employee.objects.values_list("gender", flat=True))) == {
-        "female": 343,
-        "male": 389,
-        "other": 12,
-        "undisclosed": 6,
+        "female": 351,
+        "male": 380,
+        "other": 8,
+        "undisclosed": 11,
     }
-    # Every revision since joining is kept, 583 of them promotions (D64).
-    assert CompensationRecord.objects.count() == 2878
-    assert CompensationRecord.objects.filter(note__startswith="promotion to L").count() == 583
+    # Every revision since joining is kept, 567 of them promotions (D64), and 21 joiners of the
+    # six months before 1 April 2020 have the cut-off's revision (D70).
+    assert CompensationRecord.objects.count() == 2500
+    assert CompensationRecord.objects.filter(note__startswith="promotion to L").count() == 567
+    assert CompensationRecord.objects.filter(note=profiles.CUTOFF_NOTE).count() == 21
 
     for employee in Employee.objects.prefetch_related("compensation_records"):
         records = sorted(employee.compensation_records.all(), key=lambda r: r.effective_from)
@@ -102,8 +104,8 @@ def test_shares_and_invariants():
     assert len(set(codes)) == 750
     assert all(code and code.startswith("HR-") and len(code) == 8 for code in codes)
 
-    # 750 create entries, 2,878 revise entries and 16 set_rate entries.
-    assert AuditLog.objects.count() == 3644
+    # 750 create entries, 2,500 revise entries and 16 set_rate entries.
+    assert AuditLog.objects.count() == 3266
     assert set(AuditLog.objects.values_list("timestamp", flat=True)) == {
         profiles.REFERENCE_DATETIME
     }

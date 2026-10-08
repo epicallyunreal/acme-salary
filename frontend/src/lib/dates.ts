@@ -23,19 +23,15 @@ export function formatDate(value: string | null | undefined): string {
   return dayMonthYear(parseIsoDate(value));
 }
 
-/** `formatMonthShort('2026-09-30')` gives `Sep 26`, a month on a chart axis. */
-export function formatMonthShort(value: string): string {
-  const day = parseIsoDate(value);
-  return `${MONTHS[day.getMonth()]} ${twoDigits(day.getFullYear() % 100)}`;
-}
-
-/** A date on a chart's axis: a month-end as `Sep 26`, and any other day, the period's first or
- * last where it is not a month-end, as `7 Oct 25` (D66). */
+/** A date on a chart's axis: a month-end as `Sep 2026`, and any other day, the period's first or
+ * last where it is not a month-end, as `7 Oct 2025`. The year is written in full, so no month
+ * reads as a day (D69). */
 export function formatAxisDate(value: string): string {
   const day = parseIsoDate(value);
   const next = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
-  const month = formatMonthShort(value);
-  return next.getDate() === 1 ? month : `${day.getDate()} ${month}`;
+  return next.getDate() === 1
+    ? `${MONTHS[day.getMonth()]} ${day.getFullYear()}`
+    : dayMonthYear(day);
 }
 
 const monthFormat = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' });

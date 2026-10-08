@@ -23,7 +23,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.test import Client
 
-from apps.core.dates import months_before, today_utc
+from apps.core.dates import REPORTING_START, period_start, today_utc
 from apps.insights.queries import CONTROLS
 from seed import profiles
 
@@ -66,15 +66,15 @@ PERIOD_INSIGHTS = ("summary", "trend", "cost-bridge")
 
 
 def period_cases(today: date) -> dict[str, str]:
-    """The dashboard's presets besides the default, and 1 January 2015 to today, as `from` and
-    `to` (D64)."""
+    """The dashboard's presets besides the default, and the reporting cut-off to today, as `from`
+    and `to` (D64, D70)."""
     fy = date(today.year if (today.month, today.day) >= (4, 1) else today.year - 1, 4, 1)
     return {
-        "last 3 months": f"from={months_before(today, 3)}",
-        "last 6 months": f"from={months_before(today, 6)}",
+        "last 3 months": f"from={period_start(today, 3)}",
+        "last 6 months": f"from={period_start(today, 6)}",
         "FY to date": f"from={fy}",
         "last FY": f"from={date(fy.year - 1, 4, 1)}&to={fy - timedelta(days=1)}",
-        "since 2015": "from=2015-01-01",
+        "since the cut-off": f"from={REPORTING_START}",
     }
 
 

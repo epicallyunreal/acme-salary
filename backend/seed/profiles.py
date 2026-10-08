@@ -190,6 +190,12 @@ LADDER = {1: (0, 3), 2: (3, 6), 3: (5, 8), 4: (7, 11), 5: (10, 13), 6: (12, 30)}
 LEAVE_WEIGHTS = {1: 2.0, 2: 1.5, 3: 1.0, 4: 1.0, 5: 1.0, 6: 1.0}
 
 RAISE_RANGE = (0.03, 0.08)  # an ordinary April raise
+# Someone who joined in the six months before an April review skips it, no raise and no
+# promotion, so a December joiner's first review is the April sixteen months on (D70).
+FIRST_REVIEW_MONTHS = 6
+# Everyone employed on the reporting cut-off, 1 April 2020, has a record starting that day. Where
+# the pay running into it started earlier, a revision repeats it under this note (D70).
+CUTOFF_NOTE = "Reporting cut-off, FY 2020-21: pay unchanged"
 PROMOTION_RANGE = (0.12, 0.20)  # the April revision where the ladder moves someone up
 EXPERIENCE_PAY = 0.02  # a year of experience above the level's floor
 EXPERIENCE_PAY_CAP = 0.20

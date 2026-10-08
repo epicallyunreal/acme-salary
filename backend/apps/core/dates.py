@@ -3,14 +3,17 @@ the insights read a period, `from` and `to`, instead (D64)."""
 
 import calendar
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from apps.core.exceptions import Invalid, clip
 
-# The period the insights read (D64): from the seed's first day to the last date the data allows
-# (D53), the dashboard's Last 12 months when not given.
-PERIOD_FIRST = date(2015, 1, 1)
+# The reporting cut-off, 1 April 2020, the start of FY 2020-21 (D70): the first day a period may
+# cover, and the earliest last_date Include exited adds. Pay history before it stays, and a
+# record running into it counts for the days it covers.
+REPORTING_START = date(2020, 4, 1)
+# The last day a period may cover, the last date the data allows (D53).
 PERIOD_LAST = date(2100, 12, 31)
+# A period without `from` is the dashboard's Last 12 months (D64).
 PERIOD_MONTHS = 12
 # `fromisoformat` reads week dates and compact forms as well, which the messages do not offer.
 ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -46,21 +49,25 @@ def parse_date(name: str, value: str | None) -> date | None:
 
 
 def parse_period(start: str | None, end: str | None) -> tuple[date, date]:
-    """An insight's `from` and `to` (D64). `to` is today in UTC when not given, and `from` the same
-    day 12 months before it, no earlier than 1 January 2015. Each must lie from 2015-01-01 to
-    2100-12-31, and `from` on or before `to`."""
+    """An insight's `from` and `to` (D64, D70). `to` is today in UTC when not given, and `from` the
+    first day of the 12 months ending on it, never before the reporting cut-off. Each must lie
+    from 2020-04-01 to 2100-12-31, and `from` on or before `to`."""
     last = parse_date("to", end) or today_utc()
     first = parse_date("from", start)
     if first is None:
-        # Worked out only from a `to` inside the bounds, so year 1 never reaches back to year 0.
-        within = PERIOD_FIRST < last <= PERIOD_LAST
-        first = max(months_before(last, PERIOD_MONTHS), PERIOD_FIRST) if within else PERIOD_FIRST
+        # Worked out only from a `to` inside the bounds, so a far-off one never leaves them.
+        within = REPORTING_START < last <= PERIOD_LAST
+        first = REPORTING_START
+        if within:
+            first = max(period_start(last, PERIOD_MONTHS), REPORTING_START)
     errors = {}
     for name, value in (("from", first), ("to", last)):
-        if value < PERIOD_FIRST:
-            errors[name] = [f"{name} must be on or after 2015-01-01, got {value.isoformat()}"]
+        if value < REPORTING_START:
+            bound = REPORTING_START.isoformat()
+            errors[name] = [f"{name} must be on or after {bound}, got {value.isoformat()}"]
         elif value > PERIOD_LAST:
-            errors[name] = [f"{name} must be on or before 2100-12-31, got {value.isoformat()}"]
+            bound = PERIOD_LAST.isoformat()
+            errors[name] = [f"{name} must be on or before {bound}, got {value.isoformat()}"]
     if errors:
         raise Invalid(errors)
     if first > last:
@@ -70,6 +77,13 @@ def parse_period(start: str | None, end: str | None) -> tuple[date, date]:
 
 def last_day(year: int, month: int) -> date:
     return date(year, month, calendar.monthrange(year, month)[1])
+
+
+def period_start(last: date, months: int) -> date:
+    """The first day of the `months` months ending on `last`: the day after the same day that many
+    months before, or after that month's last day when it is shorter. 12 months ending 8 October
+    2026 start on 9 October 2025, and 6 ending 31 October start on 1 May (D69)."""
+    return months_before(last, months) + timedelta(days=1)
 
 
 def months_before(day: date, months: int) -> date:

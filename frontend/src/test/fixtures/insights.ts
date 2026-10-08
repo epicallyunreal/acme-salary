@@ -7,7 +7,7 @@ import type { ExchangeRates, InsightPayloads, LevelRow } from '../../api/types';
 // 7 October 2026 (D64).
 
 const USD = {
-  from: '2025-10-07',
+  from: '2025-10-08',
   to: '2026-10-07',
   currency: 'USD',
   rate_month: { label: 'October 2026 rates', effective_from: '2026-10-01' },
@@ -22,7 +22,7 @@ export const summary: InsightPayloads['summary'] = {
   countries: 4,
   departments: 4,
   // The 28 employed on any day of the period, X1 among them until the last working day (D64).
-  spent: { headcount: 28, total_cost: '2538681.37' },
+  spent: { headcount: 28, total_cost: '2531647.26' },
 };
 
 /** With `include_exited`: the fixture's two exited employees, X1 and X2, count too. */
@@ -288,7 +288,7 @@ export const levelGapView: InsightPayloads['gender-gap'] = {
 };
 
 const TREND_DATES = [
-  '2025-10-07',
+  '2025-10-08',
   '2025-10-31',
   '2025-11-30',
   '2025-12-31',
@@ -321,7 +321,7 @@ export const trend: InsightPayloads['trend'] = {
  * are nobody, show 0.00 (D62). */
 export const costBridge: InsightPayloads['cost-bridge'] = {
   ...USD,
-  start_date: '2025-10-07',
+  start_date: '2025-10-08',
   end_date: '2026-10-07',
   parts: [
     { part: 'start', people: 28, amount: '2567450.00', reason: null },
@@ -335,7 +335,7 @@ export const costBridge: InsightPayloads['cost-bridge'] = {
 /** A year where every part shows: the history fixture of the backend tests. */
 export const costBridgeShown: InsightPayloads['cost-bridge'] = {
   ...USD,
-  start_date: '2025-10-07',
+  start_date: '2025-10-08',
   end_date: '2026-10-07',
   parts: [
     { part: 'start', people: 6, amount: '415000.00', reason: null },

@@ -20,7 +20,7 @@ def test_an_insight_answers_with_its_figures_as_text(api, people):
     assert (response.status_code, response.json()) == (
         200,
         {
-            "from": "2025-10-07",
+            "from": "2025-10-08",
             "to": "2026-10-07",
             "currency": "EUR",
             "rate_month": {"label": "October 2026 rates", "effective_from": "2026-10-01"},
@@ -30,10 +30,9 @@ def test_an_insight_answers_with_its_figures_as_text(api, people):
             "median_gross": "60000.00",
             "countries": 4,
             "departments": 4,
-            # The 27 for the period's 366 days of a 365-day year, 1,948,360 x 366 / 365, and X1
-            # until 30 June, 267 days of 105,600: 1,953,697.9726 + 77,247.1233 = 2,030,945.0959,
-            # quantised once (D64).
-            "spent": {"headcount": 28, "total_cost": "2030945.10"},
+            # The 27 for all 365 days of the period, 1,948,360, their annual cost, and X1 until
+            # 30 June, 266 days of 105,600, 76,957.8082: 2,025,317.8082, quantised once (D64, D69).
+            "spent": {"headcount": 28, "total_cost": "2025317.81"},
         },
     )
 
@@ -121,7 +120,7 @@ def test_an_insight_needs_a_signed_in_user(anon, people):
         ),
         ({"currency": "gbp"}, {"currency": ["currency must be usd, eur or local, got gbp"]}),
         ({"to": "07/10/2026"}, {"to": ["to must be a date in YYYY-MM-DD form, got 07/10/2026"]}),
-        ({"from": "2014-12-31"}, {"from": ["from must be on or after 2015-01-01, got 2014-12-31"]}),
+        ({"from": "2020-03-31"}, {"from": ["from must be on or after 2020-04-01, got 2020-03-31"]}),
         ({"to": "2101-01-01"}, {"to": ["to must be on or before 2100-12-31, got 2101-01-01"]}),
         ({"from": "2026-10-08"}, {"from": ["from must be on or before to"]}),
         (
@@ -138,17 +137,17 @@ def test_a_filter_that_names_nothing_is_a_400(api, people, params, errors):
 
 
 @pytest.mark.parametrize("name", ["trend", "cost-bridge"])
-def test_a_period_before_2015_is_a_400_where_the_dates_reach_back(api, lookups, name):
-    """D64: the period starts no earlier than the seed's first day, and a `to` before 2016 does
-    not pull the default `from` before it."""
+def test_a_period_before_the_cut_off_is_a_400_where_the_dates_reach_back(api, lookups, name):
+    """D70: the period starts no earlier than the reporting cut-off, 1 April 2020, and a `to`
+    within a year of it does not pull the default `from` before it."""
     response = api.get(URL.format(name), {"from": "0001-01-01"})
 
     assert (response.status_code, response.json()) == (
         400,
-        {"from": ["from must be on or after 2015-01-01, got 0001-01-01"]},
+        {"from": ["from must be on or after 2020-04-01, got 0001-01-01"]},
     )
-    early = api.get(URL.format(name), {"to": "2015-06-30"})
-    assert (early.status_code, early.json()["from"]) == (200, "2015-01-01")
+    early = api.get(URL.format(name), {"to": "2020-06-30"})
+    assert (early.status_code, early.json()["from"]) == (200, "2020-04-01")
 
 
 # Card controls (D62)

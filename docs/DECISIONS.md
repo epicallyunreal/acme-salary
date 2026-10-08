@@ -568,6 +568,8 @@ Approved on 8 October with the owner's changes. Level stays on the employee, and
 
 Measured in the build: spread against those who stay, the leavers' yearly rate climbed from 6% in 2015 to 13% in 2025, so each month's leavers now follow everyone employed then, leavers still there included, settled in three passes. That holds a steady 11% a year with 10,000 who stay and 5,000 who leave, above the 8 to 10% hoped for. The owner kept 5,000 over 4,000 (about 9.5%) or 3,700 (about 9%).
 
+Amended by D70: a period starts no earlier than 1 April 2020, the reporting cut-off, and a joiner of the six months before an April skips that April.
+
 ## D65. The live machine stays on Fly's shared CPU
 
 Context: the step 8 deploy's timing run sent about 900 insight requests back to back. Near its end Fly's shared vCPU spent its burst balance and ran at its 6.25% baseline, so gender-gap's By level view for India read 639 / 1118 ms p50 / p95, against 35 / 43 ms timed alone with no CPU steal. A performance CPU would hold that speed under any load, at a higher monthly cost.
@@ -583,6 +585,8 @@ Context: the owner was offline on 8 October and asked for every reversible choic
 Decision: From and To apply on Enter, on leaving the field, or 600 ms after the last change, so a date picked from the calendar applies without a click elsewhere. A range the API would refuse keeps what was typed beside the reason, and the dashboard stays on the last valid period. A link with such a range, or `period=custom` without both dates, opens on Last 12 months. The four state cards of the KPI row read `Headcount on 7 Oct 2026` and so on, and Spent in period is captioned `7 Oct 2025 to 7 Oct 2026`. The rate label reads `October 2026 rates for the whole period`, and its tooltip lists the rates in force on `to`. The trend's axis names a month-end `Sep 26` and a first or last day that is not one `7 Oct 25`. The empty state says `on 31 Mar 2026` in place of `today` when the period ends before today. A preset and a custom range of the same dates are one query.
 
 Consequences: each is a few lines in `PeriodControl.tsx`, `useDashboardFilters.ts`, `KpiRow.tsx`, `RateMonthLabel.tsx`, `TrendCard.tsx` or `Dashboard.tsx`, and the step 9 close report lists them for the owner to confirm or change.
+
+Amended by D69: the trend's axis names a month-end `Sep 2026` and any other day `7 Oct 2025`.
 
 ## D67. The numbered pages' details, defaults taken while the owner was away
 
@@ -600,6 +604,8 @@ Decision: the reader cuts a text cell longer than 256 characters to 256 with an 
 
 Consequences: a spend is withheld for a group that ever had 1 to 4 people in the period. On the seed, only two people had joined by 5 January 2015, so any period starting before 10 January 2015 is withheld for the whole company. The worst crafted import is measured on Fly with the deploy.
 
+From D70 reporting starts on 1 April 2020, so the January 2015 case above can no longer arise, and the rule needs nothing more (owner, 8 Oct).
+
 ## D69. The step 9 close: defaults taken while the owner was away
 
 Context: the four reviewers raised these as questions or should-fixes, and the owner, offline on 8 October, asked for every reversible choice to take the recommended default and be listed at the close.
@@ -607,6 +613,16 @@ Context: the four reviewers raised these as questions or should-fixes, and the o
 Decision: `from` defaults to 12 months before `to` but never before 1 January 2015, so `to=2015-06-30` alone is a 200 where SPEC section 8's wording reads as a 400, and it is never worked out from a `to` outside the bounds. A date must be written `YYYY-MM-DD`, as the 400 says. Last 12 months counts its first and its last day, 366 days, so for a steady headcount Spent in period is 366/365 of the annual cost beside it. Include exited does not apply to Spent in period either, and its card says so while the box is ticked. `make_import_file` writes a new row at its latest pay beside today's level, and both sample files were regenerated, still 43 valid rows and 7 errors. `timing` times the presets and 2015 to today for the summary, trend and the bridge alone, whose work grows with the period. `seed_data` refuses a negative count and leavers with nobody on staff. The status default lives in `employees/queries.py`.
 
 Consequences: SPEC v2.17 and DESIGN carry these, and the step 9 close report lists each for the owner to confirm or change.
+
+Amended 8 Oct, the owner's answers at the approval: Last N months starts the day after the same day N months back, so Last 12 months on 8 October 2026 is 365 days and a steady headcount's spend equals its annual cost, a period with a 29 February in it being 366, and the API's default `from` follows it. The trend's axis names a month-end `Sep 2026` and other days `7 Oct 2025`, since `Sep 26` reads as a day. The reporting cut-off of D70 settles the default `from`, and SPEC section 8 now says so. The other defaults of D66 to D69 stand, and `timing` times 1 April 2020 to today in place of 2015.
+
+## D70. Reporting starts on 1 April 2020, the start of FY 2020-21
+
+Context: the owner set a reporting cut-off at the step 9 approval on 8 October. The dashboard, the insights API and their exports read periods from it, while pay history before it stays, and joining dates, the directory and revision and exit dates keep any past date.
+
+Decision: one constant, `core.dates.REPORTING_START`, mirrored once in the frontend's `lib/constants.ts`. A period's `from` and `to` lie from 2020-04-01 to 2100-12-31, and `from` defaults to the first day of the 12 months ending on `to`, never before the cut-off. The cut-off bounds the period's dates only. Records are never filtered by `effective_from`, so a record that started earlier counts for the days it covers, and Include exited adds only those whose `last_date` is on or after the cut-off. In the seed, everyone employed on 1 April 2020 has a record starting that day. Where the record running into it started earlier, a revision repeats its lines and bonus, noted `Reporting cut-off, FY 2020-21: pay unchanged`, a one-off for that day and not a rule that revisions fall in April. A joiner of the six months before an April, from 1 October on, skips that April, no raise and no promotion, so a December 2019 joiner gets the cut-off's revision rather than a raise. Where a skipped April leaves two promotion points before the next review, the lower moves to the joining day, so no review moves anyone two levels, which the owner confirmed on 8 October over a two-level promotion or a deferred one. The seed holds 51,659 records, 479 of them cut-off revisions.
+
+Consequences: a real migration would run the same split once on 1 April 2020. An employee entered later with pay starting before the cut-off gets no split and still counts correctly, because the insights read records by the days they cover, which a test holds with five paid from 2018. The golden hash and both sample files are regenerated.
 
 ## Clarifications from Incubyte, 6 Oct 2026
 

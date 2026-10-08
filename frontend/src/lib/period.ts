@@ -1,7 +1,7 @@
 // The dashboard's period (SPEC F5, D64). Dates are ISO strings worked out from their parts, so
 // neither the browser's time zone nor a short month moves them.
 
-import { FY_START, PERIOD_FIRST, PERIOD_LAST } from './constants';
+import { FY_START, PERIOD_LAST, REPORTING_START } from './constants';
 import { dayBefore, formatDate } from './dates';
 
 /** The bar's presets and Custom, in menu order, each a name the URL keeps. */
@@ -27,7 +27,7 @@ export const PERIOD_LABELS: Record<PeriodName, string> = {
   custom: 'Custom',
 };
 
-/** A period's first and last days, both counted: `{ from: '2025-10-07', to: '2026-10-07' }`. */
+/** A period's first and last days, both counted: `{ from: '2025-10-08', to: '2026-10-07' }`. */
 export interface Period {
   from: string;
   to: string;
@@ -71,6 +71,15 @@ export function monthsBefore(day: string, months: number): string {
   return iso(back.year, back.month, Math.min(date, daysInMonth(back.year, back.month)));
 }
 
+/** The first day of the `months` months ending on `last`: the day after the same day that many
+ * months before, or after that month's last day where the day does not exist. 12 months ending
+ * 8 October 2026 start on 9 October 2025, and 6 ending 31 October start on 1 May (D69). */
+export function periodStart(last: string, months: number): string {
+  const [year, month, day] = parts(monthsBefore(last, months));
+  if (day < daysInMonth(year, month)) return iso(year, month, day + 1);
+  return month < 12 ? iso(year, month + 1, 1) : iso(year + 1, 1, 1);
+}
+
 /** The 1 April that opened the financial year `day` falls in. */
 export function fyStart(day: string): string {
   const [year, month, date] = parts(day);
@@ -82,11 +91,11 @@ export function fyStart(day: string): string {
 export function presetPeriod(name: PresetName, today: string): Period {
   switch (name) {
     case 'last_3_months':
-      return { from: monthsBefore(today, 3), to: today };
+      return { from: periodStart(today, 3), to: today };
     case 'last_6_months':
-      return { from: monthsBefore(today, 6), to: today };
+      return { from: periodStart(today, 6), to: today };
     case 'last_12_months':
-      return { from: monthsBefore(today, 12), to: today };
+      return { from: periodStart(today, 12), to: today };
     case 'fy_to_date':
       return { from: fyStart(today), to: today };
     case 'last_fy': {
@@ -101,7 +110,7 @@ export function presetPeriod(name: PresetName, today: string): Period {
 export function periodProblem({ from, to }: Period): string | null {
   if (!isIsoDate(from)) return 'Enter a date in From.';
   if (!isIsoDate(to)) return 'Enter a date in To.';
-  if (from < PERIOD_FIRST) return `From must be on or after ${formatDate(PERIOD_FIRST)}.`;
+  if (from < REPORTING_START) return `From must be on or after ${formatDate(REPORTING_START)}.`;
   if (to > PERIOD_LAST) return `To must be on or before ${formatDate(PERIOD_LAST)}.`;
   if (from > to) return 'From must be on or before To.';
   return null;

@@ -33,7 +33,7 @@ def people(lookups):
 
 def filters(**given) -> queries.InsightFilters:
     """The filters a request names, its period read as the API reads `from` and `to`, today and
-    the same day a year before when not given (D64)."""
+    the first day of the year ending on it when not given (D64, D69)."""
     lookups = queries.Lookups.load()
     start, end = given.get("from"), given.get("to", TODAY)
     return queries.build_filters(
@@ -1072,13 +1072,13 @@ def part(name, people, amount, reason=None):
 
 
 def test_the_bridge_adds_up_exactly_and_no_leavers_shows_every_amount(history):
-    """From 7 Oct 2025 to 7 Oct 2026 at 1.25 for EUR. Start: A1 100,000, A2 80,000, A3 60,000,
+    """From 8 Oct 2025 to 7 Oct 2026 at 1.25 for EUR. Start: A1 100,000, A2 80,000, A3 60,000,
     A4 50,000, A5 60,000 and B1 65,000, 415,000. Nobody left, so leavers is 0 and triggers
     nothing. Joiners J1 to J5: 70,000 + 50,000 + 40,000 + 90,000 + 45,000 = 295,000. Pay changes:
     A1 +10,000, A2 +8,000, A4 +5,000 = 23,000. End: 415,000 - 0 + 295,000 + 23,000 = 733,000."""
     result = insight("cost-bridge")
 
-    assert (result["start_date"], result["end_date"]) == ("2025-10-07", "2026-10-07")
+    assert (result["start_date"], result["end_date"]) == ("2025-10-08", "2026-10-07")
     assert result["parts"] == [
         part("start", 6, "415000.00"),
         part("leavers", 0, "0.00"),
@@ -1205,12 +1205,13 @@ def test_two_short_changes_each_say_so_and_the_third_names_the_first(lookups):
 
 
 def test_the_bridge_counts_who_is_employed_on_its_two_dates(lookups):
-    """The start is 7 October 2025. A last day of 6 October is in neither date, a last day of
-    the 7th makes a leaver, and joining on `on` makes a joiner."""
+    """The start is 8 October 2025, the first day of the year ending on `to` (D69). A last day
+    of 7 October is in neither date, a last day of the 8th makes a leaver, and joining on `to`
+    makes a joiner."""
     for n in range(5):
         hire(f"S{n}", "US", 10_000)
-    hire("Gone", "US", 20_000, left=date(2025, 10, 6))
-    hire("Left", "US", 30_000, left=date(2025, 10, 7))
+    hire("Gone", "US", 20_000, left=date(2025, 10, 7))
+    hire("Left", "US", 30_000, left=date(2025, 10, 8))
     hire("New", "US", 40_000, joined=TODAY)
 
     people = [p["people"] for p in insight("cost-bridge")["parts"]]
@@ -1223,10 +1224,66 @@ def test_the_bridge_counts_who_is_employed_on_its_two_dates(lookups):
 
 @pytest.mark.parametrize("name", sorted(queries.INSIGHTS))
 def test_every_insight_names_its_period(people, name):
-    """`to` today and `from` a year before it when not given, else as given."""
-    assert (insight(name)["from"], insight(name)["to"]) == ("2025-10-07", "2026-10-07")
+    """`to` today and `from` the first day of the year ending on it when not given, else as
+    given (D69)."""
+    assert (insight(name)["from"], insight(name)["to"]) == ("2025-10-08", "2026-10-07")
     given = insight(name, **{"from": date(2026, 4, 1), "to": NEW_YEAR})
     assert (given["from"], given["to"]) == ("2026-04-01", "2027-01-01")
+
+
+def paid_since_2018(name, *, left=None, base=36_500):
+    """A US employee on one BASE line since 1 January 2018, never split on 1 April 2020, gone
+    after `left`."""
+    employee = EmployeeFactory(
+        full_name=name, country=country("US"), joining_date=date(2018, 1, 1), last_date=left
+    )
+    CompensationRecordFactory(
+        employee=employee,
+        lines={"BASE": Decimal(base)},
+        effective_from=date(2018, 1, 1),
+        effective_to=left + timedelta(days=1) if left else None,
+    )
+
+
+def test_a_record_from_before_the_cut_off_counts_for_the_days_it_covers(lookups):
+    """D70: the cut-off bounds the period, never the records. Five paid since 2018 count from the
+    period's first day, 182,500 on every date. Their spend is 275 of 2020's 366 days, five whole
+    years and 280 of 2026's 365: 36,500 x (275/366 + 5 + 280/365) = 237,924.8634 each,
+    1,189,624.32 for the five."""
+    for n in range(5):
+        paid_since_2018(f"Since2018-{n}")
+    since = {"from": date(2020, 4, 1)}
+
+    points = insight("trend", **since)["points"]
+    bridge = insight("cost-bridge", **since)["parts"]
+    summary = insight("summary", **since)
+
+    assert points[0] == {"date": "2020-04-01", "headcount": 5, "total_cost": "182500.00"}
+    assert points[-1] == {"date": "2026-10-07", "headcount": 5, "total_cost": "182500.00"}
+    assert bridge == [
+        part("start", 5, "182500.00"),
+        part("leavers", 0, "0.00"),
+        part("joiners", 0, "0.00"),
+        part("pay_changes", 5, "0.00"),
+        part("end", 5, "182500.00"),
+    ]
+    assert summary["spent"] == {"headcount": 5, "total_cost": "1189624.32"}
+    assert (summary["headcount"], summary["total_cost"]) == (5, "182500.00")
+    assert (summary["mean_gross"], summary["median_gross"]) == ("36500.00", "36500.00")
+
+
+def test_include_exited_adds_only_who_left_on_or_after_the_cut_off(lookups):
+    """D70: a last day of 31 March 2020 is before the cut-off and one of 1 April 2020 is not,
+    by `last_date` alone, though both were paid from 2018. Five on 36,500 and After on 40,000
+    are 222,500."""
+    for n in range(5):
+        paid_since_2018(f"Staff-{n}")
+    paid_since_2018("Before", left=date(2020, 3, 31), base=38_000)
+    paid_since_2018("After", left=date(2020, 4, 1), base=40_000)
+
+    assert insight("summary")["headcount"] == 5
+    ticked = insight("summary", include_exited=True)
+    assert (ticked["headcount"], ticked["total_cost"]) == (6, "222500.00")
 
 
 def test_a_year_fraction_counts_each_day_against_its_own_year():

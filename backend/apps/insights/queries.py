@@ -33,7 +33,7 @@ from django.db.models import Count, F, Q, QuerySet, Sum
 from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core import fx
-from apps.core.dates import last_day
+from apps.core.dates import REPORTING_START, last_day
 from apps.core.exceptions import Invalid
 from apps.core.models import Country, Department, SalaryComponent
 from apps.core.money import q1, q2
@@ -119,7 +119,8 @@ def build_filters(
 
 def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
     """SPEC section 9: the record current on `end` of everyone active then, and with
-    `include_exited` the last record of everyone who left before it. Future joiners never.
+    `include_exited` the last record of everyone who left before it, from the reporting cut-off on
+    (D70), by `last_date` alone. Future joiners never.
 
     Live records of one employee never overlap, so at most one is current. An exited employee's
     last record alone ends after `last_date`, at `last_date + 1`. `trend` and `cost-bridge` read
@@ -132,7 +133,11 @@ def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
     current = Q(effective_from__lte=on) & (Q(effective_to__isnull=True) | Q(effective_to__gt=on))
     records = CompensationRecord.objects.filter(cancelled_at__isnull=True)
     if f.include_exited:
-        exited_last = Q(employee__last_date__lt=on) & Q(effective_to__gt=F("employee__last_date"))
+        exited_last = (
+            Q(employee__last_date__lt=on)
+            & Q(employee__last_date__gte=REPORTING_START)
+            & Q(effective_to__gt=F("employee__last_date"))
+        )
         records = records.filter((active & current) | exited_last)
     else:
         records = records.filter(active & current)

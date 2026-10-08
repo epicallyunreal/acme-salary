@@ -328,7 +328,7 @@ describe('Dashboard', () => {
 
     await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
     for (const name of INSIGHTS) {
-      expect(dates(seen[name][0])).toEqual(['2025-10-07', '2026-10-07']);
+      expect(dates(seen[name][0])).toEqual(['2025-10-08', '2026-10-07']);
       expect(seen[name][0].has('period')).toBe(false);
     }
     expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
@@ -347,13 +347,13 @@ describe('Dashboard', () => {
     expect(router.state.location.search).toBe('?period=last_3_months');
     await waitFor(() => {
       for (const name of INSIGHTS) {
-        expect(seen[name].map(dates)).toContainEqual(['2026-07-07', '2026-10-07']);
+        expect(seen[name].map(dates)).toContainEqual(['2026-07-08', '2026-10-07']);
       }
     });
   });
 
   it.each([
-    ['last_6_months', 'Last 6 months', '2026-04-07', '2026-10-07'],
+    ['last_6_months', 'Last 6 months', '2026-04-08', '2026-10-07'],
     ['fy_to_date', 'Current FY to date', '2026-04-01', '2026-10-07'],
     ['last_fy', 'Last FY', '2025-04-01', '2026-03-31'],
   ])('a link to %s counts back from the day it is opened', async (period, label, from, to) => {
@@ -374,8 +374,8 @@ describe('Dashboard', () => {
     await user.click(screen.getByLabelText('Period'));
     await user.click(await screen.findByRole('option', { name: 'Custom' }));
 
-    expect(router.state.location.search).toBe('?period=custom&from=2026-04-07&to=2026-10-07');
-    expect(await screen.findByLabelText('From')).toHaveValue('2026-04-07');
+    expect(router.state.location.search).toBe('?period=custom&from=2026-04-08&to=2026-10-07');
+    expect(await screen.findByLabelText('From')).toHaveValue('2026-04-08');
     expect(screen.getByLabelText('To')).toHaveValue('2026-10-07');
     for (const name of INSIGHTS) expect(seen[name]).toHaveLength(1);
   });
@@ -387,6 +387,8 @@ describe('Dashboard', () => {
     for (const name of INSIGHTS) expect(dates(seen[name][0])).toEqual(['2026-01-01', '2026-03-31']);
 
     const from = screen.getByLabelText('From');
+    // The calendar offers nothing before the reporting cut-off (D70).
+    expect(from).toHaveAttribute('min', '2020-04-01');
     fireEvent.change(from, { target: { value: '2026-04-15' } });
     fireEvent.keyDown(from, { key: 'Enter' });
 
@@ -429,12 +431,12 @@ describe('Dashboard', () => {
     );
   });
 
-  it('a custom range from before 2015 in a link falls back to the last 12 months', async () => {
+  it('a custom range from before the cut-off in a link falls back to the last 12 months', async () => {
     const seen = recordRequests();
-    renderApp('/?period=custom&from=2014-12-31&to=2026-01-01');
+    renderApp('/?period=custom&from=2020-03-31&to=2026-01-01');
 
     await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
-    for (const name of INSIGHTS) expect(dates(seen[name][0])).toEqual(['2025-10-07', '2026-10-07']);
+    for (const name of INSIGHTS) expect(dates(seen[name][0])).toEqual(['2025-10-08', '2026-10-07']);
     expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
   });
 
@@ -448,7 +450,7 @@ describe('Dashboard', () => {
     expect(router.state.location.search).toBe('');
     expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
     expect(screen.queryByLabelText('From')).not.toBeInTheDocument();
-    await waitFor(() => expect(dates(seen.summary.at(-1))).toEqual(['2025-10-07', '2026-10-07']));
+    await waitFor(() => expect(dates(seen.summary.at(-1))).toEqual(['2025-10-08', '2026-10-07']));
   });
 
   it('every card that shows a state names its day, and trend and the bridge their period', async () => {

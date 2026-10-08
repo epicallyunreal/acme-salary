@@ -130,7 +130,7 @@ describe('ExportMenu', () => {
 describe('Export menus on the pages', () => {
   beforeEach(() => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
-    // Today is 7 October 2026 in UTC, so the default period is 7 October 2025 to that day.
+    // Today is 7 October 2026 in UTC, so the default period runs from 8 October 2025 (D69).
     vi.setSystemTime(new Date('2026-10-07T09:00:00Z'));
   });
 
@@ -166,7 +166,7 @@ describe('Export menus on the pages', () => {
 
     await waitFor(() => expect(saved).toEqual(['acme-by-level-20261007-0900.json']));
     expect(asked).toEqual([
-      '/api/v1/exports/insights/by-level/?country=IN&currency=local&file=json&from=2025-10-07&include_exited=true&to=2026-10-07 Bearer access-1',
+      '/api/v1/exports/insights/by-level/?country=IN&currency=local&file=json&from=2025-10-08&include_exited=true&to=2026-10-07 Bearer access-1',
     ]);
   });
 
@@ -181,7 +181,7 @@ describe('Export menus on the pages', () => {
 
     await waitFor(() => expect(saved).toEqual(['acme-summary-20261007-0900.xlsx']));
     expect(asked).toEqual([
-      '/api/v1/exports/insights/summary/?currency=usd&department=engineering&file=xlsx&from=2025-10-07&to=2026-10-07 Bearer access-1',
+      '/api/v1/exports/insights/summary/?currency=usd&department=engineering&file=xlsx&from=2025-10-08&to=2026-10-07 Bearer access-1',
     ]);
   });
 
@@ -240,7 +240,7 @@ describe('Export menus on the pages', () => {
 
       await waitFor(() => expect(saved).toEqual([`acme-${name}-20261007-0900.csv`]));
       const query = new URLSearchParams(
-        `currency=usd&file=csv&from=2025-10-07&to=2026-10-07&${sent}`,
+        `currency=usd&file=csv&from=2025-10-08&to=2026-10-07&${sent}`,
       );
       query.sort();
       expect(asked).toEqual([`/api/v1/exports/insights/${name}/?${query} Bearer access-1`]);

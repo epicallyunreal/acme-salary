@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { customPeriod, monthsBefore, periodProblem, presetPeriod, todayUtc } from './period';
+import {
+  customPeriod,
+  monthsBefore,
+  periodProblem,
+  periodStart,
+  presetPeriod,
+  todayUtc,
+} from './period';
 
 describe('todayUtc', () => {
   it("is today in UTC, not in the viewer's zone (the tests run in New York)", () => {
@@ -11,28 +18,31 @@ describe('todayUtc', () => {
 });
 
 describe('presetPeriod', () => {
-  it('counts Last N months back to the same day, ending today', () => {
+  it('starts Last N months the day after the same day N months back, ending today', () => {
     expect(presetPeriod('last_3_months', '2026-10-07')).toEqual({
-      from: '2026-07-07',
+      from: '2026-07-08',
       to: '2026-10-07',
     });
     expect(presetPeriod('last_6_months', '2026-10-07')).toEqual({
-      from: '2026-04-07',
+      from: '2026-04-08',
       to: '2026-10-07',
     });
     expect(presetPeriod('last_12_months', '2026-10-07')).toEqual({
-      from: '2025-10-07',
+      from: '2025-10-08',
       to: '2026-10-07',
     });
   });
 
   it("takes the month's last day where the day does not exist (SPEC F5)", () => {
-    expect(presetPeriod('last_6_months', '2026-10-31').from).toBe('2026-04-30');
-    expect(presetPeriod('last_12_months', '2026-02-28').from).toBe('2025-02-28');
-    expect(presetPeriod('last_12_months', '2028-02-29').from).toBe('2027-02-28');
+    expect(presetPeriod('last_6_months', '2026-10-31').from).toBe('2026-05-01');
+    expect(presetPeriod('last_12_months', '2026-02-28').from).toBe('2025-03-01');
+    expect(presetPeriod('last_12_months', '2028-02-29').from).toBe('2027-03-01');
+    expect(presetPeriod('last_3_months', '2026-12-31').from).toBe('2026-10-01');
+    expect(periodStart('2026-10-08', 12)).toBe('2025-10-09');
+    expect(periodStart('2027-01-31', 1)).toBe('2027-01-01');
   });
 
-  it('ends Last 3 months on 31 May at the end of February, in a leap year and in another', () => {
+  it('takes three months back from 31 May to the end of February, in a leap year and in another', () => {
     expect(monthsBefore('2028-05-31', 3)).toBe('2028-02-29');
     expect(monthsBefore('2026-05-31', 3)).toBe('2026-02-28');
     expect(monthsBefore('2100-05-31', 3)).toBe('2100-02-28');
@@ -77,14 +87,14 @@ describe('presetPeriod', () => {
 });
 
 describe('periodProblem', () => {
-  it('takes any range from 1 January 2015 to 31 December 2100, one day included', () => {
-    expect(periodProblem({ from: '2015-01-01', to: '2100-12-31' })).toBeNull();
+  it('takes any range from 1 April 2020 to 31 December 2100, one day included (D70)', () => {
+    expect(periodProblem({ from: '2020-04-01', to: '2100-12-31' })).toBeNull();
     expect(periodProblem({ from: '2026-10-07', to: '2026-10-07' })).toBeNull();
   });
 
   it('refuses what the API would refuse, in the words the bar shows', () => {
-    expect(periodProblem({ from: '2014-12-31', to: '2026-10-07' })).toBe(
-      'From must be on or after 1 Jan 2015.',
+    expect(periodProblem({ from: '2020-03-31', to: '2026-10-07' })).toBe(
+      'From must be on or after 1 Apr 2020.',
     );
     expect(periodProblem({ from: '2026-10-07', to: '2101-01-01' })).toBe(
       'To must be on or before 31 Dec 2100.',
