@@ -77,7 +77,7 @@ export function useImportRows(id: number, params: ImportRowParams) {
 }
 
 /** The batch and its rows share a key prefix, so this refreshes the summary and the grid. */
-function refreshBatch(client: QueryClient, id: number) {
+export function refreshBatch(client: QueryClient, id: number) {
   return Promise.all([
     client.invalidateQueries({ queryKey: keys.imports.detail(id) }),
     client.invalidateQueries({ queryKey: keys.imports.lists }),

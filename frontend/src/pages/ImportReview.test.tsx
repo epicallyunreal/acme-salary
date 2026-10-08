@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { ImportBatch, ImportRow } from '../api/types';
 import { setSession } from '../lib/auth';
 import { POLL } from '../lib/poll';
+import { expectClosed, expectFailed, expectPending, held } from '../test/busy';
 import { reviewBatch, reviewRows, rowsPage } from '../test/fixtures/imports';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
@@ -281,12 +282,11 @@ describe('ImportReview', () => {
       const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
       await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
 
-      expect(await within(dialog).findByRole('status')).toHaveTextContent(
-        'Still working. The server is applying the rows.',
-      );
+      expect(await screen.findByRole('status')).toHaveTextContent('Still working\u2026');
       expect(
         await screen.findByText('Applied 2 rows: 1 created, 0 updated, 1 revised.'),
       ).toBeInTheDocument();
+      await expectClosed('Applying 2 rows\u2026');
       expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
     } finally {
       Object.assign(POLL, defaults);
@@ -308,7 +308,8 @@ describe('ImportReview', () => {
       const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
       await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
 
-      expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      await expectFailed(
+        'Nothing was applied',
         'The server may still be working, or the approve was refused; open the batch again.',
       );
     } finally {
@@ -336,9 +337,11 @@ describe('ImportReview', () => {
       const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
       await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
 
-      const alert = await within(dialog).findByRole('alert');
-      expect(alert).toHaveTextContent('approve failed, the batch is marked failed');
-      expect(alert).toHaveTextContent('OSError: disk full');
+      const failed = await screen.findByRole('dialog', { name: 'Nothing was applied' });
+      expect(within(failed).getByRole('alert')).toHaveTextContent(
+        'approve failed, the batch is marked failed',
+      );
+      expect(within(failed).getByRole('alert')).toHaveTextContent('OSError: disk full');
     } finally {
       Object.assign(POLL, defaults);
     }
@@ -361,13 +364,82 @@ describe('ImportReview', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
     await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
 
-    const problems = await within(dialog).findByRole('alert');
-    expect(problems).toHaveTextContent('Nothing was applied');
+    const failed = await screen.findByRole('dialog', { name: 'Nothing was applied' });
+    const problems = within(failed).getByRole('alert');
     expect(problems).toHaveTextContent('1 row failed re-validation against current data');
     expect(problems).toHaveTextContent(
       'Row 3 is marked with the reason. Skip it or upload the sheet again.',
     );
-    expect(problems).toHaveFocus();
+    expect(within(failed).getByRole('button', { name: 'Close' })).toHaveFocus();
+    expect(screen.queryByRole('dialog', { name: 'Approve october-raises.xlsx?' })).toBeNull();
+  });
+
+  it('applies behind the busy dialog, which nothing dismisses until the server answers', async () => {
+    const user = userEvent.setup();
+    const applied: ImportBatch = {
+      ...READY,
+      status: 'approved',
+      applied_rows: 2,
+      created_rows: 1,
+      revised_rows: 1,
+    };
+    let approved = false;
+    const { handler, release } = held(() => {
+      approved = true;
+      return HttpResponse.json(applied);
+    });
+    server.use(
+      http.get('/api/v1/imports/3/', () => HttpResponse.json(approved ? applied : READY)),
+      http.post('/api/v1/imports/3/approve/', handler),
+    );
+    renderApp('/imports/3');
+
+    await user.click(await screen.findByRole('button', { name: 'Approve' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
+
+    await expectPending('Applying 2 rows\u2026');
+    expect(screen.getByRole('button', { name: 'Approve', hidden: true })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Discard', hidden: true })).toBeDisabled();
+    release();
+    await expectClosed('Applying 2 rows\u2026');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Applied 2 rows: 1 created, 0 updated, 1 revised.',
+    );
+  });
+
+  it('discards behind the busy dialog, and shows a refusal with Close', async () => {
+    const user = userEvent.setup();
+    const { handler, release } = held(() =>
+      HttpResponse.json({ ...reviewBatch, status: 'discarded' }),
+    );
+    server.use(
+      http.get('/api/v1/imports/3/', () => HttpResponse.json(reviewBatch)),
+      http.post('/api/v1/imports/3/discard/', handler),
+    );
+    renderApp('/imports/3');
+
+    await user.click(await screen.findByRole('button', { name: 'Discard' }));
+    let dialog = await screen.findByRole('dialog', { name: 'Discard october-raises.xlsx?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Discard batch' }));
+
+    await expectPending('Discarding october-raises.xlsx\u2026');
+    release();
+    await expectClosed('Discarding october-raises.xlsx\u2026');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'october-raises.xlsx discarded. Nothing in it was applied.',
+    );
+
+    server.use(
+      http.post('/api/v1/imports/3/discard/', () =>
+        HttpResponse.json({ detail: 'the batch is approved, not in review' }, { status: 409 }),
+      ),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Discard' }));
+    dialog = await screen.findByRole('dialog', { name: 'Discard october-raises.xlsx?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Discard batch' }));
+
+    await expectFailed('Not discarded', 'the batch is approved, not in review');
   });
 
   it('discards after confirming, and nothing can be skipped after', async () => {
@@ -529,8 +601,9 @@ describe('ImportReview', () => {
     await user.click(await screen.findByRole('button', { name: 'Approve' }));
     const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
     await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
-    await within(dialog).findByRole('alert');
-    await user.click(within(dialog).getByRole('button', { name: 'Keep reviewing' }));
+    const failed = await screen.findByRole('dialog', { name: 'Nothing was applied' });
+    await user.click(within(failed).getByRole('button', { name: 'Close' }));
+    await expectClosed('Nothing was applied');
 
     expect(
       await screen.findByText(/effective_from must be after 2026-12-01 \(latest record\)/),
@@ -559,7 +632,8 @@ describe('ImportReview', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
     await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
 
-    const problems = await within(dialog).findByRole('alert');
+    const failed = await screen.findByRole('dialog', { name: 'Nothing was applied' });
+    const problems = within(failed).getByRole('alert');
     expect(problems).toHaveTextContent('approve failed, the batch is marked failed');
     expect(problems).toHaveTextContent('OSError: disk full');
   });

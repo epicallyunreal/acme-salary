@@ -5,6 +5,7 @@ import type { ReactElement, ReactNode } from 'react';
 import { createMemoryRouter } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 
+import { BusyProvider } from '../components/busy/BusyProvider';
 import { redirectToLoginOnSecond401 } from '../lib/session';
 import { theme } from '../lib/theme';
 import { SessionGate } from '../components/layout/SessionGate';
@@ -21,7 +22,9 @@ function Providers({ children, client }: { children: ReactNode; client: QueryCli
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      <QueryClientProvider client={client}>
+        <BusyProvider>{children}</BusyProvider>
+      </QueryClientProvider>
     </ThemeProvider>
   );
 }

@@ -2,6 +2,8 @@ import { CssBaseline, ThemeProvider } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from 'react-router/dom';
 
+import { BusyProvider } from './components/busy/BusyProvider';
+
 import { SessionGate } from './components/layout/SessionGate';
 import { redirectToLoginOnSecond401 } from './lib/session';
 import { theme } from './lib/theme';
@@ -21,7 +23,9 @@ export default function App() {
       <CssBaseline />
       <QueryClientProvider client={queryClient}>
         <SessionGate>
-          <RouterProvider router={router} />
+          <BusyProvider>
+            <RouterProvider router={router} />
+          </BusyProvider>
         </SessionGate>
       </QueryClientProvider>
     </ThemeProvider>

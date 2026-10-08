@@ -52,6 +52,7 @@ export function Employees() {
             <ExportMenu
               label="Export employees"
               what="the employees"
+              name="employees"
               onExport={(file) => exportEmployees(params, file)}
             />
             <Button

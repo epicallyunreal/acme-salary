@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSession } from '../lib/auth';
 import { POLL } from '../lib/poll';
 import { batchPage, batches, reviewBatch } from '../test/fixtures/imports';
+import { expectClosed, expectFailed, expectPending, holdFetch } from '../test/busy';
 import { XLSX_TYPE } from '../test/handlers';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
@@ -95,7 +96,7 @@ describe('Imports', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/imports/7'));
   });
 
-  it("lists the server's reasons when a file is refused, in a summary that takes focus", async () => {
+  it("lists the server's reasons when a file is refused, in the busy dialog with Close focused", async () => {
     server.use(
       http.post('/api/v1/imports/', () =>
         HttpResponse.json(
@@ -112,14 +113,13 @@ describe('Imports', () => {
 
     chooseFile(sheet('october.csv', 'text/csv'));
 
-    const summary = await screen.findByRole('alert');
-    expect(summary).toHaveTextContent('The file was not staged');
+    const failed = await screen.findByRole('dialog', { name: 'The file was not staged' });
     expect(
-      within(summary)
+      within(failed)
         .getAllByRole('listitem')
         .map((item) => item.textContent),
     ).toEqual(['Missing required column: country_code', 'Ignored unknown column: Remarks']);
-    expect(summary).toHaveFocus();
+    expect(within(failed).getByRole('button', { name: 'Close' })).toHaveFocus();
   });
 
   it('says what the upload box takes', async () => {
@@ -236,7 +236,28 @@ describe('Imports', () => {
 
     chooseFile(sheet('october.csv', 'text/csv'));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    await expectFailed('The file was not staged', message);
+  });
+
+  it('stages behind the busy dialog, which nothing dismisses until the server answers', async () => {
+    const release = holdFetch(
+      (method, url) => method === 'POST' && url.endsWith('/api/v1/imports/'),
+      () =>
+        new Response(JSON.stringify(reviewBatch), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    const { router } = renderApp('/imports');
+    await screen.findByRole('table', { name: 'Imports' });
+
+    chooseFile(sheet('october.csv', 'text/csv'));
+
+    await expectPending('Staging october.csv\u2026');
+    expect(screen.getByRole('button', { name: 'Choose a file', hidden: true })).toBeDisabled();
+    release();
+    await expectClosed('Staging october.csv\u2026');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/imports/3'));
   });
 
   it('keeps waiting through a cut upload and opens the batch the server made', async () => {
@@ -260,9 +281,7 @@ describe('Imports', () => {
 
     chooseFile(sheet('october.csv', 'text/csv'));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Still working. The server is reading the file.',
-    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Still working\u2026');
     await waitFor(() => expect(router.state.location.pathname).toBe('/imports/5'));
   });
 
@@ -275,7 +294,8 @@ describe('Imports', () => {
 
     chooseFile(sheet('october.csv', 'text/csv'));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
+    await expectFailed(
+      'The file was not staged',
       'The server may still be working, or the file was refused; check the batch list.',
     );
   });
@@ -342,9 +362,11 @@ describe('Imports', () => {
 
     chooseFile(sheet('october.csv', 'text/csv'));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
+    await screen.findByRole('dialog', { name: 'The file was not staged' });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await expectFailed(
+      'The file was not staged',
       'The server may still be working, or the file was refused; check the batch list.',
     );
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 });

@@ -2,6 +2,7 @@ import { Box, Button, Typography } from '@mui/material';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
+import { useBusy } from '../components/busy/busyContext';
 import { ResetDialog } from '../components/demo/ResetDialog';
 import { SampleFiles } from '../components/demo/SampleFiles';
 import { PageHeader } from '../components/layout/PageHeader';
@@ -11,6 +12,7 @@ import { PageHeader } from '../components/layout/PageHeader';
 export function DemoData() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const { busy } = useBusy();
 
   return (
     <>
@@ -47,7 +49,12 @@ export function DemoData() {
             login stay.
           </Typography>
         </Box>
-        <Button color="error" variant="outlined" onClick={() => setOpen(true)}>
+        <Button
+          color="error"
+          variant="outlined"
+          disabled={busy !== null}
+          onClick={() => setOpen(true)}
+        >
           Empty the database
         </Button>
       </Box>

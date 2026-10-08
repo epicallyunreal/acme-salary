@@ -1,9 +1,9 @@
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import { Alert, Box, Button, LinearProgress, List, ListItem, Typography } from '@mui/material';
-import { useState } from 'react';
+import { Box, Button, LinearProgress, List, ListItem, Typography } from '@mui/material';
 
 import { downloadSampleFile, useSampleFiles } from '../../api/demo';
 import type { SampleFile } from '../../api/types';
+import { useBusy } from '../busy/busyContext';
 import { ErrorState } from '../layout/ErrorState';
 
 const NOTES = [
@@ -12,23 +12,17 @@ const NOTES = [
 ];
 
 /** The sample files of SPEC F9: each with its name, one line on what it exercises and a
- * Download button, the generated ones disabled while the database is empty (D72). */
+ * Download button, the generated ones disabled while the database is empty (D72). A download
+ * runs behind the busy dialog, since a generated file takes the server a moment to build. */
 export function SampleFiles() {
   const files = useSampleFiles();
-  const [busy, setBusy] = useState<string | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const { busy, run } = useBusy();
 
-  const download = async (file: SampleFile) => {
-    setBusy(file.name);
-    setFailed(null);
-    try {
-      await downloadSampleFile(file.name, file.file_name);
-    } catch {
-      setFailed(`Could not download ${file.file_name}. Check your connection and try again.`);
-    } finally {
-      setBusy(null);
-    }
-  };
+  const download = (file: SampleFile) =>
+    run(`Preparing ${file.file_name}\u2026`, () => downloadSampleFile(file.name, file.file_name), {
+      failedTitle: `Could not download ${file.file_name}`,
+      cut: 'The download did not finish. Check your connection and try again.',
+    });
 
   return (
     <Box component="section" aria-labelledby="sample-files-title" sx={{ mb: 6 }}>
@@ -66,9 +60,7 @@ export function SampleFiles() {
                 variant="outlined"
                 size="small"
                 aria-label={`Download ${file.file_name}`}
-                disabled={!file.available || (busy !== null && busy !== file.name)}
-                loading={busy === file.name}
-                loadingPosition="start"
+                disabled={!file.available || busy !== null}
                 startIcon={<DownloadOutlinedIcon fontSize="small" />}
                 onClick={() => void download(file)}
                 sx={{ flexShrink: 0, mt: 0.5 }}
@@ -79,11 +71,6 @@ export function SampleFiles() {
           ))}
         </List>
       )}
-      {failed ? (
-        <Alert severity="error" role="status" sx={{ mt: 3 }}>
-          {failed}
-        </Alert>
-      ) : null}
       {NOTES.map((note) => (
         <Typography key={note} variant="body2" sx={{ color: 'text.secondary', mt: 3 }}>
           {note}

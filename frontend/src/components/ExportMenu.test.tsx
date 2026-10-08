@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExportFile } from '../api/exports';
 import { setSession } from '../lib/auth';
+import { expectClosed, expectFailed, expectPending } from '../test/busy';
 import { renderApp, renderWithProviders } from '../test/render';
 import { server } from '../test/setup';
 import { ExportMenu } from './ExportMenu';
@@ -59,7 +60,7 @@ describe('ExportMenu', () => {
     const user = userEvent.setup();
     const onExport = vi.fn<(file: ExportFile) => Promise<void>>(() => Promise.resolve());
     renderWithProviders(
-      <ExportMenu label="Export summary" what="the summary" onExport={onExport} />,
+      <ExportMenu label="Export summary" what="the summary" name="summary" onExport={onExport} />,
     );
 
     await user.click(screen.getByRole('button', { name: 'Export summary' }));
@@ -79,7 +80,12 @@ describe('ExportMenu', () => {
   it('reads Export and says what it exports in its tooltip', async () => {
     const user = userEvent.setup();
     renderWithProviders(
-      <ExportMenu label="Export summary" what="the summary" onExport={() => Promise.resolve()} />,
+      <ExportMenu
+        label="Export summary"
+        what="the summary"
+        name="summary"
+        onExport={() => Promise.resolve()}
+      />,
     );
 
     await user.hover(screen.getByRole('button', { name: 'Export summary' }));
@@ -88,23 +94,28 @@ describe('ExportMenu', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Export summary');
   });
 
-  it('shows the file is on its way and ignores a second click meanwhile', async () => {
+  it('runs the download behind the busy dialog, the trigger off meanwhile (D72)', async () => {
     const user = userEvent.setup();
     let finish = () => {};
     const onExport = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     renderWithProviders(
-      <ExportMenu label="Export employees" what="the employees" onExport={onExport} />,
+      <ExportMenu
+        label="Export employees"
+        what="the employees"
+        name="employees"
+        onExport={onExport}
+      />,
     );
     const trigger = screen.getByRole('button', { name: 'Export employees' });
 
     await user.click(trigger);
     await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
-    await waitFor(() => expect(trigger).toHaveAttribute('aria-busy', 'true'));
-    await user.click(trigger);
 
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    await expectPending('Preparing employees.csv\u2026');
+    expect(trigger).toBeDisabled();
     finish();
-    await waitFor(() => expect(trigger).not.toHaveAttribute('aria-busy'));
+    await expectClosed('Preparing employees.csv\u2026');
+    expect(trigger).toBeEnabled();
     expect(onExport).toHaveBeenCalledTimes(1);
   });
 
@@ -114,15 +125,17 @@ describe('ExportMenu', () => {
       <ExportMenu
         label="Export pay by level"
         what="the pay by level"
-        onExport={() => Promise.reject(new Error('offline'))}
+        name="by-level"
+        onExport={() => Promise.reject(new TypeError('Failed to fetch'))}
       />,
     );
 
     await user.click(screen.getByRole('button', { name: 'Export pay by level' }));
     await user.click(screen.getByRole('menuitem', { name: 'JSON' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Could not export the pay by level. Check your connection and try again.',
+    await expectFailed(
+      'Could not export the pay by level',
+      'The download did not finish. Check your connection and try again.',
     );
   });
 });
@@ -257,8 +270,6 @@ describe('Export menus on the pages', () => {
     await user.click(await screen.findByRole('button', { name: 'Export employees' }));
     await user.click(screen.getByRole('menuitem', { name: 'JSON' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Could not export the employees. Check your connection and try again.',
-    );
+    await expectFailed('Could not export the employees', 'The file could not be made (error 500).');
   });
 });

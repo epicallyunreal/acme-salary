@@ -7,14 +7,18 @@ import {
   DialogTitle,
 } from '@mui/material';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 
 import { ApiError } from '../../api/client';
-import { afterApprove, getImport, useApproveImport, useDiscardImport } from '../../api/imports';
+import {
+  afterApprove,
+  getImport,
+  refreshBatch,
+  useApproveImport,
+  useDiscardImport,
+} from '../../api/imports';
 import type { ImportBatch } from '../../api/types';
-import { mayStillBeRunning, useUnmountSignal, waitFor } from '../../lib/poll';
 import type { FormMessage } from '../forms/applyServerErrors';
-import { ErrorSummary } from '../forms/ErrorSummary';
+import { useBusy } from '../busy/busyContext';
 import { rowsWord } from './counts';
 
 /** Why an approve or a discard was refused: the error count, the rows the re-check re-marked,
@@ -51,82 +55,64 @@ function applied(done: ImportBatch): string {
   );
 }
 
-const STILL_WORKING = 'Still working. The server is applying the rows.';
 const GAVE_UP =
   'The server may still be working, or the approve was refused; open the batch again.';
+const DISCARD_GAVE_UP =
+  'The server may still be working, or the discard was refused; open the batch again.';
+
+/** The batch once it has left review, for a request the proxy cut (D72). */
+function leftReview(id: number) {
+  return async () => {
+    const latest = await getImport(id);
+    return latest.status === 'review' ? null : latest;
+  };
+}
 
 export function ApproveDialog({ batch, onClose, onDone }: DialogProps) {
   const approve = useApproveImport(batch.id);
   const client = useQueryClient();
-  const unmountSignal = useUnmountSignal();
-  const [problems, setProblems] = useState<FormMessage[]>([]);
-  const [attempt, setAttempt] = useState(0);
-  const [waiting, setWaiting] = useState(false);
+  const { run } = useBusy();
 
-  const refuse = (found: FormMessage[]) => {
-    setProblems(found);
-    setAttempt((n) => n + 1);
-  };
-
-  const confirm = () => {
-    setProblems([]);
-    approve.mutate(undefined, {
-      onSuccess: (done) => {
-        onClose();
-        onDone(applied(done));
-      },
-      onError: async (error) => {
-        if (!mayStillBeRunning(error)) {
-          refuse(batchActionProblems(error));
-          return;
-        }
-        // The proxy cut the request, but the server applies on: the batch leaves review (D72).
-        const signal = unmountSignal();
-        setWaiting(true);
-        const done = await waitFor(async () => {
-          const latest = await getImport(batch.id);
-          return latest.status === 'review' ? null : latest;
-        }, signal);
-        if (signal.aborted) return;
-        setWaiting(false);
-        if (!done) {
-          refuse([{ key: null, message: GAVE_UP }]);
-          return;
-        }
-        await afterApprove(client, done);
-        if (done.status === 'approved') {
-          onClose();
-          onDone(applied(done));
-        } else {
-          refuse([
-            { key: null, message: 'approve failed, the batch is marked failed' },
-            ...(done.error_summary ? [{ key: null, message: done.error_summary }] : []),
-          ]);
-        }
-      },
+  // The confirmation closes and the busy dialog takes over until the server has answered, or,
+  // the request cut, until the batch has left review. A batch that ended failed is a refusal.
+  const confirm = async () => {
+    onClose();
+    const applying = batch.valid_rows + batch.warning_rows - batch.noop_rows;
+    const result = await run(`Applying ${rowsWord(applying)}\u2026`, () => approve.mutateAsync(), {
+      failedTitle: 'Nothing was applied',
+      problems: batchActionProblems,
+      gaveUp: GAVE_UP,
+      recover: leftReview(batch.id),
+      refusal: (done) =>
+        done.status === 'approved'
+          ? null
+          : [
+              { key: null, message: 'approve failed, the batch is marked failed' },
+              ...(done.error_summary ? [{ key: null, message: done.error_summary }] : []),
+            ],
     });
+    if (!result.ok) {
+      await refreshBatch(client, batch.id);
+      return;
+    }
+    await afterApprove(client, result.value);
+    onDone(applied(result.value));
   };
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>Approve {batch.file_name}?</DialogTitle>
       <DialogContent>
-        <ErrorSummary title="Nothing was applied" messages={problems} attempt={attempt} />
         <DialogContentText>
           Its valid and warning rows change the live records in one step, each change audited under
           this file. Skipped and unchanged rows are left out.
         </DialogContentText>
-        {waiting ? (
-          <DialogContentText role="status" sx={{ mt: 2 }}>
-            {STILL_WORKING}
-          </DialogContentText>
-        ) : null}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} autoFocus>
           Keep reviewing
         </Button>
-        <Button variant="contained" onClick={confirm} loading={approve.isPending || waiting}>
+        <Button variant="contained" onClick={() => void confirm()}>
           Approve and apply
         </Button>
       </DialogActions>
@@ -136,28 +122,25 @@ export function ApproveDialog({ batch, onClose, onDone }: DialogProps) {
 
 export function DiscardDialog({ batch, onClose, onDone }: DialogProps) {
   const discard = useDiscardImport(batch.id);
-  const [problems, setProblems] = useState<FormMessage[]>([]);
-  const [attempt, setAttempt] = useState(0);
+  const client = useQueryClient();
+  const { run } = useBusy();
 
-  const confirm = () => {
-    setProblems([]);
-    discard.mutate(undefined, {
-      onSuccess: () => {
-        onClose();
-        onDone(`${batch.file_name} discarded. Nothing in it was applied.`);
-      },
-      onError: (error) => {
-        setProblems(batchActionProblems(error));
-        setAttempt((n) => n + 1);
-      },
+  const confirm = async () => {
+    onClose();
+    const result = await run(`Discarding ${batch.file_name}\u2026`, () => discard.mutateAsync(), {
+      failedTitle: 'Not discarded',
+      problems: batchActionProblems,
+      gaveUp: DISCARD_GAVE_UP,
+      recover: leftReview(batch.id),
     });
+    await refreshBatch(client, batch.id);
+    if (result.ok) onDone(`${batch.file_name} discarded. Nothing in it was applied.`);
   };
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="xs">
       <DialogTitle>Discard {batch.file_name}?</DialogTitle>
       <DialogContent>
-        <ErrorSummary title="Not discarded" messages={problems} attempt={attempt} />
         <DialogContentText>
           Nothing in it is applied. The batch and its rows stay listed for the record.
         </DialogContentText>
@@ -166,7 +149,7 @@ export function DiscardDialog({ batch, onClose, onDone }: DialogProps) {
         <Button onClick={onClose} autoFocus>
           Keep the batch
         </Button>
-        <Button color="error" variant="contained" onClick={confirm} loading={discard.isPending}>
+        <Button color="error" variant="contained" onClick={() => void confirm()}>
           Discard batch
         </Button>
       </DialogActions>

@@ -78,6 +78,7 @@ export function Dashboard() {
       size="small"
       label={label}
       what={what}
+      name={name}
       onExport={(file) => exportInsight(name, params, file, control)}
     />
   );

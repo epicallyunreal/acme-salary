@@ -7,6 +7,7 @@ import { setSession } from '../lib/auth';
 import { POLL } from '../lib/poll';
 import { resetCounts, sampleFilesEmpty } from '../test/fixtures/demo';
 import { batchPage } from '../test/fixtures/imports';
+import { expectClosed, expectFailed, expectPending, held } from '../test/busy';
 import { HR_PASSWORD } from '../test/handlers';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
@@ -103,6 +104,87 @@ describe('DemoData', () => {
     expect(authorization).toBe('Bearer access-1');
   });
 
+  it('downloads behind the busy dialog, and says so when the file cannot be made', async () => {
+    const user = userEvent.setup();
+    const saved = catchSaves();
+    const { handler, release } = held(
+      () =>
+        new HttpResponse(new Blob(['xlsx']), {
+          headers: { 'Content-Disposition': 'attachment; filename="exits.xlsx"' },
+        }),
+    );
+    server.use(http.get('/api/v1/admin/sample-files/exits/', handler));
+    renderApp('/demo');
+
+    await user.click(await screen.findByRole('button', { name: 'Download exits.xlsx' }));
+
+    await expectPending('Preparing exits.xlsx\u2026');
+    expect(
+      screen.getByRole('button', { name: 'Download base-15000.xlsx', hidden: true }),
+    ).toBeDisabled();
+    release();
+    await expectClosed('Preparing exits.xlsx\u2026');
+    await waitFor(() => expect(saved).toEqual(['exits.xlsx']));
+
+    server.use(
+      http.get('/api/v1/admin/sample-files/exits/', () =>
+        HttpResponse.json({ detail: 'import the base file first' }, { status: 409 }),
+      ),
+    );
+    await user.click(screen.getByRole('button', { name: 'Download exits.xlsx' }));
+
+    await expectFailed('Could not download exits.xlsx', 'import the base file first');
+  });
+
+  it('turns Empty the database on only for exactly RESET beside a password', async () => {
+    const user = userEvent.setup();
+    renderApp('/demo');
+
+    await user.click(await screen.findByRole('button', { name: 'Empty the database' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Empty the database?' });
+    const submit = within(dialog).getByRole('button', { name: 'Empty the database' });
+    const password = within(dialog).getByLabelText('Your password');
+    const confirm = within(dialog).getByLabelText('Type RESET to confirm');
+
+    await user.type(confirm, 'RESET');
+    expect(submit).toBeDisabled();
+    await user.type(password, 'x');
+    expect(submit).toBeEnabled();
+    for (const wrong of ['reset', 'RESET ', 'RESE']) {
+      await user.clear(confirm);
+      await user.type(confirm, wrong);
+      expect(submit).toBeDisabled();
+    }
+    await user.clear(confirm);
+    await user.type(confirm, 'RESET');
+    expect(submit).toBeEnabled();
+  });
+
+  it('empties behind the busy dialog, which nothing dismisses until the server answers', async () => {
+    const { handler, release } = held(() => HttpResponse.json(resetCounts));
+    server.use(
+      http.post('/api/v1/admin/reset-demo/', handler),
+      http.get('/api/v1/imports/', () => HttpResponse.json(batchPage([]))),
+    );
+    const user = userEvent.setup();
+    const { router } = renderApp('/demo');
+
+    await user.click(await screen.findByRole('button', { name: 'Empty the database' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Empty the database?' });
+    await within(dialog).findByText(DELETES);
+    await user.type(within(dialog).getByLabelText('Your password'), HR_PASSWORD);
+    await user.type(within(dialog).getByLabelText('Type RESET to confirm'), 'RESET');
+    await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
+
+    await expectPending('Emptying the database\u2026');
+    expect(
+      within(dialog).getByRole('button', { name: 'Cancel', hidden: true }),
+    ).toBeInTheDocument();
+    release();
+    await expectClosed('Emptying the database\u2026');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/imports'));
+  });
+
   it('empties the database behind the password and RESET, then goes to Imports', async () => {
     // Emptied, the imports list is empty too, which is when Imports shows the notice.
     server.use(http.get('/api/v1/imports/', () => HttpResponse.json(batchPage([]))));
@@ -118,19 +200,18 @@ describe('DemoData', () => {
     expect(submit).toBeDisabled();
     await user.type(password, 'wrong');
     expect(submit).toBeDisabled();
-    await user.type(confirm, 'reset');
+    await user.type(confirm, 'RESET');
     expect(submit).toBeEnabled();
 
     await user.click(submit);
 
+    // The server's 403 shows in the busy dialog, then on the field once it is closed.
+    await expectFailed('The database was not emptied', 'password did not match');
     await waitFor(() => expect(password).toHaveAccessibleDescription('password did not match'));
-    expect(confirm).toHaveAccessibleDescription('type RESET to confirm');
     expect(router.state.location.pathname).toBe('/demo');
 
     await user.clear(password);
     await user.type(password, HR_PASSWORD);
-    await user.clear(confirm);
-    await user.type(confirm, 'RESET');
     await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/imports'));
@@ -172,9 +253,7 @@ describe('DemoData', () => {
     await user.type(within(dialog).getByLabelText('Type RESET to confirm'), 'RESET');
     await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
 
-    expect(await within(dialog).findByRole('status')).toHaveTextContent(
-      'Still working. The server is emptying the database.',
-    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Still working\u2026');
     await waitFor(() => expect(router.state.location.pathname).toBe('/imports'));
     expect(
       await screen.findByText('The database is empty. Import base-15000.xlsx to start.'),
@@ -195,7 +274,8 @@ describe('DemoData', () => {
     await user.type(within(dialog).getByLabelText('Type RESET to confirm'), 'RESET');
     await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
 
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+    await expectFailed(
+      'The database was not emptied',
       'The server may still be working, or the reset was refused; reload the page and check the counts.',
     );
   });
@@ -236,8 +316,9 @@ describe('DemoData', () => {
     await user.type(within(dialog).getByLabelText('Type RESET to confirm'), 'RESET');
     await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
 
-    expect(
-      await within(dialog).findByText('Too many attempts. Wait an hour and try again.'),
-    ).toBeInTheDocument();
+    await expectFailed(
+      'The database was not emptied',
+      'Too many attempts. Wait an hour and try again.',
+    );
   });
 });

@@ -19,6 +19,7 @@ import type { ImportBatch, ImportRow, ImportRowParams } from '../api/types';
 import { CommitField, SEARCH_DELAY_MS } from '../components/filters/FilterBar';
 import { importRowColumns } from '../components/grid/columns';
 import { ServerGrid } from '../components/grid/ServerGrid';
+import { useBusy } from '../components/busy/busyContext';
 import { ApproveDialog, DiscardDialog } from '../components/imports/BatchDialogs';
 import { BatchSummaryStrip } from '../components/imports/BatchSummaryStrip';
 import { rowsWord } from '../components/imports/counts';
@@ -133,6 +134,7 @@ function ReviewPage({ batchId }: { batchId: number }) {
   const rows = useImportRows(batchId, params);
   const { mutate: toggleSkip } = useSkipRow(batchId);
   const [dialog, setDialog] = useState<'approve' | 'discard' | null>(null);
+  const { busy } = useBusy();
   const [notice, setNotice] = useState<{ text: string; severity: 'success' | 'error' } | null>(
     null,
   );
@@ -202,7 +204,11 @@ function ReviewPage({ batchId }: { batchId: number }) {
         actions={
           <>
             <TemplateMenu />
-            <Button variant="outlined" disabled={!inReview} onClick={() => setDialog('discard')}>
+            <Button
+              variant="outlined"
+              disabled={!inReview || busy !== null}
+              onClick={() => setDialog('discard')}
+            >
               Discard
             </Button>
             <Tooltip title={blocker ?? ''}>
@@ -210,7 +216,7 @@ function ReviewPage({ batchId }: { batchId: number }) {
               <span>
                 <Button
                   variant="contained"
-                  disabled={Boolean(blocker)}
+                  disabled={Boolean(blocker) || busy !== null}
                   aria-describedby={inReview && blocker ? 'approve-blocker' : undefined}
                   onClick={() => setDialog('approve')}
                 >
