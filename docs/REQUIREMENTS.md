@@ -26,6 +26,7 @@ One persona, one role: the HR Manager. They own the salary data, approve every i
 7. Single HR Manager login protecting every API route.
 8. Deterministic seed of 10,000 employees across six countries with pay history. The brief's "10,000 employees" is read as 10,000 on staff today, and the seed adds 5,000 who left before, with every revision since 2015 (D64).
 9. A live public URL, plus a Docker build that runs with one command and a recorded demo.
+10. Added before Hardening (D72): a Demo data page with sample import files generated from the live data, the 15,000-row base file, and a reset that empties the database, so a reviewer can run the 10,000-employee import the brief names.
 
 ## Deliberately out of scope
 

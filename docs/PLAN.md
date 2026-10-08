@@ -269,7 +269,40 @@ Risks: the seed roughly doubles (about 15,000 employees and 60,000 records), so 
 
 Plugin skills and connectors: `/add-insight` and `/add-endpoint` for the period and its parameters, `/frontend-page` for the bar and the grids, `/log-decision`, `/perf-timing`, `frontend-design` and `ui-ux-pro-max` for the period control, the `on` lines and the page numbers, Context7 for MUI X 9's pagination slot and selectors and MUI's `Pagination`.
 
-## Step 10. Hardening
+## Step 10. Demo data
+
+Added by the owner before Hardening (D72), which becomes step 11 and Ship step 12. Built in five slices, each end to end with its tests, then the close: six commits.
+
+Goal: a reviewer can empty the database and run the 10,000-employee import the brief names, then exercise every kind of row with files generated from the live data. A Demo data page after Imports offers the committed `base-15000.xlsx` and six files generated on demand, each drawing from its own share of the directory so they import cleanly in any order, and a danger zone that empties the database behind the user's password and `RESET`. Two rules go with it: no import may take the organisation past 25,000 employees, and a revision that lowers gross is a warning naming both figures.
+
+Files to change:
+
+- Rules. `apps/compensation/validators.py` (`check_gross_not_lower`, the no-op on a repeated scheduled revision), `apps/compensation/messages.py`, `apps/imports/services.py` (the 25,000 cap before the batch is written), `tests/compensation/test_validators.py`, `tests/imports/test_staging.py`.
+- Files. `apps/imports/management/commands/make_import_file.py` (`--base`, `--bonus`, `--promotions`, `--exits`, `--effective`, `--share`, raises of 3 to 8%), `seed/generator.py` (new hires joining within a window), `sample-data/base-15000.xlsx` (committed, regenerated with the seed), `sample-data/acme-sample-50.*` (regenerated once more), `tests/imports/test_make_import_file.py`, `tests/seed/test_base_file.py` (slow).
+- Reset. `apps/demo/` (`services.py`, `views.py`, `serializers.py`, `urls.py`), `seed/management/commands/seed_data.py` (the truncation takes the tables to empty), `seed/profiles.py` (`PAY_TABLES`), `apps/audit/models.py` (the `demo_reset` action, a choices-only migration), `acme_salary/settings/base.py` (throttle scope `reset`, `SAMPLE_DATA_DIR`), `acme_salary/urls.py`, `tests/demo/`.
+- Page. `src/pages/DemoData.tsx`, `src/components/demo/SampleFiles.tsx` and `ResetDialog.tsx`, `src/api/demo.ts`, `src/components/layout/AppShell.tsx` (the nav item), `src/router.tsx`, `src/pages/Imports.tsx` (the message after a reset), `src/lib/poll.ts` with the review and Imports pages (waiting through a cut connection), fixtures, handlers and tests.
+- Deployment and timing. `Dockerfile` (the base file in the image), `entrypoint.sh` (gunicorn's timeout, only if measured necessary), `apps/core/management/commands/timing.py` (`--case demo-files`, `--case base-import`), `docs/PERFORMANCE.md`.
+
+Tests: the warning on a gross one cent lower and none on an equal gross, through the API, an import and a seed entry; the cap at exactly 25,000 and refused at 25,001, updates and revisions not counted, no batch written; each generator option's row shape, its share of the directory and its determinism for a seed, newhires' joining window, promotions skipping L6; the base file against the seed, row by row (slow); the reset endpoint's 403 for a wrong password and for a `confirm` that is not `RESET`, the 429 on the sixth attempt in an hour, the 409 while an upload is being read, the counts returned, every pay table empty and `sqlite_sequence` cleared so the next employee is ACME-1, lookups, rates and the user kept, the user still able to log in, and the one `demo_reset` audit entry; the sample-file list with the generated files unavailable on an empty database; the page's download links and their one-line descriptions, the dialog's counts, its button disabled until both fields are filled, the field messages on 403, and the move to Imports with its message; the review page and the Imports page polling after a cut request.
+
+Commits:
+
+1. `feat(import): warn when a revision lowers gross, and cap the organisation at 25,000`
+2. `feat(demo): the base file and six sample files generated from the live data`
+3. `feat(demo): a reset endpoint that empties the database`
+4. `feat(demo): the Demo data page`
+5. `fix(import): the pages wait through a cut connection` (with the timing cases)
+6. `feat: demo data (step 10)` (finish-step: `/perf-timing`'s new cases locally and on Fly, the base import with the balance in hand and with it spent, gunicorn's timeout raised to 300 s only if a throttled approve is killed past 120 s, deploy, `reset_demo` on the live machine once the balance has refilled, then the machine left idle before anyone reviews)
+
+Hours: 9.
+
+Acceptance closed: SPEC F9 in full, F1's cap, section 7's two new rows, section 8's three `/admin/` routes, section 10's Demo data page, section 11's base file, section 13's base import `[measured]`.
+
+Risks: Fly's proxy closes a connection that carries no data for 60 s, so a throttled staging or approve is cut before gunicorn's timeout matters. The work finishes on the server and the pages poll, but a reviewer who imports with the balance spent waits minutes. The reset deletes about 300,000 rows, a few seconds with the balance in hand. The base file adds about 1 MB to the repository and to the image. The test of it against the seed is slow and stays out of the commit hook.
+
+Plugin skills and connectors: `/add-endpoint` for the three routes, `/add-validation-rule` for the warning and the no-op, `/frontend-page` for the page, `/log-decision`, `/perf-timing`, `frontend-design` and `ui-ux-pro-max` for the danger zone and the file list, Context7 for DRF 3.18's throttling and MUI 9's dialog.
+
+## Step 11. Hardening
 
 Goal: the measured numbers are in `docs/PERFORMANCE.md`, every page has its error and empty states, keyboard and labels pass, and the README carries demo credentials and how the app was built.
 
@@ -281,7 +314,7 @@ Commits:
 
 1. `perf: timing command complete and the measured numbers recorded`
 2. `fix(frontend): error and empty states on every page and the accessibility pass`
-3. `docs: README with run instructions, demo credentials and how it was built (step 10)`
+3. `docs: README with run instructions, demo credentials and how it was built (step 11)`
 
 Hours: 2.
 
@@ -291,7 +324,7 @@ Risks: a missed target discovered here has the least time to fix; that is why th
 
 Plugin skills and connectors: `/perf-timing`, `ui-ux-pro-max` for empty states, focus and the error summary, `frontend-design` for the copy of every state.
 
-## Step 11. Ship
+## Step 12. Ship
 
 Goal: the final build is live, smoke-tested on the live URL, recorded, and the repository is public.
 
@@ -302,7 +335,7 @@ Tests: none new. A manual smoke test on the live URL in the order of the demo: s
 Commits:
 
 1. `docs: final decisions, performance notes and demo video link`
-2. `chore: ship (step 11)`
+2. `chore: ship (step 12)`
 
 Hours: 1.5, of which the demo recording is the owner's.
 
@@ -325,18 +358,19 @@ Plugin skills and connectors: `/log-decision`. No design or library skill.
 | 7 Export | 2.0 | 28.5 | 17:00 |
 | 8 Insights, second set | 7.0 | 35.5 | added after step 7 (D62) |
 | 9 Realistic seed, a period, numbered pages | 11.0 | 46.5 | added before Hardening (D64) |
-| 10 Hardening | 2.0 | 48.5 | |
-| 11 Ship | 1.5 | 50.0 | |
+| 10 Demo data | 9.0 | 55.5 | added before Hardening (D72) |
+| 11 Hardening | 2.0 | 57.5 | |
+| 12 Ship | 1.5 | 59.0 | |
 
-Total: 50 hours. Step 8 was added after step 7 closed on 8 October (D62), and step 9 before Hardening on 8 October (D64), so the planned close column stops at step 7.
+Total: 59 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64) and step 10 before it the same day (D72), so the planned close column stops at step 7.
 
 Submission target: the morning of 8 October 2026 IST, full scope, per DECISIONS D19 and D23. The owner decides at the end on any overrun. At these estimates and with no breaks from a 12:30 start, steps 1 to 4 close by 06:00 on 8 October, step 5 by 11:00, step 6 by 15:00 and steps 7 to 9 by 20:30; the planned close column is the number D23 asks for, so each step's slip is visible against it at the time, not after. The table assumes continuous work; the owner's own stop time is not in it.
 
-Shrink order if time runs short (SPEC section 15: steps 7 and 10 shrink before anything in 1 to 6, 8, 9 or 11):
+Shrink order if time runs short (SPEC section 15: steps 7 and 11 shrink before anything in 1 to 6, 8, 9, 10 or 12):
 
-1. Step 10 first: the accessibility pass and the per-page state polish drop; `/perf-timing`, the PERFORMANCE row and the README stay, because the `[measured]` criteria and the demo credentials depend on them.
+1. Step 11 first: the accessibility pass and the per-page state polish drop; `/perf-timing`, the PERFORMANCE row and the README stay, because the `[measured]` criteria and the demo credentials depend on them.
 2. Step 7 second: insight exports and the XLSX and JSON writers drop; the directory CSV export stays, because it is the one F6 criterion a reviewer will click.
-3. Nothing in steps 1 to 6, 8, 9 or 11 is cut. Step 12 (P1) does not start.
+3. Nothing in steps 1 to 6, 8, 9, 10 or 12 is cut. Step 13 (P1) does not start.
 
 ## What the owner does by hand
 
@@ -346,7 +380,7 @@ Shrink order if time runs short (SPEC section 15: steps 7 and 10 shrink before a
 4. Start Docker Desktop if a local `docker compose up` check is wanted before the Ship step; CI builds the image on every push either way.
 5. Approve the dependency prompts under rule 9 (`uv add`, `npm install`) as they come, each with its DECISIONS line.
 6. Answer any `Question for the human` a reviewer raises at a step close; the step waits on it.
-7. In step 11: record the demo video on the live URL, give Claude Code the link for the README, and make the GitHub repository public.
+7. In step 12: record the demo video on the live URL, give Claude Code the link for the README, and make the GitHub repository public.
 
 ## Questions for the owner
 
@@ -357,3 +391,5 @@ Answered on 7 October 2026, recorded as DECISIONS D30.
 3. The slow seed test stays out of the commit hook.
 
 Step 9 (D64) adds one by-hand item: say when `reset_demo` may run on the live database after the step's deploy, since it replaces the live data with the new seed. It then runs after the machine has been idle, and its time is recorded.
+
+Step 10 (D72) adds two: the base import is timed on Fly against a scratch database, with the balance in hand and with it spent, and `reset_demo` restores the seed afterwards once the balance has refilled, on the owner's word as in step 9; and after the final deploy the owner leaves the machine idle before anyone reviews, since the balance refills at about 1 s for each 16 s idle.

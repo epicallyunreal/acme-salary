@@ -19,7 +19,7 @@ Read `backend/acme_salary/settings/*.py`, every `views.py`, `urls.py`, `serializ
 6. Exposure. Serializers do not return fields the UI does not use. No user password hashes, no internal paths, no stack traces in error responses.
 7. Exports. Export endpoints apply the same authentication and filters as the list endpoints they mirror.
 8. JWT. Short access lifetime, refresh rotation on, blacklist on rotation if available, tokens never logged.
-9. Writes. Import approve is one transaction. No endpoint deletes employees or compensation records; `DELETE /compensation/{id}/` marks the row cancelled and must not call `.delete()`. Only `seed_data --reset` and `reset_demo` truncate, and they are management commands, not endpoints.
+9. Writes. Import approve is one transaction. No endpoint deletes employees or compensation records; `DELETE /compensation/{id}/` marks the row cancelled and must not call `.delete()`. Only `seed_data --reset`, `reset_demo` and `POST /api/v1/admin/reset-demo/` truncate: the two commands when the owner runs them, and the endpoint, the one that may delete (D72), behind the login with the user's password re-entered and `confirm: "RESET"`, throttled 5 an hour, in one transaction that keeps lookups, rates and the user and writes one `demo_reset` audit entry. No other endpoint deletes, and the reset deletes only through `seed_data`'s truncation.
 
 Report in this shape.
 

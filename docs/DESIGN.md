@@ -270,6 +270,10 @@ When rows fail the re-check, or would apply as another action, the transaction r
 
 `imports/management/commands/make_import_file.py`: arguments as SPEC section 11, `--seed` (default 42). Rows are template-shaped and come from the live tables: `--new N` invents employees with Faker, `--raises N` takes N existing employees with every amount raised 5 percent and `effective_from` the first of the month after the reference date, `--errors N` plants one of each error in turn (negative `BASE`, malformed email, unknown department, level 9, a `31/02/2024` date, a duplicate code, a comma decimal, `HRA` on a US row), `--all` writes every existing employee unchanged.
 
+Step 10 (D72). `make_import_file` gains `--base` (every row of `ordered_entries(10000, 42, exited=5000)` from the generator alone, no database, in joining order with the seed's legacy codes, `effective_from` at joining, leavers with their `last_date`, the current or last record's amounts and bonus, which writes `sample-data/base-15000.xlsx`), `--bonus N` (N current employees with 5 to 15% of `BASE` added to `bonus_annual`, drawn per row from `random.Random(f"bonus-{seed}")` and rounded to whole units, every other amount unchanged, `effective_from` the day given), `--promotions N` (N current employees below L6, one level up, the designation from `profiles.designation` for their department, `BASE` up 12 to 20% and every component scaled with it, `effective_from` the day given), `--exits N` (N current employees with `last_date` the day given and nothing else changed), `--effective YYYY-MM-DD` (the date `--raises`, `--bonus` and `--promotions` write, default the first of the month after today), `--share K` (only employees with `id % 5 == K`), and `--raises` draws 3 to 8% per row from `random.Random(f"raises-{seed}")` in place of a fixed 5%. A revision file takes the first N of its share by id among current employees whose latest live record is dated before the file's effective date, so a file regenerated after its import moves on to the next people instead of erroring on those just revised, and an exits file takes the first N still employed. `--new N` takes `--joined-after`, so newhires joined within the last 3 months: `generate` draws those careers with the joining date bounded below, which keeps them after the last April review, one record each. The page's files: newhires `--new 500 --joined-after <today less 3 months>`, diwali-bonus `--bonus 1000 --share 0 --effective <today>`, april-raises `--raises 1000 --share 1 --effective <1 April next>`, promotions `--promotions 200 --share 2 --effective <today>`, exits `--exits 100 --share 3 --effective <today>`, fix-me `--raises 30 --new 20 --errors 6 --share 4`. Each is deterministic for a database, a seed and a day.
+
+`stage_upload` refuses, after classification and before the batch is written, a file whose rows classified `create` and not in error would, with the employees in the database, leavers included, pass 25,000: `Invalid({"rows": ["No more data can be imported: this file would take ACME past 25,000 employees (now 24,900, this file adds 500)"]})`, updates and revisions not counted, checked at staging only (D72). Two rules join `validators.py`: `check_gross_not_lower` warns when a revise row's gross is below the record it replaces, `gross falls from 1,450,000.00 to 1,380,000.00 INR`, both figures to two decimals with the currency after, through the API, an import and the seed alike, and `check_noop` also marks a row a no-op when its `effective_from` and amounts repeat a live record of the employee dated that day, so a generated file imported twice changes nothing, april-raises included, whose rows are dated on the scheduled revision they made.
+
 Serializers: `ImportBatchSerializer` (every column of the table, `uploaded_by` as the email, timestamps with `+00:00` like the rest of the API), `ImportRowSerializer` (id, row_number, legacy_code, full_name, status, validation_status, action, messages, `matched_employee` as `{id, employee_code}` or null, `raw` for the grid; `normalized` stays on the server, where only approve reads it, D56), `UploadSerializer {file}`. Views: `ImportListCreateView` (GET newest first, paginated; POST multipart, 201 with the batch), `ImportDetailView`, `ImportRowListView` (filters `status` comma-separated through `ImportRowFilterSet` and `search` over `legacy_code` and `full_name`, ordered by `row_number`, four queries with the user: the batch, the count and the page), `ImportRowSkipView`, `ImportRowUnskipView`, `ImportApproveView`, `ImportDiscardView`, `ImportTemplateView` (`?country=`, `Content-Disposition: attachment; filename="acme-import-template-IN.xlsx"`). Uploads larger than Django's in-memory threshold land in a temporary file that Django removes after the request; the parser reads the stream and nothing is ever written under the project. Accepted content types: the xlsx type for `.xlsx`, `text/csv`, `application/csv`, `text/plain` and `application/vnd.ms-excel` (what Windows with Excel installed calls a `.csv`) for `.csv`, plus `application/octet-stream`, or no type at all, when the extension is right.
 
 ### 1.6 insights
@@ -378,6 +382,22 @@ Model: SPEC section 5 "AuditLog". `entity_type` values: `employee`, `compensatio
 ### 1.9 seed
 
 Section 5.
+
+### 1.10 demo
+
+Step 10 (D72). `apps/demo`, mounted at `/api/v1/admin/`.
+
+`demo/services.py`:
+
+| Function | Contract |
+| --- | --- |
+| `PAY_TABLES` | `seed.profiles.PAY_TABLES`, the first six of `BUSINESS_TABLES` in truncation order: `audit.AuditLog`, `compensation.CompensationLine`, `compensation.CompensationRecord`, `imports.ImportRow`, `imports.ImportBatch`, `employees.Employee`. Lookups, rates and users are never in it |
+| `counts() -> dict` | `{employees, compensation_records, compensation_lines, import_batches, import_rows, audit_entries}`, one `count()` each, what the dialog shows and the reset returns |
+| `reset_demo(*, actor, password, confirm) -> dict` | `actor.check_password(password)` and `confirm == "RESET"` first, both checked, so a 403 names every wrong field: `Forbidden({"password": ["password did not match"], "confirm": ["type RESET to confirm"]})`. Then the import lock, taken without waiting through `imports.services.reading_lock()`: `Conflict("an import is being read; try again in a moment")` when it is held. Then one `transaction.atomic()`: the counts, `seed_data.truncate(PAY_TABLES)`, which deletes in that order and clears each table's `sqlite_sequence` row so the next employee is ACME-1 and the next record id 1, and one `audit.record("demo_reset", actor=actor, employee=None, before=counts, after={})`, the one row the audit log then holds. Returns the counts |
+| `SAMPLE_FILES` | the seven files in page order, each `(name, file_name, description, generated)`: `base` (`base-15000.xlsx`, read from `settings.SAMPLE_DATA_DIR`), `newhires`, `diwali-bonus`, `april-raises`, `promotions`, `exits`, `fix-me` |
+| `sample_file(name, *, seed, today) -> tuple[str, bytes]` | the file name and its bytes: the base file from disk, the rest built in memory by `make_import_file`'s functions with the options in 1.5 and the day `today`, so a download is one request. An unknown name is `Http404`, a generated file on an empty database `Conflict("import the base file first")` |
+
+`demo/views.py`: `ResetDemoView` (GET the counts; POST through `ResetSerializer {password, confirm}`, both required strings, throttled by `ResetRateThrottle`, scope `reset` at `5/hour`, keyed on the client address like the login throttle, so wrong passwords count), `SampleFileListView` (`{employees, files: [{name, file_name, description, available}]}`, `available` false for a generated file while `employees` is 0), `SampleFileView` (`?seed=`, default 42, the attachment with the xlsx content type and `Content-Disposition`). `demo/urls.py`: `admin/reset-demo/`, `admin/sample-files/`, `admin/sample-files/<name>/`. `AuditLog.Action` gains `DEMO_RESET = "demo_reset"`, a choices-only migration. `seed_data.truncate_business_tables()` becomes `truncate(labels)` over any list of table labels, and the seed passes `BUSINESS_TABLES` as before, so the reset and the seed delete through the one function (CLAUDE.md rule 6).
 
 ## 2. Import pipeline
 
@@ -556,6 +576,7 @@ Routes (`src/router.tsx`, `createBrowserRouter` from `react-router`, `RouterProv
 | `/employees/:id` | `pages/EmployeeDetail` | `AppShell` | `useEmployee(id)`, `useCompensationHistory(id)`, `useAudit(id)`, mutations revise, cancel, exit, update |
 | `/imports` | `pages/Imports` | `AppShell` | `useImportList(page)`, `useUploadImport` |
 | `/imports/:id` | `pages/ImportReview` | `AppShell` | `useImportBatch(id)`, `useImportRows(id, params)`, mutations skip, unskip, approve, discard |
+| `/demo` | `pages/DemoData` | `AppShell` | `useSampleFiles()`, `useResetCounts()`, mutation reset (D72) |
 | `*` | `pages/NotFound` | `AppShell` | none |
 
 Component tree:
@@ -567,7 +588,7 @@ App
   SessionGate               bootstraps the session once (refresh if a token exists), then renders the router
     RouterProvider
       Login
-      RequireAuth -> AppShell (left nav: Dashboard, Employees, Imports; top bar: page title, user email, Sign out)
+      RequireAuth -> AppShell (left nav: Dashboard, Employees, Imports, Demo data; top bar: page title, user email, Sign out)
         Dashboard: PageHeader, DashboardFilterBar(CountrySelect, DepartmentSelect, CurrencySelect, Include exited, Clear filters), RateMonthLabel (the summary's rate month, each pair's rate and date on hover or focus) with the summary's ExportMenu at the right end of the same line, a small `Export` button named and titled `Export summary` (D60), KpiRow(KpiCard x4), a two-column grid of ByCountryCard and ByDepartmentCard (both drawn by CostBars), DistributionCard, ByLevelCard, and GenderGapCard spanning both columns, each InsightCard(question as its heading, an ExportMenu in its `actions` slot, a small `Export` button named and titled for its table, `Export pay by level`, children). Every chart's figures are also a table read by screen readers, every row included, and a withheld figure says why, `fewer than 5 people` or `fewer than 20 people`; a note under the chart names the groups it does not draw. The histogram sits on a number axis, so p10, the median and p90 are drawn at their own values. ByLevelCard draws a median dot on a p25 to p75 bar with p10 to p90 whiskers, and says so, never min or max. With nobody in the filters the KPI row shows 0 and `—` and the empty state replaces the cards; under five people the money KPIs show `—` captioned `Shown for 5 people or more` (D59)
         Employees: PageHeader(actions: ExportMenu as an `Export` button named and titled `Export employees`, Add employee), FilterBar(directory), SearchField, ServerGrid(columns.directory), EmptyState, ErrorState
         NewEmployee: PageHeader, EmployeeForm(identity fields, country select, RecordLinesFields(components for the country), bonus, effective_from, note)
@@ -630,6 +651,10 @@ Error and empty states, one sentence that says what to do next:
 | Any failed load | "Could not load <thing>. Check your connection and try again." with a Retry button that refetches |
 | Approve disabled | tooltip "3 rows have errors. Skip them or fix the spreadsheet and upload again." |
 | Login failure | "Email or password is wrong." and on 429 "Too many attempts. Wait a minute and try again." |
+| Demo data, database empty | the six generated files disabled with "Import the base file first" (D72) |
+| Reset dialog, 403 | "password did not match" under the password, "type RESET to confirm" under the confirm field, and on 429 "Too many attempts. Wait an hour and try again." |
+| Imports, after a reset | a status alert "The database is empty. Import base-15000.xlsx to start." |
+| Upload, approve or reset cut by the proxy | "Still working. The server is reading the file." (or "applying the rows", "emptying the database"), and after ten minutes "This is taking longer than usual. Reload the page in a minute." |
 
 A 400 maps onto fields, a 409 shows the server's `detail` in an inline alert beside the action that caused it, a 401 goes through the refresh path, anything else shows the failed-load state.
 
@@ -642,6 +667,10 @@ The KPI row has five cards: Headcount, Annual cost, Mean gross and Median gross,
 The directory's Status filter defaults to Active. The URL leaves Active out and writes `status=any` for Any, and Clear filters goes back to Active. With D63's order, a request without `status` gets what the grid shows.
 
 `ServerGrid` replaces the pager's previous and next with `PageNumbers`, the grid's `pagination` slot kept as `GridPagination` for Rows per page and `1–25 of 10,000`, its actions MUI's `Pagination` (`boundaryCount={1}`, `siblingCount={1}`, ellipses) and a `Go to page` number field that jumps on Enter and clamps to the pages there are. The page stays in the URL. The import review grid gets the same through `ServerGrid`.
+
+Step 10 (D72). The nav gains `Demo data` after Imports, route `/demo`, `pages/DemoData` with `useSampleFiles()` (`GET /admin/sample-files/`), `downloadSampleFile(name)` through `apiDownload` and `saveFile`, `useResetCounts()` (`GET /admin/reset-demo/`, fetched when the dialog opens) and `useResetDemo()` (the POST). The page opens with one line, `The demo runs on a small shared machine, and a large import can take a few minutes.` Section A, `Sample files`, lists the seven files, each with its file name, one line saying what it exercises and a Download button; while `employees` is 0 the six generated ones are disabled, with `Import the base file first` as their helper text. The lines: base-15000 `The whole organisation, 10,000 on staff and 5,000 who left, as the seed built it. Into an empty database it creates everyone; into the seeded one every row is a no-op, the scale test.`, newhires `500 new employees with fresh legacy codes who joined in the last three months. Each row creates an employee.`, diwali-bonus `1,000 employees with 5 to 15% of base added to their bonus, effective today. Each row is a revision.`, april-raises `1,000 employees with base up 3 to 8%, components with it, effective 1 April next. Each row is a scheduled revision.`, promotions `200 employees one level up with the designation to match and base up 12 to 20%, effective today. Each row changes identity and amounts at once.`, exits `100 employees with their last day today. Each row is an exit.`, fix-me `50 rows, 30 raises and 20 new joiners, with 6 planted errors to skip or fix in the sheet.` Under the list, two notes: `After a base import every employee has one record dated at joining, so the trend and the bridge show joins and exits but no pay changes until revision files are imported.` and `A revision file imported into an empty database creates its employees instead, and the base file then shows those rows as errors. Empty the database and start with the base.` Section B, `Danger zone`, at the bottom in the error colour's outline, holds `Empty the database`, which opens `ResetDialog`: what will be deleted as the live counts (`15,000 employees, 51,659 compensation records, 128,000 lines, 3 import batches with 150 rows, 70,000 audit entries`), a password field, a `Type RESET to confirm` field, and the button disabled until both hold something. A 403 maps onto the two fields. On success every query is cleared and the page navigates to `/imports` with `{ reset: counts }` in the router state, which Imports shows once as a status alert.
+
+Waiting through a cut connection (D72). The upload, approve and reset requests have no client-side timeout and show their in-progress state while they run. Fly's proxy closes a connection that carries no data for 60 s, and a gthread worker learns of it only when it writes the response, so the work completes on the server. On a network error, `lib/poll.ts`'s `waitFor(check, { every: 5000, upTo: 600000 })` takes over: the review page polls `GET /imports/{id}/` until the batch leaves `review`, then shows the result as if the request had returned; the Imports page polls the batch list until a batch created after the upload started appears, then opens it; the reset dialog polls the counts until every one is 0. The page says `Still working.` with what the server is doing meanwhile, and after ten minutes that it is taking longer than usual.
 
 ## 7. Visual direction
 
@@ -829,6 +858,38 @@ Import review:
 └──────────┘└─────────────────────────────────────────────────────────────────────┘
 ```
 
+Step 10 (D72), the Demo data page:
+
+```
+┌──────────┐┌─────────────────────────────────────────────────────────────────────┐
+│ Dashboard││ Demo data                                                           │
+│ Employees││ The demo runs on a small shared machine, and a large import can     │
+│ Imports  ││ take a few minutes.                                                 │
+│ Demo data││                                                                     │
+│          ││ Sample files                                                        │
+│          ││ base-15000.xlsx   The whole organisation, 10,000 on staff... [Download]│
+│          ││ newhires.xlsx     500 new employees who joined in the...   [Download]│
+│          ││ diwali-bonus.xlsx 1,000 employees with 5 to 15% of base... [Download]│
+│          ││ april-raises.xlsx 1,000 employees with base up 3 to 8%...  [Download]│
+│          ││ promotions.xlsx   200 employees one level up...            [Download]│
+│          ││ exits.xlsx        100 employees with their last day today. [Download]│
+│          ││ fix-me.xlsx       50 rows with 6 planted errors...         [Download]│
+│          ││ (empty database: the six generated rows read "Import the base file   │
+│          ││  first" and their buttons are disabled)                              │
+│          ││ After a base import every employee has one record dated at joining...│
+│          ││ A revision file imported into an empty database creates its...       │
+│          ││                                                                     │
+│          ││ ┌ Danger zone ──────────────────────────────────────────────────┐   │
+│          ││ │ Empty the database. Lookups, rates and your login stay.        │   │
+│          ││ │                                        [Empty the database]    │   │
+│          ││ └───────────────────────────────────────────────────────────────┘   │
+└──────────┘└─────────────────────────────────────────────────────────────────────┘
+
+Dialog: "Empty the database?"  This deletes 15,000 employees, 51,659 compensation
+records, 128,000 lines, 3 import batches with 150 rows and 70,000 audit entries.
+[Your password          ] [Type RESET to confirm   ]        [Cancel] [Empty the database]
+```
+
 ## 9. Testing
 
 Backend layout: `backend/tests/conftest.py`, `tests/factories.py`, then `tests/<app>/test_<unit>.py` mirroring `apps/`. Settings `acme_salary.settings.test` with in-memory SQLite, `PASSWORD_HASHERS = [MD5PasswordHasher]` for speed, the login throttle kept so the 429 test is real.
@@ -870,6 +931,8 @@ Step 8 (D62): `tests/insights/history.py` is a fixture of its own for `trend` an
 
 Step 9 (D64): the seed's invariants on `--active 500 --exited 250` (section 5 above) and its golden hash. The directory and its export on Active without `status`, `status=any` for everyone, Clear filters back to Active. `parse_period`'s defaults, bounds and order as 400s. trend's points on a hand-made history: `from`, each month-end and `to`, a month-end `from` or `to` not repeated, and the bridge's start and end equal to trend's first and last points. Spent in period hand-computed across 29 February and a raise mid-period, withheld under five. One rate on every date. Every insight export sending the period, its JSON naming `from` and `to`. The import's row limit at the 15,001st row, and the 15,000-row `--all` file, leavers included, staging cleanly. Frontend: `period.test.ts` for each preset (31 October to 30 April, 31 March to the end of February in a leap year and in another, the financial year on 31 March and on 1 April, Last FY, and from D69 each Last N months starting the day after that date), the levels caption on the three cards when `to` is not today and its absence when it is, the URL keeping a preset's name and a custom range's dates, Clear filters back to Last 12 months, a bad custom range kept from the API, the `On <to>` lines and the Spent in period card, and `PageNumbers` (first, last, neighbours and ellipses, Go to page clamped, rows per page and the page in the URL) on the directory and the import review.
 
+Step 10 (D72): `tests/compensation/test_validators.py` holds the gross warning a cent either side of equality and the no-op on a repeated scheduled revision; `tests/imports/test_staging.py` the cap at exactly 25,000 and refused at 25,001 with no batch, updates and revisions not counted; `tests/imports/test_make_import_file.py` each new option's row shape, share and determinism, newhires' window, promotions skipping L6, and a generated file imported twice as no-ops; `tests/seed/test_base_file.py` (slow) the committed base file against `ordered_entries(10000, 42, exited=5000)` row by row, and the base file into an empty database creating its leavers exited; `tests/demo/test_services.py` and `test_api.py` the 403s, the 429 on the sixth attempt, the 409 under the import lock, the counts, every pay table empty with `sqlite_sequence` cleared, lookups, rates and the user kept, the user's login afterwards, the one `demo_reset` entry, the file list on an empty and a seeded database, and each download's name and header row. Frontend: the page's seven rows and their lines, the disabled state, the dialog's counts, its button disabled until both fields hold something, the 403 messages on the fields, the navigation to Imports with its alert, and `waitFor` polling after a network error on the review page, the Imports page and the dialog, with fake timers.
+
 Frontend: Vitest with `environment: 'jsdom'`, `src/test/setup.ts` starts `setupServer(...handlers)` from `msw/node` with `onUnhandledFrame: 'error'` (MSW 3 renamed `onUnhandledRequest`), resets handlers after each test; handlers in `src/test/handlers.ts` use `http` and `HttpResponse` from `msw/http` (SPEC section 1); fixtures in `src/test/fixtures/` carry four employees (IN active, US active, GB exited, DE with a scheduled revision), one batch with five rows (valid, warning, error, skipped, no-op), and insight payloads in the shapes of section 1.6 with small numbers; `src/test/render.tsx` wraps a component in `QueryClientProvider` (retries off) and a `MemoryRouter`. Tests query by role and label. Unit tests: `serverModel.test.ts` (zero-based page mapping, ordering prefix, URL round trip), `money.test.ts`, `dates.test.ts`, `client.test.ts` (one refresh for two concurrent 401s, redirect after the second), `useUrlFilters.test.ts` (`include_exited`, the local-currency rule). Component tests: `Login.test.tsx` (redirect to `next`), `Employees.test.tsx` (renders fixture rows, a filter change calls the API with the right params, error state), `EmployeeDetail.test.tsx` (history with the cancelled row greyed, cancel on the scheduled row only), `EmployeeForm.test.tsx` (zod message, server field error mapped), `ImportReview.test.tsx` (status filter, approve disabled with the reason), `Dashboard.test.tsx` (each card shows the fixture numbers, a filter change refetches, the include-exited box changes headcount), `InsightCards.test.tsx` (one test per card, read from its table), `ExportMenu.test.tsx` (the three formats, the button's text and tooltip, the spinner and a second click ignored, the failure notice, and on the pages: the directory exports every page with its filters, search and sort, a card and the summary with the dashboard's filters, the files named by the server). jsdom has no ResizeObserver, so `setup.ts` stubs one and the charts stay unmeasured in tests.
 
 ## 10. Deployment
@@ -892,6 +955,7 @@ RUN uv sync --frozen --no-dev
 COPY backend/ ./
 COPY --from=web /web/dist /app/spa
 RUN .venv/bin/python -m whitenoise.compress /app/spa   # gzip and brotli beside each asset
+COPY sample-data/base-15000.xlsx /app/sample-data/   # the Demo data page's base file (D72)
 COPY entrypoint.sh /app/entrypoint.sh
 ENV PATH=/app/.venv/bin:$PATH DJANGO_SETTINGS_MODULE=acme_salary.settings.prod SPA_DIR=/app/spa
 EXPOSE 8000
@@ -908,6 +972,8 @@ python manage.py seed_data --active 10000 --exited 5000 --seed 42 --if-empty
 exec gunicorn acme_salary.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --threads 8 --timeout 120
 ```
 
+Long requests (D72): Fly's proxy closes a connection that carries no data for 60 s, which no setting of the app changes, so a staging or an approve throttled past that is cut while the worker finishes it, and the pages poll for the result (section 6). gunicorn's `--timeout` stays 120 s unless step 10 measures a throttled approve killed past it, when it becomes 300 s, since the transaction rolls back on a kill either way and a slow success beats a failed import.
+
 Step 1 confirms the image's SQLite with `docker run --rm <image> python -c "import sqlite3; print(sqlite3.sqlite_version)"` against Django 6.1's 3.37 minimum and records it in the step's DECISIONS entry.
 
 Environment variables (`.env.example` is committed with placeholders; `.env` never is):
@@ -922,6 +988,7 @@ Environment variables (`.env.example` is committed with placeholders; `.env` nev
 | `DATABASE_PATH` | `backend/db.sqlite3` | `/data/db.sqlite3` |
 | `SEED_ADMIN_PASSWORD` | `change-me` | `fly secrets`, required |
 | `SPA_DIR` | unset (Vite dev server) | `/app/spa` |
+| `SAMPLE_DATA_DIR` | unset, the repository's `sample-data/` | `/app/sample-data` (D72) |
 | `PORT` | `8000` | `8000` from `fly.toml` |
 
 Volume: `fly.toml` mounts volume `data` at `/data`; the database, its WAL and shm files live there. `docker-compose.yml` maps port 8000 and a named volume `acme-data:/data`, with the same environment names read from `.env`.
@@ -931,6 +998,22 @@ Fly setup, done by the owner on 7 October before step 1 (D29, D30): the volume `
 CI (`.github/workflows/ci.yml`): `backend` job (`setup-python` 3.14, `astral-sh/setup-uv`, `uv sync`, `ruff format --check`, `ruff check`, `pytest -q`), `frontend` job (`setup-node` with `node-version-file: frontend/.nvmrc` and `cache: npm`, `npm ci`, `npm run lint`, `npm test -- --run`, `npm run build`), `docker` job after both (`docker build .`). `npm install` never runs in CI.
 
 ## Questions for the owner
+
+Step 10 (D72) assumes these defaults, for the owner to confirm or change before `/start-step 10`.
+
+1. Fly's proxy closes a connection with no data for 60 s (Fly staff on its forum; a support request on a higher plan changes it), so a throttled staging, about 200 s, or approve, about 320 s, is cut by the proxy before gunicorn's 120 s, and gunicorn's timeout decides nothing. Default: both requests stay synchronous and one transaction each, the server finishes the work after a cut, and the pages poll for the result as section 6 says. The alternatives are a `staging` and an `applying` batch status answered with 202 and polled from the start, which changes F1's rejected-with-no-batch contract, or asking Fly support for a longer idle timeout.
+2. Where it lives: `apps/demo` mounted at `/api/v1/admin/`, `reset-demo/` (GET the counts, POST the reset), `sample-files/` and `sample-files/{name}/`.
+3. Which employees a generated file takes: current employees of its share by id whose latest live record is dated before the file's effective date, promotions among those below L6, exits among those still employed. Shares: 0 diwali-bonus, 1 april-raises, 2 promotions, 3 exits, 4 fix-me, newhires none.
+4. A file imported twice is a no-op for all six only if a row that repeats a scheduled revision counts as one: april-raises' second import is dated on the scheduled revision its first made, today the `effective_from must be after` error. Default: one more section 7 row, a row whose `effective_from` and amounts repeat a live record dated that day is a `noop`.
+5. The cap counts the rows classified `create` that are not errors, plus the employees in the database, at staging only. Two batches in review could together pass 25,000, and approve does not re-check.
+6. A reset during an approve waits up to 20 s on SQLite's write lock, then is a 500. Default: accept, and the 409 covers an upload being read, as asked.
+7. Audit: `demo_reset` joins `AuditLog.Action` through a choices-only migration, employee and batch null, the actor the user, `before` the counts, `after` empty.
+8. The base file is written by `--base` from the generator without a database, every row `effective_from` at joining and leavers with `last_date`, in joining order with the seed's legacy codes. Its test regenerates 15,000 entries, about 10 s, so it is marked `slow` like the golden hash.
+9. `--raises` draws 3 to 8% per row from the seed in place of a fixed 5% and takes `--effective`, so the step 5 sample files are regenerated once more and their tests follow.
+10. The generated files' names on disk are the owner's, `?seed=` defaults to 42 and the page passes none, so a file is deterministic for a database and a day.
+11. The Dockerfile copies `sample-data/base-15000.xlsx` into the image and `SAMPLE_DATA_DIR` names the folder, the repository's locally.
+12. Timing: `timing --case demo-files` generates each on-demand file on the seed and prints its time and rows; `timing --case base-import` creates a scratch database with the HR user, stages and approves the base file through the API, not rolled back, and prints both times and the peak; on Fly it runs once with the balance in hand and once with it spent.
+13. The page's wording as section 6 has it, the dialog's counts in words, and REQUIREMENTS gains in-scope item 10.
 
 Step 9 (D64) assumed these defaults. The owner approved them on 8 October with changes: 1 keeps level on the employee, with the caption `Levels are as of today; anyone promoted after <to> appears at their new level` on the three cards that group by level when `to` is not today and a level history per record added to P1; 4 has L1 leave twice as often as L3 to L6 and L2 one and a half times; 7 starts Last N months on that month's last day where the day does not exist, amended by D69 to the day after it; 10 times the seed on Fly, raising its target to 120 s if it takes over 60 s, and runs `reset_demo` on the live machine only on the owner's word, after it has been idle; and 12 is replaced by a 15,000-row import limit, `make_import_file --all` writing everyone. 2, 3, 5, 6, 8, 9 and 11 stand.
 
