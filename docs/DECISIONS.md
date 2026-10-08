@@ -644,6 +644,8 @@ Consequences: records a base import creates start at joining and carry no 1 Apri
 
 Approved on 8 October with the owner's changes: gunicorn waits 600 s and the step confirms locally that a gthread worker lets a request outlast its timeout, the pages treat a network error, a 502 or a 504 on upload, approve or reset as still running and poll, saying after ten minutes that the server may still be working or the request was refused and where to look. The cap is re-checked at approve with the batch's non-error create rows, a 409 with the same wording, so two batches in review cannot pass it together. A reset that waits out SQLite's 20 s lock answers 409 `an import is being applied; try again in a moment`. The other defaults stand.
 
+Checked on 8 October: gunicorn 26.2.0's gthread worker, run locally with `--timeout 5` against a view that sleeps 10 s, answered 200 after 10.0 s with no worker kill, since the timeout is the worker's heartbeat, which the gthread loop keeps alive while its threads work. So the server finishes a cut request whichever rule applies, and the timeout of 600 s is a margin, not the limit.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

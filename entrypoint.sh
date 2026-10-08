@@ -1,5 +1,6 @@
 #!/bin/sh
-# Container start (SPEC section 14): migrate, drop expired tokens, seed once, serve.
+# Container start (SPEC section 14): migrate, drop expired tokens, seed once, serve. gunicorn
+# waits 600 s on a request so a throttled approve is never killed (D72).
 set -eu
 cd /app
 
@@ -11,4 +12,4 @@ exec gunicorn acme_salary.wsgi:application \
   --bind "0.0.0.0:${PORT:-8000}" \
   --workers 1 \
   --threads 8 \
-  --timeout 120
+  --timeout 600

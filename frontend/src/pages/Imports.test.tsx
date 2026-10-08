@@ -4,7 +4,8 @@ import { http, HttpResponse } from 'msw/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setSession } from '../lib/auth';
-import { batchPage, reviewBatch } from '../test/fixtures/imports';
+import { POLL } from '../lib/poll';
+import { batchPage, batches, reviewBatch } from '../test/fixtures/imports';
 import { XLSX_TYPE } from '../test/handlers';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
@@ -22,9 +23,11 @@ describe('Imports', () => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
   });
 
+  const defaults = { ...POLL };
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    Object.assign(POLL, defaults);
   });
 
   it('lists every batch newest first with its status, counts and ignored columns', async () => {
@@ -226,11 +229,6 @@ describe('Imports', () => {
         ),
       'another file is being read; try again in a moment',
     ],
-    [
-      'the network fails',
-      () => HttpResponse.error(),
-      'The file was not sent. Check your connection and try again.',
-    ],
   ])('says so when %s', async (_case, answer, message) => {
     server.use(http.post('/api/v1/imports/', answer));
     renderApp('/imports');
@@ -239,6 +237,43 @@ describe('Imports', () => {
     chooseFile(sheet('october.csv', 'text/csv'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(message);
+  });
+
+  it('keeps waiting through a cut upload and opens the batch the server made', async () => {
+    POLL.every = 10;
+    POLL.upTo = 2000;
+    let polls = 0;
+    const made = { ...reviewBatch, id: 4, file_name: 'october.csv' };
+    server.use(
+      http.post('/api/v1/imports/', () => HttpResponse.error()),
+      http.get('/api/v1/imports/', () => {
+        polls += 1;
+        return HttpResponse.json(batchPage(polls >= 3 ? [made, ...batches] : batches));
+      }),
+    );
+    const { router } = renderApp('/imports');
+    await screen.findByRole('table', { name: 'Imports' });
+
+    chooseFile(sheet('october.csv', 'text/csv'));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Still working. The server is reading the file.',
+    );
+    await waitFor(() => expect(router.state.location.pathname).toBe('/imports/4'));
+  });
+
+  it('gives up on a cut upload after the wait and says where to look', async () => {
+    POLL.every = 10;
+    POLL.upTo = 60;
+    server.use(http.post('/api/v1/imports/', () => HttpResponse.error()));
+    renderApp('/imports');
+    await screen.findByRole('table', { name: 'Imports' });
+
+    chooseFile(sheet('october.csv', 'text/csv'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The server may still be working, or the file was refused; check the batch list.',
+    );
   });
 
   it('says the database is empty after a reset from the Demo data page', async () => {

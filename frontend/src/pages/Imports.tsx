@@ -27,7 +27,10 @@ export function Imports() {
           The database is empty. Import base-15000.xlsx to start.
         </Alert>
       ) : null}
-      <UploadDropzone onUploaded={(batch) => navigate(`/imports/${batch.id}`)} />
+      <UploadDropzone
+        onUploaded={(batch) => navigate(`/imports/${batch.id}`)}
+        newestId={imports.data?.results[0]?.id}
+      />
       {imports.isError ? (
         <ErrorState what="the imports" onRetry={() => void imports.refetch()} />
       ) : imports.isPending ? (

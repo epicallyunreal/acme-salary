@@ -11,11 +11,13 @@ import {
   InputAdornment,
   TextField,
 } from '@mui/material';
+import { useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 
 import { ApiError, type FieldErrors } from '../../api/client';
-import { useResetCounts, useResetDemo } from '../../api/demo';
+import { getResetCounts, useResetCounts, useResetDemo } from '../../api/demo';
 import type { ResetCounts } from '../../api/types';
+import { mayStillBeRunning, waitFor } from '../../lib/poll';
 import type { FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
 import { deletes } from './deletes';
@@ -32,6 +34,21 @@ function resetProblems(error: unknown): FormMessage[] {
   return [{ key: null, message: error.detail() ?? `Error ${error.status}` }];
 }
 
+const STILL_WORKING = 'Still working. The server is emptying the database.';
+const GAVE_UP =
+  'The server may still be working, or the reset was refused; reload the page and check the counts.';
+
+/** After a reset the pay tables are empty, the audit log holding the reset's own entry. */
+function emptied(counts: ResetCounts): boolean {
+  return (
+    counts.employees === 0 &&
+    counts.compensation_records === 0 &&
+    counts.compensation_lines === 0 &&
+    counts.import_batches === 0 &&
+    counts.import_rows === 0
+  );
+}
+
 interface ResetDialogProps {
   open: boolean;
   onClose: () => void;
@@ -43,13 +60,22 @@ interface ResetDialogProps {
 export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
   const counts = useResetCounts(open);
   const reset = useResetDemo();
+  const client = useQueryClient();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [shown, setShown] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [problems, setProblems] = useState<FormMessage[]>([]);
   const [attempt, setAttempt] = useState(0);
-  const ready = password.length > 0 && confirm.length > 0 && !reset.isPending;
+  const [waiting, setWaiting] = useState(false);
+  const busy = reset.isPending || waiting;
+  const ready = password.length > 0 && confirm.length > 0 && !busy;
+
+  const done = (deleted: ResetCounts) => {
+    setPassword('');
+    setConfirm('');
+    onDone(deleted);
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -59,17 +85,32 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
     reset.mutate(
       { password, confirm },
       {
-        onSuccess: (deleted) => {
-          setPassword('');
-          setConfirm('');
-          onDone(deleted);
-        },
-        onError: (error) => {
-          setAttempt((count) => count + 1);
+        onSuccess: done,
+        onError: async (error) => {
           if (error instanceof ApiError && (error.status === 403 || error.status === 400)) {
+            setAttempt((count) => count + 1);
             setErrors(error.fieldErrors());
-          } else {
+            return;
+          }
+          if (!mayStillBeRunning(error)) {
+            setAttempt((count) => count + 1);
             setProblems(resetProblems(error));
+            return;
+          }
+          // The proxy cut the request, but the server empties on: the counts reach zero (D72).
+          const before = counts.data;
+          setWaiting(true);
+          const now = await waitFor(async () => {
+            const latest = await getResetCounts();
+            return emptied(latest) ? latest : null;
+          });
+          setWaiting(false);
+          if (now) {
+            client.clear();
+            done(before ?? now);
+          } else {
+            setAttempt((count) => count + 1);
+            setProblems([{ key: null, message: GAVE_UP }]);
           }
         },
       },
@@ -89,6 +130,11 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
           <DialogContentText id="reset-description">
             {counts.data ? deletes(counts.data) : 'Counting what will be deleted.'}
           </DialogContentText>
+          {waiting ? (
+            <DialogContentText role="status" sx={{ mt: 2 }}>
+              {STILL_WORKING}
+            </DialogContentText>
+          ) : null}
           <TextField
             id="reset-password"
             label="Your password"
@@ -130,13 +176,7 @@ export function ResetDialog({ open, onClose, onDone }: ResetDialogProps) {
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            color="error"
-            variant="contained"
-            disabled={!ready}
-            loading={reset.isPending}
-          >
+          <Button type="submit" color="error" variant="contained" disabled={!ready} loading={busy}>
             Empty the database
           </Button>
         </DialogActions>

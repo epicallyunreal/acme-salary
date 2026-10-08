@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import os
 import platform
+import re
 import resource
 import subprocess
 import sys
@@ -23,12 +24,15 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.test import Client
+from openpyxl import load_workbook
 
 from apps.core.dates import REPORTING_START, period_start, today_utc
 from apps.insights.queries import CONTROLS
 from seed import profiles
 
-CASES = ("directory", "insights", "import", "export", "seed")
+CASES = ("directory", "insights", "import", "export", "seed", "demo-files", "base-import")
+# The child case `base-import` runs in a fresh process against a scratch database (D72).
+CHILD_CASES = ("base-import-run",)
 
 # Each directory case is the query string of one request (the /perf-timing skill names them).
 DIRECTORY_CASES = {
@@ -213,6 +217,43 @@ def crafted_sheet(rows: int, columns: list[str], length: int = CRAFTED_CELL) -> 
     return buffer.getvalue()
 
 
+def run_base_import(path: Path, stdout) -> None:
+    """In this process, against its database: migrate, the lookups, the rates and the HR Manager,
+    then the base file staged and approved through the API, printing both times and the peak.
+    `timing --case base-import` runs it in a child process against a scratch database (D72)."""
+    from django.core.management import call_command
+
+    from seed.lookups import ensure_lookups, ensure_rates
+    from seed.management.commands.seed_data import ensure_hr_manager
+
+    call_command("migrate", verbosity=0)
+    ensure_lookups()
+    ensure_rates()
+    ensure_hr_manager(settings.SEED_ADMIN_PASSWORD)
+    client = api_client()
+    data = path.read_bytes()
+    with io.BytesIO(data) as handle:
+        handle.name = path.name
+        started = time.perf_counter()
+        response = client.post("/api/v1/imports/", {"file": handle})
+        staging = time.perf_counter() - started
+    if response.status_code != 201:
+        raise CommandError(f"staging answered {response.status_code}: {response.content[:300]}")
+    body = response.json()
+    started = time.perf_counter()
+    approved = client.post(f"/api/v1/imports/{body['id']}/approve/")
+    approving = time.perf_counter() - started
+    if approved.status_code != 200:
+        raise CommandError(f"approve answered {approved.status_code}: {approved.content[:300]}")
+    applied = approved.json()
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * RSS_SCALE
+    stdout.write(
+        f"base import of {path.name} ({len(data):,} bytes) into an empty database: "
+        f"{body['total_rows']} rows staged in {staging:.1f} s and approved in {approving:.1f} s "
+        f"({applied['created_rows']} created), process peak {peak / 2**20:.0f} MB"
+    )
+
+
 def time_seed(scratch_db: Path, active: int, exited: int, seed: int) -> float:
     """Wall time of `seed_data --reset` in a fresh process against a scratch database."""
     env = {**os.environ, "DATABASE_PATH": str(scratch_db)}
@@ -243,7 +284,7 @@ class Command(BaseCommand):
     help = "Measure the step targets on the seed and print a PERFORMANCE.md row."
 
     def add_arguments(self, parser):
-        parser.add_argument("--case", choices=("all", *CASES), default="all")
+        parser.add_argument("--case", choices=("all", *CASES, *CHILD_CASES), default="all")
         parser.add_argument("--active", type=int, default=profiles.ACTIVE_EMPLOYEES)
         parser.add_argument("--exited", type=int, default=profiles.EXITED_EMPLOYEES)
         parser.add_argument("--seed", type=int, default=42)
@@ -425,9 +466,53 @@ class Command(BaseCommand):
         )
         return f"{staging:.1f} / {approving:.1f}"
 
+    def time_demo_files(self) -> None:
+        """Each generated file of the Demo data page on the seed (F9, D72): rows, bytes and the
+        time to build it, as a download would."""
+        from apps.demo import services as demo
+
+        for spec in demo.SAMPLE_FILES:
+            if spec.options is None:
+                continue
+            started = time.perf_counter()
+            name, data = demo.sample_file(spec.name, seed=42)
+            elapsed = time.perf_counter() - started
+            sheet = load_workbook(io.BytesIO(data), read_only=True).worksheets[0]
+            rows = sum(1 for _ in sheet.iter_rows(values_only=True)) - 1
+            self.stdout.write(
+                f"demo file {name}: {rows:,} rows, {len(data):,} bytes in {elapsed:.1f} s"
+            )
+
+    def time_base_import(self, scratch_db: Path) -> str:
+        """The base file into an empty database, staged and approved through the API in a fresh
+        process against a scratch database, not rolled back (F9, D72): the reset flow a reviewer
+        runs, with its peak memory."""
+        output = subprocess.run(
+            [sys.executable, "manage.py", "timing", "--case", "base-import-run"],
+            cwd=Path(__file__).resolve().parents[4],
+            env={**os.environ, "DATABASE_PATH": str(scratch_db)},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        self.stdout.write(output.rstrip("\n"))
+        match = re.search(r"staged in ([0-9.]+) s and approved in ([0-9.]+) s", output)
+        return f"{match.group(1)} / {match.group(2)}" if match else ""
+
     def handle(self, *args, **options):
+        if options["case"] == "base-import-run":
+            run_base_import(Path(settings.SAMPLE_DATA_DIR) / "base-15000.xlsx", self.stdout)
+            return
         wanted = CASES if options["case"] == "all" else (options["case"],)
         results: dict[str, str] = {case: "" for case in CASES}
+
+        if "demo-files" in wanted:
+            self.require_seed(options["active"], options["exited"])
+            self.time_demo_files()
+
+        if "base-import" in wanted:
+            with tempfile.TemporaryDirectory() as scratch:
+                results["base-import"] = self.time_base_import(Path(scratch) / "base.sqlite3")
 
         if "directory" in wanted:
             self.require_seed(options["active"], options["exited"])

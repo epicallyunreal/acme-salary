@@ -2,8 +2,9 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { Box, Button, LinearProgress, Typography } from '@mui/material';
 import { type DragEvent, useRef, useState } from 'react';
 
-import { useUploadImport } from '../../api/imports';
+import { listImports, useUploadImport } from '../../api/imports';
 import type { ImportBatch } from '../../api/types';
+import { mayStillBeRunning, waitFor } from '../../lib/poll';
 import type { FormMessage } from '../forms/applyServerErrors';
 import { ErrorSummary } from '../forms/ErrorSummary';
 import { uploadProblems } from './uploadProblems';
@@ -14,13 +15,20 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 interface UploadDropzoneProps {
   onUploaded: (batch: ImportBatch) => void;
+  /** The newest batch before this upload, so a cut request can find the one it made (D72). */
+  newestId?: number;
 }
 
+const STILL_WORKING = 'Still working. The server is reading the file.';
+const GAVE_UP = 'The server may still be working, or the file was refused; check the batch list.';
+
 /** Drop a sheet, or choose one with the button: dragging is never the only way (WCAG 2.5.7). */
-export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
+export function UploadDropzone({ onUploaded, newestId = 0 }: UploadDropzoneProps) {
   const upload = useUploadImport();
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const busy = upload.isPending || waiting;
   const [problems, setProblems] = useState<FormMessage[]>([]);
   const [attempt, setAttempt] = useState(0);
 
@@ -37,7 +45,21 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
     }
     upload.mutate(file, {
       onSuccess: onUploaded,
-      onError: (error) => refuse(uploadProblems(error)),
+      onError: async (error) => {
+        if (!mayStillBeRunning(error)) {
+          refuse(uploadProblems(error));
+          return;
+        }
+        // The proxy cut the request, but the server reads on: the batch appears in the list.
+        setWaiting(true);
+        const batch = await waitFor(async () => {
+          const page = await listImports(1);
+          return page.results.find((candidate) => candidate.id > newestId) ?? null;
+        });
+        setWaiting(false);
+        if (batch) onUploaded(batch);
+        else refuse([{ key: null, message: GAVE_UP }]);
+      },
     });
   };
 
@@ -45,7 +67,7 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
     event.preventDefault();
     setDragging(false);
     const file = event.dataTransfer.files[0];
-    if (file && !upload.isPending) send(file);
+    if (file && !busy) send(file);
   };
 
   return (
@@ -81,7 +103,7 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
         <Button
           variant="outlined"
           onClick={() => input.current?.click()}
-          loading={upload.isPending}
+          loading={busy}
           loadingPosition="start"
           startIcon={<UploadFileOutlinedIcon fontSize="small" />}
         >
@@ -100,9 +122,14 @@ export function UploadDropzone({ onUploaded }: UploadDropzoneProps) {
             if (file) send(file);
           }}
         />
-        {upload.isPending ? (
+        {busy ? (
           <Box sx={{ width: '100%', maxWidth: 360 }}>
             <LinearProgress aria-label="Staging the file" />
+            {waiting ? (
+              <Typography variant="body2" role="status" sx={{ color: 'text.secondary', mt: 2 }}>
+                {STILL_WORKING}
+              </Typography>
+            ) : null}
           </Box>
         ) : null}
       </Box>

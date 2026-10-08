@@ -5,9 +5,12 @@ from datetime import date
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 
+from apps.compensation.validators import template_columns
 from apps.core.management.commands import timing
-from apps.core.management.commands.timing import crafted_sheet, period_cases
+from apps.core.management.commands.timing import crafted_sheet, period_cases, run_base_import
+from apps.employees.models import Employee
 from apps.imports import parser
+from apps.imports.management.commands.make_import_file import base_rows, profile_codes, write_file
 from apps.imports.models import ImportBatch, ImportRow
 from tests.imports.sheets import HEADER
 
@@ -48,3 +51,62 @@ def test_the_crafted_case_stages_through_the_api_and_leaves_nothing_behind(
 
     assert "staging 4 rows (4 error)" in out.getvalue()
     assert (ImportBatch.objects.count(), ImportRow.objects.count()) == (0, 0)
+
+
+def test_the_base_import_case_builds_an_empty_database_through_the_api(
+    db, settings, hr_user, monkeypatch, tmp_path
+):
+    """At small scale (D72): the lookups, the rates and the HR Manager are made, the file staged
+    and approved through the API, not rolled back, and both times printed."""
+    settings.SEED_ADMIN_PASSWORD = "Timing-Test-Pw-5512"
+    hr_user.set_password(settings.SEED_ADMIN_PASSWORD)
+    hr_user.save()
+    monkeypatch.setattr(timing, "api_client", lambda: api_for(hr_user))
+    path = tmp_path / "base-30.xlsx"
+    write_file(path, template_columns(profile_codes()), base_rows(20, 10, 42))
+    out = io.StringIO()
+
+    run_base_import(path, out)
+
+    assert Employee.objects.count() == 30
+    assert Employee.objects.exclude(last_date=None).count() == 10
+    assert ImportBatch.objects.get().status == "approved"
+    assert "30 rows staged in" in out.getvalue() and "(30 created), process peak" in out.getvalue()
+
+
+def api_for(user):
+    from rest_framework.test import APIClient
+    from rest_framework_simplejwt.tokens import RefreshToken
+
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(user).access_token}")
+    return client
+
+
+def test_the_demo_files_case_builds_each_generated_file_on_the_seed(lookups, rates):
+    """Seven employees stand in for the seed: six lines, one per generated file (D72)."""
+    from apps.compensation.services import bulk_apply
+    from seed import profiles
+    from seed.generator import ordered_entries
+
+    bulk_apply(
+        ordered_entries(5, 42, exited=2),
+        source="seed",
+        at=profiles.REFERENCE_DATETIME,
+        today=profiles.REFERENCE_DATE,
+    )
+    out = io.StringIO()
+
+    timing.Command(stdout=out).time_demo_files()
+
+    lines = out.getvalue().strip().splitlines()
+    assert [line.split(":")[0] for line in lines] == [
+        "demo file newhires.xlsx",
+        "demo file diwali-bonus.xlsx",
+        "demo file april-raises.xlsx",
+        "demo file promotions.xlsx",
+        "demo file exits.xlsx",
+        "demo file fix-me.xlsx",
+    ]
+    assert all(" rows, " in line and " bytes in " in line for line in lines)
+    assert lines[0].split(":")[1].strip().startswith("500 rows")

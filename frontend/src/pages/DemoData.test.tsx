@@ -4,7 +4,8 @@ import { http, HttpResponse } from 'msw/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { setSession } from '../lib/auth';
-import { sampleFilesEmpty } from '../test/fixtures/demo';
+import { POLL } from '../lib/poll';
+import { resetCounts, sampleFilesEmpty } from '../test/fixtures/demo';
 import { HR_PASSWORD } from '../test/handlers';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
@@ -35,9 +36,11 @@ describe('DemoData', () => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
   });
 
+  const defaults = { ...POLL };
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    Object.assign(POLL, defaults);
   });
 
   it('lists the seven sample files with what each exercises, after Imports in the nav', async () => {
@@ -117,6 +120,47 @@ describe('DemoData', () => {
     await user.type(confirm, 'RESET');
     await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
 
+    await waitFor(() => expect(router.state.location.pathname).toBe('/imports'));
+    expect(
+      await screen.findByText('The database is empty. Import base-15000.xlsx to start.'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps waiting through a cut reset until the counts reach zero, then goes to Imports', async () => {
+    POLL.every = 10;
+    POLL.upTo = 2000;
+    let posted = false;
+    const emptied = {
+      ...resetCounts,
+      employees: 0,
+      compensation_records: 0,
+      compensation_lines: 0,
+      import_batches: 0,
+      import_rows: 0,
+      audit_entries: 1,
+    };
+    server.use(
+      http.get('/api/v1/admin/reset-demo/', () =>
+        HttpResponse.json(posted ? emptied : resetCounts),
+      ),
+      http.post('/api/v1/admin/reset-demo/', () => {
+        posted = true;
+        return HttpResponse.error();
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderApp('/demo');
+
+    await user.click(await screen.findByRole('button', { name: 'Empty the database' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Empty the database?' });
+    await within(dialog).findByText(DELETES);
+    await user.type(within(dialog).getByLabelText('Your password'), HR_PASSWORD);
+    await user.type(within(dialog).getByLabelText('Type RESET to confirm'), 'RESET');
+    await user.click(within(dialog).getByRole('button', { name: 'Empty the database' }));
+
+    expect(await within(dialog).findByRole('status')).toHaveTextContent(
+      'Still working. The server is emptying the database.',
+    );
     await waitFor(() => expect(router.state.location.pathname).toBe('/imports'));
     expect(
       await screen.findByText('The database is empty. Import base-15000.xlsx to start.'),

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { ImportBatch, ImportRow } from '../api/types';
 import { setSession } from '../lib/auth';
+import { POLL } from '../lib/poll';
 import { reviewBatch, reviewRows, rowsPage } from '../test/fixtures/imports';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
@@ -250,6 +251,46 @@ describe('ImportReview', () => {
     expect(await screen.findByText(/Applied 2 rows on 7 Oct 2026/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Skip row 2' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  });
+
+  it('keeps waiting through a cut approve until the batch leaves review', async () => {
+    const defaults = { ...POLL };
+    POLL.every = 10;
+    POLL.upTo = 2000;
+    const user = userEvent.setup();
+    let polls = 0;
+    const done: ImportBatch = {
+      ...READY,
+      status: 'approved',
+      applied_rows: 2,
+      created_rows: 1,
+      updated_rows: 0,
+      revised_rows: 1,
+      approved_at: '2026-10-07T09:30:00+00:00',
+    };
+    server.use(
+      http.get('/api/v1/imports/3/', () => {
+        polls += 1;
+        return HttpResponse.json(polls >= 3 ? done : READY);
+      }),
+      http.post('/api/v1/imports/3/approve/', () => HttpResponse.error()),
+    );
+    renderApp('/imports/3');
+    try {
+      await user.click(await screen.findByRole('button', { name: 'Approve' }));
+      const dialog = await screen.findByRole('dialog', { name: 'Approve october-raises.xlsx?' });
+      await user.click(within(dialog).getByRole('button', { name: 'Approve and apply' }));
+
+      expect(await within(dialog).findByRole('status')).toHaveTextContent(
+        'Still working. The server is applying the rows.',
+      );
+      expect(
+        await screen.findByText('Applied 2 rows: 1 created, 0 updated, 1 revised.'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    } finally {
+      Object.assign(POLL, defaults);
+    }
   });
 
   it('shows why an approve was refused, with the rows the re-check marked', async () => {
