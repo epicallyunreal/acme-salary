@@ -114,6 +114,7 @@ def test_an_insight_needs_a_signed_in_user(anon, people):
         ),
         ({"currency": "gbp"}, {"currency": ["currency must be usd, eur or local, got gbp"]}),
         ({"on": "07/10/2026"}, {"on": ["on must be a date in YYYY-MM-DD form, got 07/10/2026"]}),
+        ({"on": "0001-01-01"}, {"on": ["on must be on or after 1900-01-01, got 0001-01-01"]}),
         (
             {"currency": "g" * 1000},
             {"currency": [f"currency must be usd, eur or local, got {'g' * 63}\u2026"]},
@@ -125,6 +126,17 @@ def test_a_filter_that_names_nothing_is_a_400(api, people, params, errors):
     response = api.get(URL.format("summary"), params)
 
     assert (response.status_code, response.json()) == (400, errors)
+
+
+@pytest.mark.parametrize("name", ["trend", "cost-bridge"])
+def test_a_year_1_on_is_a_400_where_the_dates_reach_back(api, lookups, name):
+    """D62: two years before 1 January of year 1 is no date at all."""
+    response = api.get(URL.format(name), {"on": "0001-01-01"})
+
+    assert (response.status_code, response.json()) == (
+        400,
+        {"on": ["on must be on or after 1900-01-01, got 0001-01-01"]},
+    )
 
 
 # Card controls (D62)

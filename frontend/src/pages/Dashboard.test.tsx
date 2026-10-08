@@ -230,7 +230,9 @@ describe('Dashboard', () => {
     await waitFor(() => expect(seen['by-tenure']).toHaveLength(2));
     expect(seen['by-tenure'][1].get('level')).toBe('3');
     expect(router.state.location.search).toBe('?tenure.level=3');
-    expect(seen.trend).toHaveLength(1);
+    for (const name of INSIGHTS.filter((insight) => insight !== 'by-tenure')) {
+      expect(seen[name]).toHaveLength(1);
+    }
   });
 
   it("the cost mix's control switches it to take-home pay, in the URL", async () => {
@@ -245,6 +247,9 @@ describe('Dashboard', () => {
     await waitFor(() => expect(seen['cost-mix']).toHaveLength(2));
     expect(seen['cost-mix'][1].get('view')).toBe('take_home');
     expect(router.state.location.search).toBe('?mix.view=take_home');
+    for (const name of INSIGHTS.filter((insight) => insight !== 'cost-mix')) {
+      expect(seen[name]).toHaveLength(1);
+    }
   });
 
   it("the gender card's control switches its view, in the URL", async () => {
@@ -259,23 +264,48 @@ describe('Dashboard', () => {
     await waitFor(() => expect(seen['gender-gap']).toHaveLength(2));
     expect(seen['gender-gap'][1].get('view')).toBe('quartiles');
     expect(router.state.location.search).toBe('?gap.view=quartiles');
+    for (const name of INSIGHTS.filter((insight) => insight !== 'gender-gap')) {
+      expect(seen[name]).toHaveLength(1);
+    }
     expect(
       await screen.findByRole('table', { name: 'Pay quartiles by gender' }),
     ).toBeInTheDocument();
   });
 
-  it("Clear filters resets the cards' controls with the bar's filters", async () => {
+  it("Clear filters resets all four cards' controls with the bar's filters", async () => {
     const user = userEvent.setup();
-    const { router } = renderApp('/?country=IN&trend.measure=headcount');
+    const { router } = renderApp(
+      '/?country=IN&trend.measure=headcount&tenure.level=3&mix.view=take_home&gap.view=bonus',
+    );
 
     await user.click(await screen.findByRole('button', { name: 'Clear filters' }));
 
     expect(router.state.location.search).toBe('');
-    const control = await screen.findByRole('group', { name: 'Trend measure' });
-    expect(within(control).getByRole('button', { name: 'Total cost' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    const pressed = async (group: string, name: string) =>
+      within(await screen.findByRole('group', { name: group })).getByRole('button', { name });
+    expect(await pressed('Trend measure', 'Total cost')).toHaveAttribute('aria-pressed', 'true');
+    expect(await pressed('Cost mix view', 'Cost')).toHaveAttribute('aria-pressed', 'true');
+    expect(await pressed('Gender gap view', 'Pay gap')).toHaveAttribute('aria-pressed', 'true');
+    const tenure = await screen.findByRole('region', { name: 'Does pay rise with tenure?' });
+    expect(within(tenure).getByRole('combobox', { name: 'Level' })).toHaveTextContent('All');
+  });
+
+  it("a filter change keeps the cards' controls, in the URL and in every request", async () => {
+    const seen = recordRequests();
+    const user = userEvent.setup();
+    const { router } = renderApp('/?trend.measure=headcount&gap.view=bonus');
+    await within(await keyFigures()).findByText('27');
+
+    await user.click(screen.getByLabelText('Country'));
+    await user.click(await screen.findByRole('option', { name: 'India' }));
+    await user.keyboard('{Escape}');
+
+    await waitFor(() => expect(seen.trend.at(-1)?.get('country')).toBe('IN'));
+    expect(seen.trend.at(-1)?.get('measure')).toBe('headcount');
+    await waitFor(() => expect(seen['gender-gap'].at(-1)?.get('country')).toBe('IN'));
+    expect(seen['gender-gap'].at(-1)?.get('view')).toBe('bonus');
+    const search = new URLSearchParams(router.state.location.search);
+    expect([search.get('trend.measure'), search.get('gap.view')]).toEqual(['headcount', 'bonus']);
   });
 
   it('a card control alone still offers Clear filters', async () => {

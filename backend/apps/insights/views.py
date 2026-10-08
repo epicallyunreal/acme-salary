@@ -6,8 +6,7 @@ from rest_framework.views import APIView
 
 from apps.core import fx
 from apps.core.dates import parse_on
-from apps.core.exceptions import Invalid, clip
-from apps.core.filters import parse_bool, parse_csv
+from apps.core.filters import parse_bool, parse_choice, parse_csv
 from apps.core.money import render
 from apps.insights import queries
 
@@ -18,14 +17,7 @@ def control(name: str, params: QueryDict) -> dict[str, str]:
     if name not in queries.CONTROLS:
         return {}
     key, values = queries.CONTROLS[name]
-    given = params.get(key)
-    if given in (None, ""):
-        return {key: values[0]}
-    value = given.strip().lower()
-    if value not in values:
-        listed = f"{', '.join(values[:-1])} or {values[-1]}"
-        raise Invalid({key: [f"{key} must be {listed}, got {clip(given)}"]})
-    return {key: value}
+    return {key: parse_choice(params.get(key), name=key, choices=values, default=values[0])}
 
 
 def answer(name: str, params: QueryDict) -> tuple[dict, queries.InsightFilters]:

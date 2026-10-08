@@ -1,9 +1,11 @@
 """Query-parameter helpers shared by the list views. Shape only, no rules."""
 
+from collections.abc import Sequence
+
 from django_filters import BaseInFilter, CharFilter, ChoiceFilter, NumberFilter
 from rest_framework.filters import SearchFilter
 
-from apps.core.exceptions import Invalid
+from apps.core.exceptions import Invalid, clip
 
 MAX_SEARCH_TERMS = 10
 
@@ -52,3 +54,19 @@ def parse_bool(value: str | None, *, name: str, default: bool = False) -> bool:
     if given in FALSE:
         return False
     raise Invalid({name: [f"{name} must be true or false"]})
+
+
+def parse_choice(
+    value: str | None, *, name: str, choices: Sequence[str], default: str | None = None
+) -> str:
+    """One of `choices`, in any case. Nothing given is `default`, or a 400 when there is none.
+    Anything else is a 400 that lists them."""
+    listed = f"{', '.join(choices[:-1])} or {choices[-1]}"
+    if value in (None, ""):
+        if default is None:
+            raise Invalid({name: [f"{name} must be {listed}"]})
+        return default
+    given = value.strip().lower()
+    if given in choices:
+        return given
+    raise Invalid({name: [f"{name} must be {listed}, got {clip(value)}"]})

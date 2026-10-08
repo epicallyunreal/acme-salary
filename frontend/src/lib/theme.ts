@@ -20,6 +20,18 @@ export const tokens = {
   },
   series: ['#2A78D6', '#EB6834'] as const,
   chart: { grid: '#E3E6E0', marker: '#646C78' },
+  /** The cost mix's own components, beside the two series and the marker grey. Each clears 3:1
+   * on white and stands apart from its neighbours in a bar under normal, deutan, protan and
+   * tritan vision (D62). */
+  mix: {
+    ochre: '#A0790A',
+    teal: '#00897B',
+    plum: '#7B4FA0',
+    navy: '#283593',
+    purple: '#8E44AD',
+    brown: '#8D6E63',
+    other: '#7D8590',
+  },
 } as const;
 
 export type StatusTone = keyof typeof tokens.status;

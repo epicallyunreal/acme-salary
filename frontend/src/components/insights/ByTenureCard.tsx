@@ -2,7 +2,7 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
-import type { ByTenureInsight } from '../../api/types';
+import type { ByTenureInsight, TenureRow } from '../../api/types';
 import {
   AXIS,
   BAR_SIZE,
@@ -49,7 +49,13 @@ function Tenure({ data }: { data: ByTenureInsight }) {
       <ResponsiveContainer width="100%" height={240}>
         <BarChart data={bars} margin={{ top: 8, right: 16, bottom: 0, left: 0 }}>
           <CartesianGrid vertical={false} {...GRID} />
-          <XAxis dataKey="row.label" {...AXIS} />
+          <XAxis
+            dataKey="row.band"
+            {...AXIS}
+            tick={<BandTick rows={rows} />}
+            height={40}
+            interval={0}
+          />
           <YAxis width={80} tickFormatter={compactTick(currency)} {...AXIS} />
           <Tooltip
             cursor={CURSOR}
@@ -70,7 +76,7 @@ function Tenure({ data }: { data: ByTenureInsight }) {
           <Bar
             dataKey="median"
             fill={SERIES[0]}
-            barSize={BAR_SIZE * 2}
+            maxBarSize={BAR_SIZE}
             radius={ROUND_TOP}
             {...STILL}
           />
@@ -91,5 +97,31 @@ function Tenure({ data }: { data: ByTenureInsight }) {
         ])}
       />
     </>
+  );
+}
+
+/** A band with its headcount under it, so a band too small for a bar still says who is in it. */
+function BandTick({
+  x,
+  y,
+  payload,
+  rows,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value: string };
+  rows: TenureRow[];
+}) {
+  const row = rows.find((candidate) => candidate.band === payload?.value);
+  if (!row) return null;
+  return (
+    <text x={x} y={y} textAnchor="middle" {...AXIS.tick}>
+      <tspan x={x} dy="0.71em">
+        {row.label}
+      </tspan>
+      <tspan x={x} dy="1.3em">
+        {people(row.headcount)}
+      </tspan>
+    </text>
   );
 }

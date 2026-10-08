@@ -4,8 +4,13 @@
 
 const formatters = new Map<string, Intl.NumberFormat>();
 
-function formatter(currency: string, fraction: number, notation: 'standard' | 'compact') {
-  const key = `${currency}:${fraction}:${notation}`;
+function formatter(
+  currency: string,
+  fraction: number,
+  notation: 'standard' | 'compact',
+  signDisplay: 'auto' | 'exceptZero' = 'auto',
+) {
+  const key = `${currency}:${fraction}:${notation}:${signDisplay}`;
   let cached = formatters.get(key);
   if (!cached) {
     cached = new Intl.NumberFormat('en-US', {
@@ -13,6 +18,7 @@ function formatter(currency: string, fraction: number, notation: 'standard' | 'c
       currency,
       currencyDisplay: 'code',
       notation,
+      signDisplay,
       minimumFractionDigits: notation === 'compact' ? 0 : fraction,
       maximumFractionDigits: fraction,
     });
@@ -21,9 +27,15 @@ function formatter(currency: string, fraction: number, notation: 'standard' | 'c
   return cached;
 }
 
-/** `formatMoney('1450000.00', 'INR')` gives `INR 1,450,000`; `{ fraction: 2 }` keeps the cents. */
-export function formatMoney(value: string, currency: string, { fraction = 0 } = {}): string {
-  return formatter(currency, fraction, 'standard').format(value as Intl.StringNumericLiteral);
+/** `formatMoney('1450000.00', 'INR')` gives `INR 1,450,000`; `{ fraction: 2 }` keeps the cents.
+ * `{ signed: true }` writes a change: `+USD 23,000`, `-USD 6,250`, and `USD 0` for none. */
+export function formatMoney(
+  value: string,
+  currency: string,
+  { fraction = 0, signed = false } = {},
+): string {
+  const sign = signed ? 'exceptZero' : 'auto';
+  return formatter(currency, fraction, 'standard', sign).format(value as Intl.StringNumericLiteral);
 }
 
 const amountFormatters = new Map<number, Intl.NumberFormat>();

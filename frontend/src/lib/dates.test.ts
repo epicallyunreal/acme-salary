@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatDateTime, parseIsoDate } from './dates';
+import { formatDate, formatDateTime, formatMonthShort, parseIsoDate } from './dates';
 
 describe('formatDate', () => {
   it('writes day, short month and year', () => {
     expect(formatDate('2026-10-07')).toBe('7 Oct 2026');
     expect(formatDate('2026-01-01')).toBe('1 Jan 2026');
+  });
+
+  it('writes every month in three letters, September as Sep (D62)', () => {
+    expect(formatDate('2026-09-30')).toBe('30 Sep 2026');
   });
 
   it('leaves null and empty values blank', () => {
@@ -25,5 +29,16 @@ describe('formatDateTime', () => {
     expect(formatDateTime('2026-10-07T12:00:00Z')).toBe('7 Oct 2026, 08:00');
     expect(formatDateTime('2026-10-08T03:30:00Z')).toBe('7 Oct 2026, 23:30');
     expect(formatDateTime(null)).toBe('');
+  });
+
+  it('writes September as Sep', () => {
+    expect(formatDateTime('2026-09-30T16:05:00Z')).toBe('30 Sep 2026, 12:05');
+  });
+});
+
+describe('formatMonthShort', () => {
+  it('writes a month on an axis with a two-digit year', () => {
+    expect(formatMonthShort('2026-09-30')).toBe('Sep 26');
+    expect(formatMonthShort('2024-10-31')).toBe('Oct 24');
   });
 });

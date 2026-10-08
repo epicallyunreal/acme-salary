@@ -652,6 +652,13 @@ def test_an_insight_export_reads_what_the_insight_reads(api, people, django_asse
     assert response.status_code == 200
 
 
+def test_a_withheld_trend_point_says_why(api, people):
+    """The United Kingdom is G1 alone."""
+    rows = csv_rows(api.get(INSIGHT.format("trend"), {"file": "csv", "country": "GB"}))
+
+    assert rows[-1] == ["2026-09-30", "1", "", "fewer than 5 people", "USD", RATES]
+
+
 def test_trend_exports_both_figures_whatever_its_card_draws(api, people):
     """D62: the measure picks the card's line, and the JSON says which one was asked for."""
     response = api.get(INSIGHT.format("trend"), {"file": "json", "measure": "headcount"})
@@ -672,15 +679,16 @@ def test_trend_exports_both_figures_whatever_its_card_draws(api, people):
 
 
 def test_the_bridge_exports_one_row_per_part(api, people):
-    """X1 left on 30 June 2026, the one leaver of DESIGN 9's fixture, so the three changes show
-    their people alone. Start is today's 27 and X1's 132,000 (D62)."""
+    """X1 left on 30 June 2026, the one leaver of DESIGN 9's fixture, so the pay changes show
+    their people alone, and the joiners, who are nobody, 0.00. Start is today's 27 and X1's
+    132,000 (D62)."""
     rows = csv_rows(api.get(INSIGHT.format("cost-bridge"), {"file": "csv"}))
 
     assert rows == [
         ["Part", "Date", "People", "Amount", "Reason", "Currency", "Rates"],
         ["Start", "2025-10-07", "28", "2567450.00", "", "USD", RATES],
         ["Leavers", "", "1", "", "fewer than 5 people", "USD", RATES],
-        ["Joiners", "", "0", "", "withheld with the leavers", "USD", RATES],
+        ["Joiners", "", "0", "0.00", "", "USD", RATES],
         ["Pay changes", "", "27", "", "withheld with the leavers", "USD", RATES],
         ["End", "2026-10-07", "27", "2435450.00", "", "USD", RATES],
     ]
@@ -700,6 +708,13 @@ def test_by_tenure_exports_its_bands_for_the_level_picked(api, people):
         "rates": RATES,
     }
     assert [row["headcount"] for row in body["rows"]] == [0, 0, 0, 5, 0]
+
+
+def test_a_withheld_tenure_band_says_why(api, people):
+    """Level 6 has three people, I6, I12 and U10."""
+    rows = csv_rows(api.get(INSIGHT.format("by-tenure"), {"file": "csv", "level": "6"}))
+
+    assert rows[4] == ["5 to 10 years", "3", "", "fewer than 5 people", "USD", RATES]
 
 
 def test_cost_mix_exports_one_row_per_country_and_segment(api, people):
@@ -743,29 +758,187 @@ def test_each_gender_view_exports_its_table_ending_with_reason_currency_and_rate
     assert json_body(response)["filters"]["view"] == view
 
 
-def test_a_flagged_level_gap_is_named_in_the_cards_words(api, lookups):
-    """Five women at 40,000 and five men at 50,000 in the Netherlands, level 1: a mean gap of
-    20.0% of men's pay, flagged in the card's neutral words (D62)."""
-    for gender, gross in (("female", 40_000), ("male", 50_000)):
+NL_LOCAL = {"country": "NL", "currency": "local"}
+LOCAL = ["EUR", "local currency (EUR)"]
+
+
+def hire_nl(gender, gross=50_000, *, level=1, bonus=0):
+    CompensationRecordFactory(
+        employee=EmployeeFactory(country=country("NL"), gender=gender, level=level),
+        lines={"BASE": Decimal(gross)},
+        bonus_annual=Decimal(bonus),
+        effective_from=date(2024, 1, 1),
+    )
+
+
+def test_the_bonus_view_is_one_row_per_group_and_gender_without_a_mean_amount(api, lookups):
+    """Five of six women receive 1,000 to 5,000, all six men 2,000 to 7,000: medians 3,000 and
+    4,500, and means 3,000 and 4,500, so both gaps are 33.3%. The other employee is counted
+    (D62)."""
+    for bonus in (1000, 2000, 3000, 4000, 5000, 0):
+        hire_nl("female", bonus=bonus)
+    for bonus in (2000, 3000, 4000, 5000, 6000, 7000):
+        hire_nl("male", bonus=bonus)
+    hire_nl("other", bonus=1000)
+
+    rows = csv_rows(
+        api.get(INSIGHT.format("gender-gap"), {"file": "csv", "view": "bonus", **NL_LOCAL})
+    )
+
+    assert rows[:5] == [
+        [
+            "Country code",
+            "Country",
+            "Gender",
+            "Headcount",
+            "Receiving",
+            "Receiving %",
+            "Median bonus",
+            "Mean gap %",
+            "Median gap %",
+            "Reason",
+            "Currency",
+            "Rates",
+        ],
+        ["NL", "Netherlands", "female", "6", "5", "83.3", "3000.00", "33.3", "33.3", "", *LOCAL],
+        ["NL", "Netherlands", "male", "6", "6", "100.0", "4500.00", "33.3", "33.3", "", *LOCAL],
+        ["NL", "Netherlands", "other", "1", "", "", "", "33.3", "33.3", "", *LOCAL],
+        ["NL", "Netherlands", "undisclosed", "0", "", "", "", "33.3", "33.3", "", *LOCAL],
+    ]
+
+
+QUARTILE_HEADER = [
+    "Quartile",
+    "Headcount",
+    "Women",
+    "Men",
+    "Women %",
+    "Men %",
+    "Other not ranked",
+    "Undisclosed not ranked",
+    "Reason",
+    "Currency",
+    "Rates",
+]
+
+
+def test_the_quartiles_are_one_row_each_with_the_unranked_beside(api, lookups):
+    """Ten women on 50,000 and ten men on 60,000: the women fill the two lower quartiles. The
+    other employee is counted on every row and never ranked (D62)."""
+    for _ in range(10):
+        hire_nl("female", 50_000)
+        hire_nl("male", 60_000)
+    hire_nl("other", 10_000)
+
+    query = {"file": "csv", "view": "quartiles", **NL_LOCAL}
+    rows = csv_rows(api.get(INSIGHT.format("gender-gap"), query))
+
+    assert rows == [
+        QUARTILE_HEADER,
+        ["1", "5", "5", "0", "100.0", "0.0", "1", "0", "", *LOCAL],
+        ["2", "5", "5", "0", "100.0", "0.0", "1", "0", "", *LOCAL],
+        ["3", "5", "0", "5", "0.0", "100.0", "1", "0", "", *LOCAL],
+        ["4", "5", "0", "5", "0.0", "100.0", "1", "0", "", *LOCAL],
+    ]
+
+
+def test_withheld_quartiles_are_one_row_of_the_headcount(api, people):
+    """India's twelve are under twenty."""
+    query = {"file": "csv", "view": "quartiles", "country": "IN"}
+    rows = csv_rows(api.get(INSIGHT.format("gender-gap"), query))
+
+    assert rows == [
+        QUARTILE_HEADER,
+        ["", "12", "", "", "", "", "0", "0", "fewer than 20 people", "USD", RATES],
+    ]
+
+
+def test_the_level_gaps_flag_in_the_cards_words_and_count_the_others(api, lookups):
+    """Level 1: five women on 40,000 and five men on 50,000, a gap of 20.0% of men's pay,
+    flagged in the card's neutral words. Level 2: 50,000 against 51,000, 2.0%, not flagged.
+    The other employee is counted on each of the country's rows (D62)."""
+    for women, men, level in ((40_000, 50_000, 1), (50_000, 51_000, 2)):
         for _ in range(5):
-            CompensationRecordFactory(
-                employee=EmployeeFactory(country=country("NL"), gender=gender, level=1),
-                lines={"BASE": Decimal(gross)},
-                effective_from=date(2024, 1, 1),
-            )
-    query = {"file": "csv", "view": "by_level", "country": "NL", "currency": "local"}
+            hire_nl("female", women, level=level)
+            hire_nl("male", men, level=level)
+    hire_nl("other", 45_000, level=1)
+    query = {"file": "csv", "view": "by_level", **NL_LOCAL}
 
     rows = csv_rows(api.get(INSIGHT.format("gender-gap"), query))
 
-    assert rows[1][2:12] == [
-        "1",
-        "5",
-        "40000.00",
-        "40000.00",
-        "5",
-        "50000.00",
-        "50000.00",
-        "20.0",
-        "20.0",
-        "5% or more, the threshold in EU Directive 2023/970 Article 10",
+    assert rows[:4] == [
+        [
+            "Country code",
+            "Country",
+            "Level",
+            "Women",
+            "Women median",
+            "Men",
+            "Men median",
+            "Mean gap %",
+            "Median gap %",
+            "Flag",
+            "Other in country",
+            "Undisclosed in country",
+            "Reason",
+            "Currency",
+            "Rates",
+        ],
+        [
+            "NL",
+            "Netherlands",
+            "1",
+            "5",
+            "40000.00",
+            "5",
+            "50000.00",
+            "20.0",
+            "20.0",
+            "5% or more, the threshold in EU Directive 2023/970 Article 10",
+            "1",
+            "0",
+            "",
+            *LOCAL,
+        ],
+        [
+            "NL",
+            "Netherlands",
+            "2",
+            "5",
+            "50000.00",
+            "5",
+            "51000.00",
+            "2.0",
+            "2.0",
+            "",
+            "1",
+            "0",
+            "",
+            *LOCAL,
+        ],
+        ["NL", "Netherlands", "3", "0", "", "0", "", "", "", "", "1", "0", "", *LOCAL],
     ]
+
+
+def json_filters(api, name: str, **query) -> dict:
+    return json_body(api.get(INSIGHT.format(name), {"file": "json", **query}))["filters"]
+
+
+def test_a_file_names_the_control_as_the_insight_applied_it(api, people):
+    """D62: the default when none was given, in the list's own spelling when one was."""
+    assert json_filters(api, "by-tenure") == {"level": "all", "on": "2026-10-07", "currency": "USD"}
+    assert json_filters(api, "gender-gap", view=" BONUS ")["view"] == "bonus"
+    assert json_filters(api, "summary", include_exited="true") == {
+        "include_exited": "true",
+        "on": "2026-10-07",
+        "currency": "USD",
+    }
+
+
+@pytest.mark.parametrize("name", ["trend", "cost-bridge"])
+def test_a_dated_insights_file_does_not_say_include_exited_applied(api, people, name):
+    """D62: trend and cost-bridge count the people employed on each date."""
+    filters = json_filters(api, name, include_exited="true", country="US")
+
+    assert "include_exited" not in filters
+    assert filters["country"] == "US"

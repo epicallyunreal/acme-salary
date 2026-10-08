@@ -77,7 +77,7 @@ describe('EmployeeDetail', () => {
     const card = await screen.findByRole('region', { name: 'Current record' });
     expect(
       within(card).getByText(
-        'Left on 30 Sept 2026, before pay started. The cancelled record stays in History.',
+        'Left on 30 Sep 2026, before pay started. The cancelled record stays in History.',
       ),
     ).toBeInTheDocument();
     const table = await screen.findByRole('table', { name: 'Pay history' });
@@ -107,7 +107,7 @@ describe('EmployeeDetail', () => {
     expect(within(rows[0]).getByText('EUR 66,000')).not.toHaveStyle({
       textDecoration: 'line-through',
     });
-    expect(within(rows[2]).getByText('1 Sept 2023 to 31 Oct 2026')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('1 Sep 2023 to 31 Oct 2026')).toBeInTheDocument();
     expect(within(table).getAllByRole('button')).toHaveLength(1);
     expect(within(rows[0]).getByRole('button', { name: 'Cancel revision v3' })).toBeInTheDocument();
   });
@@ -276,7 +276,7 @@ describe('EmployeeDetail', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Mark exited' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Asha Rao marked exited, last day 30 Sept 2026.',
+      'Asha Rao marked exited, last day 30 Sep 2026.',
     );
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'Mark exited' })).not.toBeInTheDocument(),

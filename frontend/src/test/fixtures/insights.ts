@@ -166,7 +166,8 @@ function gap(
     other_count: 0,
     undisclosed_count: 0,
     gap_pct: pct,
-    reason: pct === null ? short : null,
+    // A group with nobody in it gives no reason, as every other table words it (D62).
+    reason: pct === null && women[0] + men[0] > 0 ? short : null,
   };
 }
 
@@ -184,49 +185,26 @@ export const genderGap: InsightPayloads['gender-gap'] = {
   ],
 };
 
-/** The Bonus view: India's women and men compared, the US with four women. */
+/** The Bonus view: India's women and men compared, mean and median gaps apart, and the US with
+ * four women. No mean amount is published (D62). */
 export const bonusGap: InsightPayloads['gender-gap'] = {
   ...USD,
   view: 'bonus',
   rows: [
     {
       country: { code: 'IN', name: 'India' },
-      female: {
-        headcount: 6,
-        receiving: 5,
-        receiving_pct: '83.3',
-        mean_bonus: '3000.00',
-        median_bonus: '3000.00',
-      },
-      male: {
-        headcount: 6,
-        receiving: 6,
-        receiving_pct: '100.0',
-        mean_bonus: '4500.00',
-        median_bonus: '4500.00',
-      },
-      other_count: 0,
+      female: { headcount: 6, receiving: 5, receiving_pct: '83.3', median_bonus: '3000.00' },
+      male: { headcount: 6, receiving: 6, receiving_pct: '100.0', median_bonus: '4500.00' },
+      other_count: 1,
       undisclosed_count: 0,
-      mean_gap_pct: '33.3',
+      mean_gap_pct: '40.0',
       median_gap_pct: '33.3',
       reason: null,
     },
     {
       country: { code: 'US', name: 'United States' },
-      female: {
-        headcount: 4,
-        receiving: null,
-        receiving_pct: null,
-        mean_bonus: null,
-        median_bonus: null,
-      },
-      male: {
-        headcount: 6,
-        receiving: null,
-        receiving_pct: null,
-        mean_bonus: null,
-        median_bonus: null,
-      },
+      female: { headcount: 4, receiving: null, receiving_pct: null, median_bonus: null },
+      male: { headcount: 6, receiving: null, receiving_pct: null, median_bonus: null },
       other_count: 0,
       undisclosed_count: 0,
       mean_gap_pct: null,
@@ -236,85 +214,71 @@ export const bonusGap: InsightPayloads['gender-gap'] = {
   ],
 };
 
-/** The Quartiles view of 22 people, other and undisclosed in the top quartile. */
+function quartile(number: number, women: number, men: number) {
+  return {
+    quartile: number,
+    headcount: women + men,
+    female: women,
+    male: men,
+    female_pct: (women * 20).toFixed(1),
+    male_pct: (men * 20).toFixed(1),
+  };
+}
+
+/** The Quartiles view of ten women and ten men, the other and the undisclosed employee counted
+ * beside and never ranked (D62). */
 export const quartileGap: InsightPayloads['gender-gap'] = {
   ...USD,
   view: 'quartiles',
-  headcount: 22,
+  headcount: 20,
+  other_count: 1,
+  undisclosed_count: 1,
   reason: null,
-  quartiles: [
-    {
-      quartile: 1,
-      headcount: 5,
-      female: 3,
-      male: 2,
-      other: 0,
-      undisclosed: 0,
-      female_pct: '60.0',
-      male_pct: '40.0',
-    },
-    {
-      quartile: 2,
-      headcount: 6,
-      female: 3,
-      male: 3,
-      other: 0,
-      undisclosed: 0,
-      female_pct: '50.0',
-      male_pct: '50.0',
-    },
-    {
-      quartile: 3,
-      headcount: 5,
-      female: 2,
-      male: 3,
-      other: 0,
-      undisclosed: 0,
-      female_pct: '40.0',
-      male_pct: '60.0',
-    },
-    {
-      quartile: 4,
-      headcount: 6,
-      female: 2,
-      male: 2,
-      other: 1,
-      undisclosed: 1,
-      female_pct: '33.3',
-      male_pct: '33.3',
-    },
-  ],
+  quartiles: [quartile(1, 2, 3), quartile(2, 3, 2), quartile(3, 3, 2), quartile(4, 2, 3)],
+};
+
+/** The Quartiles view withheld: India's twelve women and men are under twenty. */
+export const quartileGapWithheld: InsightPayloads['gender-gap'] = {
+  ...USD,
+  view: 'quartiles',
+  headcount: 12,
+  other_count: 0,
+  undisclosed_count: 0,
+  reason: 'fewer than 20 people',
+  quartiles: null,
 };
 
 function levelGap(
   level: number,
   women: [number, string | null],
   men: [number, string | null],
-  gap: string | null,
+  gaps: [string, string] | null,
   flagged: boolean,
   reason: string | null = null,
 ) {
   return {
     country: { code: 'NL', name: 'Netherlands' },
     level,
-    female: { headcount: women[0], mean_gross: women[1], median_gross: women[1] },
-    male: { headcount: men[0], mean_gross: men[1], median_gross: men[1] },
-    mean_gap_pct: gap,
-    median_gap_pct: gap,
+    female: { headcount: women[0], median_gross: women[1] },
+    male: { headcount: men[0], median_gross: men[1] },
+    mean_gap_pct: gaps ? gaps[0] : null,
+    median_gap_pct: gaps ? gaps[1] : null,
     flagged,
     reason,
   };
 }
 
-/** The By level view of the Netherlands: level 1 flagged, level 2 not, level 3 short. */
+/** The By level view of the Netherlands: level 1 flagged with its mean and median gaps apart,
+ * level 2 not flagged, level 3 short of women, and one other employee counted by country. */
 export const levelGapView: InsightPayloads['gender-gap'] = {
   ...USD,
   view: 'by_level',
   rows: [
-    levelGap(1, [5, '44000.00'], [5, '48000.00'], '8.3', true),
-    levelGap(2, [5, '50000.00'], [5, '52000.00'], '3.8', false),
+    levelGap(1, [5, '44000.00'], [5, '48000.00'], ['8.0', '8.3'], true),
+    levelGap(2, [5, '50000.00'], [5, '52000.00'], ['3.8', '3.8'], false),
     levelGap(3, [4, null], [6, null], null, false, 'fewer than 5 women'),
   ],
+  others: [{ country: { code: 'NL', name: 'Netherlands' }, other_count: 1, undisclosed_count: 0 }],
 };
 
 const MONTH_ENDS = [
@@ -357,7 +321,8 @@ export const trend: InsightPayloads['trend'] = {
   }),
 };
 
-/** DESIGN 9's year: X1 the one leaver, so the three changes show their people alone. */
+/** DESIGN 9's year: X1 the one leaver, so the pay changes go with him, and the joiners, who
+ * are nobody, show 0.00 (D62). */
 export const costBridge: InsightPayloads['cost-bridge'] = {
   ...USD,
   start_date: '2025-10-07',
@@ -365,7 +330,7 @@ export const costBridge: InsightPayloads['cost-bridge'] = {
   parts: [
     { part: 'start', people: 28, amount: '2567450.00', reason: null },
     { part: 'leavers', people: 1, amount: null, reason: 'fewer than 5 people' },
-    { part: 'joiners', people: 0, amount: null, reason: 'withheld with the leavers' },
+    { part: 'joiners', people: 0, amount: '0.00', reason: null },
     { part: 'pay_changes', people: 27, amount: null, reason: 'withheld with the leavers' },
     { part: 'end', people: 27, amount: '2435450.00', reason: null },
   ],
@@ -398,12 +363,26 @@ export const byTenure: InsightPayloads['by-tenure'] = {
   ],
 };
 
+const FEWER_THAN_5 = 'fewer than 5 people';
+
 /** DESIGN 9's shares of total cost: India and the US shown, Germany and the UK short. */
 export const costMix: InsightPayloads['cost-mix'] = {
   ...USD,
   view: 'cost',
+  segments: [
+    { code: 'BASE', name: 'Base salary' },
+    { code: 'HRA', name: 'House rent allowance' },
+    { code: 'ALLOWANCES', name: 'Allowances' },
+    { code: 'BONUS', name: 'Bonus' },
+    { code: 'EMPLOYER_CONTRIBUTION', name: 'Employer contribution' },
+  ],
   rows: [
-    { country: { code: 'DE', name: 'Germany' }, headcount: 4, segments: null },
+    {
+      country: { code: 'DE', name: 'Germany' },
+      headcount: 4,
+      segments: null,
+      reason: FEWER_THAN_5,
+    },
     {
       country: { code: 'IN', name: 'India' },
       headcount: 12,
@@ -414,10 +393,21 @@ export const costMix: InsightPayloads['cost-mix'] = {
         { code: 'BONUS', name: 'Bonus', share_pct: '0.0' },
         { code: 'EMPLOYER_CONTRIBUTION', name: 'Employer contribution', share_pct: '10.7' },
       ],
+      reason: null,
     },
-    { country: { code: 'NL', name: 'Netherlands' }, headcount: 0, segments: null },
-    { country: { code: 'SG', name: 'Singapore' }, headcount: 0, segments: null },
-    { country: { code: 'GB', name: 'United Kingdom' }, headcount: 1, segments: null },
+    { country: { code: 'NL', name: 'Netherlands' }, headcount: 0, segments: null, reason: null },
+    {
+      country: { code: 'SG', name: 'Singapore' },
+      headcount: 7,
+      segments: null,
+      reason: 'Bonus held by fewer than 5 people',
+    },
+    {
+      country: { code: 'GB', name: 'United Kingdom' },
+      headcount: 1,
+      segments: null,
+      reason: FEWER_THAN_5,
+    },
     {
       country: { code: 'US', name: 'United States' },
       headcount: 10,
@@ -426,6 +416,37 @@ export const costMix: InsightPayloads['cost-mix'] = {
         { code: 'BONUS', name: 'Bonus', share_pct: '0.0' },
         { code: 'EMPLOYER_CONTRIBUTION', name: 'Employer contribution', share_pct: '9.1' },
       ],
+      reason: null,
+    },
+  ],
+};
+
+/** The take-home view of India and the US: net pay and income tax as shares of gross. */
+export const costMixTakeHome: InsightPayloads['cost-mix'] = {
+  ...USD,
+  view: 'take_home',
+  segments: [
+    { code: 'NET', name: 'Net pay' },
+    { code: 'TAX', name: 'Income tax' },
+  ],
+  rows: [
+    {
+      country: { code: 'IN', name: 'India' },
+      headcount: 12,
+      segments: [
+        { code: 'NET', name: 'Net pay', share_pct: '90.0' },
+        { code: 'TAX', name: 'Income tax', share_pct: '10.0' },
+      ],
+      reason: null,
+    },
+    {
+      country: { code: 'US', name: 'United States' },
+      headcount: 10,
+      segments: [
+        { code: 'NET', name: 'Net pay', share_pct: '80.0' },
+        { code: 'TAX', name: 'Income tax', share_pct: '20.0' },
+      ],
+      reason: null,
     },
   ],
 };
@@ -444,6 +465,7 @@ export function insightFor(
   if (name === 'gender-gap' && view && view in genderViews) {
     return genderViews[view] as JsonBodyType;
   }
+  if (name === 'cost-mix' && view === 'take_home') return costMixTakeHome as JsonBodyType;
   const payloads: Record<string, unknown> = {
     summary: includeExited ? summaryWithExited : summary,
     'by-country': byCountry,

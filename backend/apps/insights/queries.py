@@ -115,16 +115,14 @@ def build_filters(
 
 
 def population(f: InsightFilters) -> QuerySet[CompensationRecord]:
-    return population_on(f, f.on)
-
-
-def population_on(f: InsightFilters, on: date) -> QuerySet[CompensationRecord]:
     """SPEC section 9: the record current on `on` of everyone active then, and with
     `include_exited` the last record of everyone who left before it. Future joiners never.
 
     Live records of one employee never overlap, so at most one is current. An exited employee's
-    last record alone ends after `last_date`, at `last_date + 1`.
+    last record alone ends after `last_date`, at `last_date + 1`. `trend` and `cost-bridge` read
+    `spans` instead, the people employed on each date (D62).
     """
+    on = f.on
     active = Q(employee__joining_date__lte=on) & (
         Q(employee__last_date__isnull=True) | Q(employee__last_date__gte=on)
     )
@@ -447,6 +445,15 @@ def gender_reason(women: int, men: int, counting: str = "") -> str | None:
     return " and ".join(f"fewer than {SMALL_GROUP} {who}" for who in short) + counting
 
 
+def group_reason(women: int, men: int) -> str | None:
+    """A group's reason, or none for a group with nobody, as every other table words it (D62)."""
+    return gender_reason(women, men) if women or men else None
+
+
+def compared(women: list, men: list) -> bool:
+    return len(women) >= SMALL_GROUP and len(men) >= SMALL_GROUP
+
+
 def gap_pct(women: Decimal | None, men: Decimal | None) -> Decimal | None:
     """The unadjusted gap as a share of men's pay, to one decimal."""
     if women is None or men is None or not men:
@@ -454,41 +461,35 @@ def gap_pct(women: Decimal | None, men: Decimal | None) -> Decimal | None:
     return q1((men - women) / men * 100)
 
 
-def mean(values: list[Decimal]) -> Decimal | None:
-    return q2(sum(values, Decimal(0)) / len(values)) if values else None
+def average(values: list[Decimal]) -> Decimal:
+    """Unrounded, for a gap: a mean amount is never published in the new views (D62)."""
+    return sum(values, Decimal(0)) / len(values)
 
 
 def gap_row(country: dict | None, by_gender: dict[str, list[Decimal]]) -> dict:
     """The medians of women and men and the unadjusted gap, each median only for five people or
     more. Other and undisclosed are counted, never given a median."""
     female, male = by_gender["female"], by_gender["male"]
-    row = {
+    reason = group_reason(len(female), len(male))
+    women = median(female) if len(female) >= SMALL_GROUP else None
+    men = median(male) if len(male) >= SMALL_GROUP else None
+    return {
         "country": country,
-        "female": {
-            "headcount": len(female),
-            "median_gross": median(female) if len(female) >= SMALL_GROUP else None,
-        },
-        "male": {
-            "headcount": len(male),
-            "median_gross": median(male) if len(male) >= SMALL_GROUP else None,
-        },
+        "female": {"headcount": len(female), "median_gross": women},
+        "male": {"headcount": len(male), "median_gross": men},
         "other_count": len(by_gender["other"]),
         "undisclosed_count": len(by_gender["undisclosed"]),
-        "gap_pct": None,
-        "reason": None,
+        "gap_pct": gap_pct(women, men) if compared(female, male) else None,
+        "reason": reason,
     }
-    row["reason"] = gender_reason(len(female), len(male))
-    if row["reason"] is None:
-        row["gap_pct"] = gap_pct(row["female"]["median_gross"], row["male"]["median_gross"])
-    return row
 
 
-def groups(
-    f: InsightFilters, lookups: Lookups, values: dict[Any, list[Decimal]]
-) -> list[tuple[dict | None, dict[str, list[Decimal]]]]:
+def gender_groups(
+    f: InsightFilters, lookups: Lookups, values: dict[Any, list]
+) -> list[tuple[dict | None, dict[str, list]]]:
     """Each country in the filter, in name order, then overall, with its values per gender."""
     found = []
-    overall: dict[str, list[Decimal]] = {gender: [] for gender in GENDERS}
+    overall: dict[str, list] = {gender: [] for gender in GENDERS}
     for code, country in lookups.countries.items():
         if not f.country or code in f.country:
             by_gender = {gender: values.get((code, gender), []) for gender in GENDERS}
@@ -504,141 +505,167 @@ def gender_gap(
 ) -> dict:
     """Question 6, on annual pay, in four views (D62): Pay gap, per country and overall, Bonus,
     Quartiles and By level. Other and undisclosed are counted beside each. A comparison needs 5
-    women and 5 men, and the quartiles 20 people as well."""
+    women and 5 men, and the quartiles 20 people as well. The new views publish counts, shares,
+    medians and gaps, never a mean amount, which would add up across rows and give a withheld
+    one back (D62)."""
     if view == "bonus":
         return {**header(f, rates), "view": view, "rows": bonus_rows(f, rates, lookups)}
     if view == "quartiles":
         return {**header(f, rates), "view": view, **pay_quartiles(f, rates)}
     if view == "by_level":
-        return {**header(f, rates), "view": view, "rows": level_gaps(f, rates, lookups)}
+        return {**header(f, rates), "view": view, **level_gaps(f, rates, lookups)}
     values = grosses(f, rates, COUNTRY, GENDER)
-    rows = [gap_row(country, by_gender) for country, by_gender in groups(f, lookups, values)]
+    groups = gender_groups(f, lookups, values)
+    rows = [gap_row(country, by_gender) for country, by_gender in groups]
     return {**header(f, rates), "view": view, "rows": rows}
 
 
 def bonus_rows(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> list[dict]:
-    """Bonus: who receives one (a bonus above zero), and the mean and median bonus gap among
-    those who do. The shares need 5 women and 5 men in the group, the gaps 5 of each with a
-    bonus."""
+    """Bonus: who receives one, a bonus above zero in its own currency, and the mean and median
+    bonus gap among those who do. The shares need 5 women and 5 men in the group, the gaps 5 of
+    each with a bonus. Each bonus is `None` for someone without one."""
     convert = Converter(f, rates)
-    values: dict[Any, list[Decimal]] = defaultdict(list)
+    values: dict[Any, list[Decimal | None]] = defaultdict(list)
     for bonus, currency, country, gender in population(f).values_list(
         "bonus_annual", "currency_code", COUNTRY, GENDER
     ):
-        values[(country, gender)].append(q2(bonus * convert.rate(currency)))
+        values[(country, gender)].append(q2(bonus * convert.rate(currency)) if bonus > 0 else None)
     rows = []
-    for country, by_gender in groups(f, lookups, values):
+    for country, by_gender in gender_groups(f, lookups, values):
         women, men = by_gender["female"], by_gender["male"]
-        paid = {gender: [b for b in by_gender[gender] if b > 0] for gender in ("female", "male")}
-        reason = gender_reason(len(women), len(men))
-        shares = reason is None
-        if shares:
+        paid = {g: [b for b in by_gender[g] if b is not None] for g in ("female", "male")}
+        shares = compared(women, men)
+        gaps = shares and compared(paid["female"], paid["male"])
+        if not shares:
+            reason = group_reason(len(women), len(men))
+        elif not gaps:
             reason = gender_reason(len(paid["female"]), len(paid["male"]), " with a bonus")
-        gaps = reason is None
-        female = bonus_side(women, paid["female"], shares=shares, gaps=gaps)
-        male = bonus_side(men, paid["male"], shares=shares, gaps=gaps)
+        else:
+            reason = None
         rows.append(
             {
                 "country": country,
-                "female": female,
-                "male": male,
+                "female": bonus_side(women, paid["female"], shares=shares, gaps=gaps),
+                "male": bonus_side(men, paid["male"], shares=shares, gaps=gaps),
                 "other_count": len(by_gender["other"]),
                 "undisclosed_count": len(by_gender["undisclosed"]),
-                "mean_gap_pct": gap_pct(female["mean_bonus"], male["mean_bonus"]),
-                "median_gap_pct": gap_pct(female["median_bonus"], male["median_bonus"]),
+                "mean_gap_pct": gap_pct(average(paid["female"]), average(paid["male"]))
+                if gaps
+                else None,
+                "median_gap_pct": gap_pct(median(paid["female"]), median(paid["male"]))
+                if gaps
+                else None,
                 "reason": reason,
             }
         )
     return rows
 
 
-def bonus_side(
-    everyone: list[Decimal], receiving: list[Decimal], *, shares: bool, gaps: bool
-) -> dict:
+def bonus_side(everyone: list, receiving: list[Decimal], *, shares: bool, gaps: bool) -> dict:
     """One gender of a group in the Bonus view: the receiving share when the group can be
-    compared, the mean and median bonus when those receiving one can."""
+    compared, the median bonus when those receiving one can."""
     return {
         "headcount": len(everyone),
         "receiving": len(receiving) if shares else None,
         "receiving_pct": q1(Decimal(len(receiving)) / len(everyone) * 100) if shares else None,
-        "mean_bonus": mean(receiving) if gaps else None,
         "median_bonus": median(receiving) if gaps else None,
     }
 
 
-def pay_side(group: list[Decimal], *, shown: bool) -> dict:
-    """One gender of a country's level in the By level view."""
-    return {
-        "headcount": len(group),
-        "mean_gross": mean(group) if shown else None,
-        "median_gross": median(group) if shown else None,
-    }
-
-
 def pay_quartiles(f: InsightFilters, rates: fx.RateTable) -> dict:
-    """Quartiles: everyone ranked by gross in the reporting currency, ties by employee id, cut at
-    floor(k * n / 4), the lowest quartile first, with each one's women and men. It needs 20
-    people, and 5 women and 5 men. A simplification of the UK method, which splits tied pay
-    across a boundary by gender (D62)."""
+    """Quartiles: women and men ranked by gross in the reporting currency, ties by employee id,
+    cut at floor(k * n / 4), the lowest quartile first, as the UK method compares women and men.
+    Other and undisclosed are counted once beside it, never placed in a quartile. It needs 20
+    women and men, 5 of each. A simplification of the UK method, which splits tied pay across a
+    boundary by gender (D62)."""
     convert = Converter(f, rates)
-    ranked = sorted(
-        (q2(gross * convert.rate(currency)), employee, gender)
-        for gross, currency, employee, gender in population(f).values_list(
-            "gross_annual", "currency_code", "employee_id", GENDER
-        )
-    )
+    ranked = []
+    beside = {"other": 0, "undisclosed": 0}
+    for gross, currency, employee, gender in population(f).values_list(
+        "gross_annual", "currency_code", "employee_id", GENDER
+    ):
+        if gender in beside:
+            beside[gender] += 1
+        else:
+            ranked.append((q2(gross * convert.rate(currency)), employee, gender))
+    ranked.sort()
     n = len(ranked)
     women = sum(1 for _, _, gender in ranked if gender == "female")
-    men = sum(1 for _, _, gender in ranked if gender == "male")
-    reason = f"fewer than {SPREAD_GROUP} people" if n < SPREAD_GROUP else gender_reason(women, men)
-    if reason:
-        return {"headcount": n, "quartiles": None, "reason": reason}
+    payload = {
+        "headcount": n,
+        "other_count": beside["other"],
+        "undisclosed_count": beside["undisclosed"],
+        "quartiles": None,
+        "reason": None,
+    }
+    if n == 0:
+        return payload
+    if n < SPREAD_GROUP:
+        return {**payload, "reason": f"fewer than {SPREAD_GROUP} people"}
+    if reason := gender_reason(women, n - women):
+        return {**payload, "reason": reason}
     cuts = [k * n // 4 for k in range(5)]
     quartiles = []
     for index in range(4):
         group = [gender for _, _, gender in ranked[cuts[index] : cuts[index + 1]]]
-        counts = {gender: group.count(gender) for gender in GENDERS}
+        female, male = group.count("female"), group.count("male")
         quartiles.append(
             {
                 "quartile": index + 1,
                 "headcount": len(group),
-                **counts,
-                "female_pct": q1(Decimal(counts["female"]) / len(group) * 100),
-                "male_pct": q1(Decimal(counts["male"]) / len(group) * 100),
+                "female": female,
+                "male": male,
+                "female_pct": q1(Decimal(female) / len(group) * 100),
+                "male_pct": q1(Decimal(male) / len(group) * 100),
             }
         )
-    return {"headcount": n, "quartiles": quartiles, "reason": None}
+    return {**payload, "quartiles": quartiles}
 
 
-def level_gaps(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> list[dict]:
-    """By level: per country in the filter, in name order, and per level 1 to 6, the mean and
-    median gap, each as a share of men's pay, flagged at a mean gap of 5% or more either way
-    (EU Directive 2023/970 Article 10). Each needs 5 women and 5 men in that country and level."""
+def level_gaps(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
+    """By level: per country in the filter, in name order, and per level 1 to 6, the women's and
+    men's medians and the mean and median gap, each as a share of men's pay, flagged when the
+    mean gap, before rounding, is 5% or more either way (EU Directive 2023/970 Article 10). Each
+    needs 5 women and 5 men in that country and level. Other and undisclosed are counted per
+    country beside the view, never per level (D62)."""
     values = grosses(f, rates, COUNTRY, LEVEL, GENDER)
-    rows = []
+    rows, others = [], []
     for code, country in lookups.countries.items():
         if f.country and code not in f.country:
             continue
+        name = {"code": code, "name": country.name}
+        others.append(
+            {
+                "country": name,
+                **{
+                    f"{gender}_count": sum(
+                        len(values.get((code, level, gender), [])) for level in LEVELS
+                    )
+                    for gender in ("other", "undisclosed")
+                },
+            }
+        )
         for level in LEVELS:
             women = values.get((code, level, "female"), [])
             men = values.get((code, level, "male"), [])
-            reason = gender_reason(len(women), len(men))
-            female = pay_side(women, shown=reason is None)
-            male = pay_side(men, shown=reason is None)
-            mean_gap = gap_pct(female["mean_gross"], male["mean_gross"])
+            shown = compared(women, men) and average(men) > 0
+            mean_gap = (average(men) - average(women)) / average(men) * 100 if shown else None
             rows.append(
                 {
-                    "country": {"code": code, "name": country.name},
+                    "country": name,
                     "level": level,
-                    "female": female,
-                    "male": male,
-                    "mean_gap_pct": mean_gap,
-                    "median_gap_pct": gap_pct(female["median_gross"], male["median_gross"]),
-                    "flagged": mean_gap is not None and abs(mean_gap) >= GAP_FLAG,
-                    "reason": reason,
+                    "female": {
+                        "headcount": len(women),
+                        "median_gross": median(women) if shown else None,
+                    },
+                    "male": {"headcount": len(men), "median_gross": median(men) if shown else None},
+                    "mean_gap_pct": q1(mean_gap) if shown else None,
+                    "median_gap_pct": gap_pct(median(women), median(men)) if shown else None,
+                    "flagged": shown and abs(mean_gap) >= GAP_FLAG,
+                    "reason": group_reason(len(women), len(men)),
                 }
             )
-    return rows
+    return {"rows": rows, "others": others}
 
 
 def trend(
@@ -694,13 +721,12 @@ class Bridge:
     people: dict[str, int]
     amounts: dict[str, Decimal]
     summed_pay_changes: Decimal
-    currencies: int
 
     @property
     def pay_changes(self) -> Decimal:
         """End minus start plus leavers minus joiners, so the five parts add up to the cent."""
-        a = self.amounts
-        return a["end"] - a["start"] + a["leavers"] - a["joiners"]
+        amounts = self.amounts
+        return amounts["end"] - amounts["start"] + amounts["leavers"] - amounts["joiners"]
 
 
 def bridge(f: InsightFilters, rates: fx.RateTable) -> Bridge:
@@ -715,23 +741,24 @@ def bridge(f: InsightFilters, rates: fx.RateTable) -> Bridge:
             at_start[span.employee] = span
         if span.counts_on(end):
             at_end[span.employee] = span
-    sums: dict[str, dict[str, Decimal]] = {part: defaultdict(Decimal) for part in BRIDGE_PARTS}
+    part_sums: dict[str, dict[str, Decimal]] = {part: defaultdict(Decimal) for part in BRIDGE_PARTS}
     for employee, span in at_start.items():
-        sums["start"][span.currency] += span.total_cost
+        part_sums["start"][span.currency] += span.total_cost
         if employee in at_end:
-            sums["pay_changes"][span.currency] -= span.total_cost
+            part_sums["pay_changes"][span.currency] -= span.total_cost
         else:
-            sums["leavers"][span.currency] += span.total_cost
+            part_sums["leavers"][span.currency] += span.total_cost
     for employee, span in at_end.items():
-        sums["end"][span.currency] += span.total_cost
+        part_sums["end"][span.currency] += span.total_cost
         if employee in at_start:
-            sums["pay_changes"][span.currency] += span.total_cost
+            part_sums["pay_changes"][span.currency] += span.total_cost
         else:
-            sums["joiners"][span.currency] += span.total_cost
+            part_sums["joiners"][span.currency] += span.total_cost
     convert = Converter(f, rates)
 
     def converted(part: str) -> Decimal:
-        return q2(sum((cost * convert.rate(ccy) for ccy, cost in sums[part].items()), Decimal(0)))
+        by_currency = part_sums[part].items()
+        return q2(sum((cost * convert.rate(ccy) for ccy, cost in by_currency), Decimal(0)))
 
     stayers = len(at_start.keys() & at_end.keys())
     return Bridge(
@@ -746,37 +773,36 @@ def bridge(f: InsightFilters, rates: fx.RateTable) -> Bridge:
         },
         amounts={part: converted(part) for part in ("start", "leavers", "joiners", "end")},
         summed_pay_changes=converted("pay_changes"),
-        currencies=len({span.currency for span in (*at_start.values(), *at_end.values())}),
     )
 
 
 def cost_bridge(f: InsightFilters, rates: fx.RateTable, lookups: Lookups) -> dict:
     """Question 8: start, minus leavers, plus joiners, plus pay changes, end, over the 12 months
     ending at `on` (D62). Start and end need five people each. When leavers, joiners or stayers
-    number 1 to 4, all three changes show their people alone, since any one of them could be
-    worked out from the others, the short one saying why. A part with nobody shows 0."""
-    b = bridge(f, rates)
+    number 1 to 4, the changes with people in them show their people alone, since any one could
+    be worked out from the others: the short one says why and the rest name it. A part with
+    nobody shows 0.00, which gives nothing away."""
+    movement = bridge(f, rates)
     amounts = {
-        "start": b.amounts["start"],
-        # Zero minus, so no leavers is 0.00 and never -0.00.
-        "leavers": Decimal(0) - b.amounts["leavers"],
-        "joiners": b.amounts["joiners"],
-        "pay_changes": b.pay_changes,
-        "end": b.amounts["end"],
+        "start": movement.amounts["start"],
+        "leavers": -movement.amounts["leavers"],
+        "joiners": movement.amounts["joiners"],
+        "pay_changes": movement.pay_changes,
+        "end": movement.amounts["end"],
     }
-    short = [part for part in CHANGES if 0 < b.people[part] < SMALL_GROUP]
+    short = [part for part in CHANGES if 0 < movement.people[part] < SMALL_GROUP]
     parts = []
     for part in BRIDGE_PARTS:
-        people, amount, reason = b.people[part], amounts[part], None
+        people, amount, reason = movement.people[part], amounts[part], None
         if 0 < people < SMALL_GROUP:
             amount, reason = None, f"fewer than {SMALL_GROUP} people"
-        elif part in CHANGES and short:
+        elif part in CHANGES and short and people:
             amount, reason = None, f"withheld with the {CHANGE_NAMES[short[0]]}"
         parts.append({"part": part, "people": people, "amount": amount, "reason": reason})
     return {
         **header(f, rates),
-        "start_date": b.start_date,
-        "end_date": b.end_date,
+        "start_date": movement.start_date,
+        "end_date": movement.end_date,
         "parts": parts,
     }
 
@@ -840,13 +866,20 @@ class Component:
 
 @dataclass
 class Mix:
-    """One country's pay in the reporting currency: each component, then bonus, gross and cost."""
+    """One country's pay in the reporting currency: each component and how many hold it, then
+    bonus, gross and total cost."""
 
     headcount: int = 0
     components: dict[Component, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
+    holders: dict[Component, int] = field(default_factory=lambda: defaultdict(int))
     bonus: Decimal = Decimal(0)
+    bonus_holders: int = 0
     gross: Decimal = Decimal(0)
     total_cost: Decimal = Decimal(0)
+
+
+BONUS = Component("BONUS", "Bonus", EARNING, 0)
+NET = Component("NET", "Net pay", EARNING, 0)
 
 
 def cost_mix(
@@ -856,14 +889,19 @@ def cost_mix(
     `view=cost` gives base, each allowance of the country, bonus and the employer contribution
     as shares of total cost, `view=take_home` net pay and each deduction as shares of gross. The
     amounts are summed per country and currency and converted, so a country whose records are in
-    two currencies still adds up, and each share is rounded to one decimal on its own. Under five
-    people a country shows its headcount alone."""
+    two currencies still adds up, and each share is rounded to one decimal on its own.
+
+    A share times the country's total cost on by-country gives back what its holders are paid,
+    so a country shows its headcount alone when it has fewer than five people, or when a segment
+    it shows is held by 1 to 4 of them, the short segment named (D62). `segments` gives every
+    segment of the shown bars in one order, for the card to stack them."""
     convert = Converter(f, rates)
     records = population(f)
     mixes: dict[str, Mix] = defaultdict(Mix)
     for row in records.values(COUNTRY, "currency_code").annotate(
         people=Count("id"),
         bonus=Sum("bonus_annual"),
+        bonus_holders=Count("id", filter=Q(bonus_annual__gt=0)),
         gross=Sum("gross_annual"),
         cost=Sum("total_cost_annual"),
     ):
@@ -871,6 +909,7 @@ def cost_mix(
         mix = mixes[row[COUNTRY]]
         mix.headcount += row["people"]
         mix.bonus += row["bonus"] * rate
+        mix.bonus_holders += row["bonus_holders"]
         mix.gross += row["gross"] * rate
         mix.total_cost += row["cost"] * rate
     lines = (
@@ -884,7 +923,7 @@ def cost_mix(
             "component__kind",
             "component__sort_order",
         )
-        .annotate(amount=Sum("annual_amount"))
+        .annotate(amount=Sum("annual_amount"), holders=Count("id", filter=Q(annual_amount__gt=0)))
     )
     for row in lines:
         component = Component(
@@ -894,41 +933,67 @@ def cost_mix(
             row["component__sort_order"],
         )
         rate = convert.rate(row["record__currency_code"])
-        mixes[row["record__employee__country_id"]].components[component] += row["amount"] * rate
-    rows = []
+        mix = mixes[row["record__employee__country_id"]]
+        mix.components[component] += row["amount"] * rate
+        mix.holders[component] += row["holders"]
+    rows, shown = [], []
     for code in f.country or tuple(lookups.countries):
         mix = mixes.get(code, Mix())
-        shown = mix.headcount >= SMALL_GROUP and mix.total_cost > 0 and mix.gross > 0
+        parts = mix_parts(mix, view)
+        held = {**mix.holders, BONUS: mix.bonus_holders, NET: mix.headcount}
+        short = [c.name for c in parts if 0 < held[c] < SMALL_GROUP]
+        reason = None
+        if 0 < mix.headcount < SMALL_GROUP:
+            reason = f"fewer than {SMALL_GROUP} people"
+        elif short:
+            reason = f"{short[0]} held by fewer than {SMALL_GROUP} people"
+        segments = None
+        if mix.headcount and reason is None and mix.total_cost > 0 and mix.gross > 0:
+            segments = mix_segments(mix, parts, view)
+            shown.extend(parts)
         rows.append(
             {
                 "country": {"code": code, "name": lookups.countries[code].name},
                 "headcount": mix.headcount,
-                "segments": mix_segments(mix, view) if shown else None,
+                "segments": segments,
+                "reason": reason,
             }
         )
     rows.sort(key=lambda row: row["country"]["name"])
-    return {**header(f, rates), "view": view, "rows": rows}
+    order = [{"code": c.code, "name": c.name} for c in ordered(set(shown), view)]
+    return {**header(f, rates), "view": view, "segments": order, "rows": rows}
 
 
-def mix_segments(mix: Mix, view: str) -> list[dict]:
-    """The bar's segments in component order, each a share of total cost or of gross."""
-    present = sorted(mix.components, key=lambda c: (c.sort_order, c.code))
-
-    def segment(code: str, name: str, amount: Decimal, whole: Decimal) -> dict:
-        return {"code": code, "name": name, "share_pct": q1(amount / whole * 100)}
-
+def ordered(components: set[Component] | list[Component], view: str) -> list[Component]:
+    """Component order: base and the other earnings, bonus, then the employer's contribution, or
+    net pay then each deduction, each kind by its sort order."""
+    rank = {BONUS: (1, 0, ""), NET: (0, 0, "")}
     if view == "take_home":
-        deductions = [c for c in present if c.kind == DEDUCTION]
-        net = mix.gross - sum((mix.components[c] for c in deductions), Decimal(0))
-        return [segment("NET", "Net pay", net, mix.gross)] + [
-            segment(c.code, c.name, mix.components[c], mix.gross) for c in deductions
-        ]
-    cost = mix.total_cost
-    return (
-        [segment(c.code, c.name, mix.components[c], cost) for c in present if c.kind == EARNING]
-        + [segment("BONUS", "Bonus", mix.bonus, cost)]
-        + [segment(c.code, c.name, mix.components[c], cost) for c in present if c.kind == EMPLOYER]
+        kinds = {DEDUCTION: 1}
+    else:
+        kinds = {EARNING: 0, EMPLOYER: 2}
+    return sorted(
+        components,
+        key=lambda c: rank.get(c) or (kinds.get(c.kind, 3), c.sort_order, c.code),
     )
+
+
+def mix_parts(mix: Mix, view: str) -> list[Component]:
+    """The segments a country's bar shows in this view, in order."""
+    if view == "take_home":
+        return ordered([NET, *(c for c in mix.components if c.kind == DEDUCTION)], view)
+    kept = [c for c in mix.components if c.kind in (EARNING, EMPLOYER)]
+    return ordered([*kept, BONUS], view)
+
+
+def mix_segments(mix: Mix, parts: list[Component], view: str) -> list[dict]:
+    """Each segment's share of total cost, or of gross for take-home pay."""
+    deductions = sum((mix.components[c] for c in parts if c.kind == DEDUCTION), Decimal(0))
+    amounts = {**mix.components, BONUS: mix.bonus, NET: mix.gross - deductions}
+    whole = mix.gross if view == "take_home" else mix.total_cost
+    return [
+        {"code": c.code, "name": c.name, "share_pct": q1(amounts[c] / whole * 100)} for c in parts
+    ]
 
 
 INSIGHTS: dict[str, Callable[..., dict]] = {

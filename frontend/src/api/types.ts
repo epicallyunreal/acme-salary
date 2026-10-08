@@ -451,8 +451,10 @@ export interface MixSegment {
 export interface MixRow {
   country: { code: string; name: string };
   headcount: number;
-  /** `null` under five people (D59). */
+  /** `null` under five people, or when a segment is held by 1 to 4 of them, with the reason
+   * (D62). */
   segments: MixSegment[] | null;
+  reason: string | null;
 }
 
 export type MixView = 'cost' | 'take_home';
@@ -460,6 +462,8 @@ export type MixView = 'cost' | 'take_home';
 /** One bar per country: shares of total cost, or of gross split into net and deductions (D62). */
 export interface CostMixInsight extends InsightHeader {
   view: MixView;
+  /** Every segment of the bars shown, in the one order they stack. */
+  segments: { code: string; name: string }[];
   rows: MixRow[];
 }
 
@@ -475,8 +479,7 @@ export interface BonusSide {
   /** `null` with the group's reason when there are fewer than 5 women or men in it. */
   receiving: number | null;
   receiving_pct: string | null;
-  /** `null` too when fewer than 5 women or men receive one. */
-  mean_bonus: string | null;
+  /** `null` too when fewer than 5 women or men receive one. No mean amount is published (D62). */
   median_bonus: string | null;
 }
 
@@ -501,15 +504,17 @@ export interface Quartile {
   headcount: number;
   female: number;
   male: number;
-  other: number;
-  undisclosed: number;
   female_pct: string;
   male_pct: string;
 }
 
+/** Women and men ranked by pay. Other and undisclosed are counted beside, never ranked (D62). */
 export interface QuartilesInsight extends InsightHeader {
   view: 'quartiles';
+  /** The women and men ranked. */
   headcount: number;
+  other_count: number;
+  undisclosed_count: number;
   /** `null` under 20 people, or under 5 women or men, with the reason. */
   quartiles: Quartile[] | null;
   reason: string | null;
@@ -517,7 +522,6 @@ export interface QuartilesInsight extends InsightHeader {
 
 export interface LevelSide {
   headcount: number;
-  mean_gross: string | null;
   median_gross: string | null;
 }
 
@@ -533,9 +537,17 @@ export interface LevelGapRow {
   reason: string | null;
 }
 
+export interface LevelOthers {
+  country: { code: string; name: string };
+  other_count: number;
+  undisclosed_count: number;
+}
+
 export interface LevelGapsInsight extends InsightHeader {
   view: 'by_level';
   rows: LevelGapRow[];
+  /** Counted per country beside the levels, never per level (D62). */
+  others: LevelOthers[];
 }
 
 /** The gender gap on annual pay, in the view the card's control picks (D62). */

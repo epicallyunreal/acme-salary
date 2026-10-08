@@ -13,7 +13,7 @@ from django.utils import timezone
 from rest_framework.generics import GenericAPIView
 from rest_framework.views import APIView
 
-from apps.core.exceptions import Invalid, clip
+from apps.core.filters import parse_choice
 from apps.employees.views import DirectoryMixin
 from apps.exports import tables, writers
 from apps.insights import queries
@@ -24,25 +24,30 @@ CONTENT_TYPES = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "json": "application/json",
 }
-# What each export reads besides `on` and `currency`, and so what its JSON file says it applied:
-# an insight's card control as well, when it has one (D62).
+# What each export reads besides `on` and `currency`, and so what its JSON file says it applied.
+# Trend and cost-bridge count the people employed on each date, so Include exited doesn't apply
+# to them and their files don't say it did (D62).
 DIRECTORY_FILTERS = (*DirectoryMixin.filterset_class.base_filters, "search")
 INSIGHT_FILTERS = ("country", "department", "include_exited")
+DATED_INSIGHTS = ("trend", "cost-bridge")
 
 
 def read_by(name: str) -> tuple[str, ...]:
-    """The insight filters, and the card's control when the insight has one (D62)."""
+    """The filters an insight's export reads (D62)."""
+    if name in DATED_INSIGHTS:
+        return tuple(key for key in INSIGHT_FILTERS if key != "include_exited")
+    return INSIGHT_FILTERS
+
+
+def control_applied(name: str, payload: dict) -> dict:
+    """The card's control as the insight applied it, its default when none was given (D62)."""
     control = queries.CONTROLS.get(name)
-    return (*INSIGHT_FILTERS, control[0]) if control else INSIGHT_FILTERS
+    return {control[0]: payload[control[0]]} if control else {}
 
 
 def parse_file(value: str | None) -> str:
     """`csv`, `xlsx` or `json`, in any case. Anything else, or nothing, is a 400."""
-    given = (value or "").strip().lower()
-    if given in CONTENT_TYPES:
-        return given
-    message = "file must be csv, xlsx or json"
-    raise Invalid({"file": [f"{message}, got {clip(value)}" if value else message]})
+    return parse_choice(value, name="file", choices=tuple(CONTENT_TYPES))
 
 
 def applied(params: QueryDict, keys: tuple[str, ...], on: date, currency: str) -> dict:
@@ -98,4 +103,4 @@ class ExportInsightView(APIView):
         payload, filters = answer(name, request.query_params)
         table = tables.INSIGHT_TABLES[name](payload)
         given = applied(request.query_params, read_by(name), filters.on, filters.currency)
-        return respond(table, file, name, given)
+        return respond(table, file, name, {**given, **control_applied(name, payload)})

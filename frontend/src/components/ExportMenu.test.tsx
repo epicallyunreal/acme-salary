@@ -204,20 +204,28 @@ describe('Export menus on the pages', () => {
     await waitFor(() => expect(saved).toEqual([`acme-${name}-20261007-0900.csv`]));
   });
 
-  it("a card's export sends its control as the URL holds it", async () => {
-    const user = userEvent.setup();
-    const saved = catchSaves();
-    const asked = recordRequests();
-    renderApp('/?trend.measure=headcount');
+  it.each([
+    ['trend.measure=headcount', 'Export cost trend', 'trend', 'measure=headcount'],
+    ['tenure.level=3', 'Export pay by tenure', 'by-tenure', 'level=3'],
+    ['mix.view=take_home', 'Export cost mix', 'cost-mix', 'view=take_home'],
+    ['gap.view=by_level', 'Export gender pay gap', 'gender-gap', 'view=by_level'],
+  ])(
+    "a card's export sends its control as the URL holds it: %s",
+    async (search, label, name, sent) => {
+      const user = userEvent.setup();
+      const saved = catchSaves();
+      const asked = recordRequests();
+      renderApp(`/?${search}`);
 
-    await user.click(await screen.findByRole('button', { name: 'Export cost trend' }));
-    await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
+      await user.click(await screen.findByRole('button', { name: label }));
+      await user.click(screen.getByRole('menuitem', { name: 'CSV' }));
 
-    await waitFor(() => expect(saved).toEqual(['acme-trend-20261007-0900.csv']));
-    expect(asked).toEqual([
-      '/api/v1/exports/insights/trend/?currency=usd&file=csv&measure=headcount Bearer access-1',
-    ]);
-  });
+      await waitFor(() => expect(saved).toEqual([`acme-${name}-20261007-0900.csv`]));
+      expect(asked).toEqual([
+        `/api/v1/exports/insights/${name}/?currency=usd&file=csv&${sent} Bearer access-1`,
+      ]);
+    },
+  );
 
   it('a failed download says so on the page it was asked from', async () => {
     const user = userEvent.setup();

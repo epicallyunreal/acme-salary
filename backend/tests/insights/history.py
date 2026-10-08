@@ -43,13 +43,16 @@ def hire(
     joined: date = LONG_AGO,
     raised_to: int | Decimal | None = None,
     left: date | None = None,
+    dept: str = "engineering",
 ) -> Employee:
-    """One employee on a single BASE line, raised on 1 April 2026 when `raised_to` is given and
-    closed the day after `left`."""
+    """One employee on a single BASE line, raised on 1 April 2026 when `raised_to` is given or
+    closed the day after `left`, never both."""
+    if raised_to and left:
+        raise ValueError("hire() raises or closes a record, not both")
     employee = EmployeeFactory(
         full_name=name,
         country=country(code),
-        department=department("engineering"),
+        department=department(dept),
         joining_date=joined,
         last_date=left,
     )

@@ -12,12 +12,10 @@ import {
 } from 'recharts';
 
 import type { TrendInsight, TrendMeasure, TrendPoint } from '../../api/types';
-import { formatDate, parseIsoDate } from '../../lib/dates';
+import { formatDate, formatMonthShort } from '../../lib/dates';
 import { AXIS, compactTick, GRID, plot, SERIES, STILL } from './chartTheme';
 import { count, EMPLOYED_ON_EACH_DATE, money, people, SMALL_GROUP } from './figures';
 import { ChartNote, ChartTable, ChartTooltip, InsightCard } from './InsightCard';
-
-const monthFormat = new Intl.DateTimeFormat('en-GB', { month: 'short', year: '2-digit' });
 
 /** Question 7 (D62): total cost or headcount at the 24 month-ends ending at the reporting date,
  * one line at a time and never two axes, every month at the one rate in use today. */
@@ -60,7 +58,7 @@ function Trend({
   const cost = measure === 'total_cost';
   const rows = points.map((point) => ({
     point,
-    month: monthFormat.format(parseIsoDate(point.month_end)),
+    month: formatMonthShort(point.month_end),
     // A withheld total is null, so the line breaks there instead of dropping to zero.
     value: cost ? plot(point.total_cost) : point.headcount,
   }));

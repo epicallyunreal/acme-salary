@@ -19,6 +19,15 @@ def test_parse_on_reads_an_iso_date():
     assert parse_on("2027-01-01") == date(2027, 1, 1)
 
 
+def test_parse_on_starts_in_1900():
+    """D62: the trend and the bridge reach two years back from `on`, so year 1 would be a 500."""
+    assert parse_on("1900-01-01") == date(1900, 1, 1)
+    with pytest.raises(Invalid) as excinfo:
+        parse_on("1899-12-31")
+
+    assert excinfo.value.errors == {"on": ["on must be on or after 1900-01-01, got 1899-12-31"]}
+
+
 def test_parse_on_rejects_other_shapes():
     with pytest.raises(Invalid) as excinfo:
         parse_on("31/02/2024")

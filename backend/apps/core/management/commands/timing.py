@@ -22,6 +22,8 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.test import Client
 
+from apps.insights.queries import CONTROLS
+
 CASES = ("directory", "insights", "import", "export", "seed")
 
 # Each directory case is the query string of one request (the /perf-timing skill names them).
@@ -49,13 +51,9 @@ INSIGHT_NAMES = (
     "cost-mix",
 )
 INSIGHT_FILTERS = {"unfiltered": "", "country filter": "country=IN"}
-# A card control that changes what an insight computes is timed as well (D62).
-INSIGHT_CONTROLS = (
-    ("by-tenure", "level=3"),
-    ("cost-mix", "view=take_home"),
-    ("gender-gap", "view=bonus"),
-    ("gender-gap", "view=quartiles"),
-    ("gender-gap", "view=by_level"),
+# Every other value of a card control is timed as well, since each reads its own figures (D62).
+INSIGHT_CONTROLS = tuple(
+    (name, f"{key}={value}") for name, (key, values) in CONTROLS.items() for value in values[1:]
 )
 
 # The unfiltered directory is exported once in each format (SPEC F6).

@@ -13,7 +13,7 @@ import {
 
 import type { CostMixInsight, MixRow, MixView } from '../../api/types';
 import { AXIS, BAR_SIZE, CURSOR, GRID, MIX_COLORS, MIX_OTHER, STILL } from './chartTheme';
-import { count, SMALL_GROUP } from './figures';
+import { count } from './figures';
 import { ChartNote, ChartTable, ChartTooltip, InsightCard } from './InsightCard';
 
 const WHOLE: Record<MixView, string> = { cost: 'total cost', take_home: 'gross pay' };
@@ -45,14 +45,7 @@ function shares(row: MixRow): string {
 
 function Mix({ data }: { data: CostMixInsight }) {
   const shown = data.rows.filter((row) => row.segments !== null);
-  const withheld = data.rows
-    .filter((row) => row.headcount > 0 && row.segments === null)
-    .map((row) => row.country.name);
-  // Every segment any country has, in the order the countries give them, one stacked bar each.
-  const segments = new Map<string, string>();
-  for (const row of shown) {
-    for (const segment of row.segments ?? []) segments.set(segment.code, segment.name);
-  }
+  const withheld = data.rows.filter((row) => row.headcount > 0 && row.segments === null);
   const bars = shown.map((row) => ({
     row,
     name: row.country.name,
@@ -89,13 +82,14 @@ function Mix({ data }: { data: CostMixInsight }) {
               }}
             />
             <Legend iconType="square" wrapperStyle={{ fontSize: 12 }} />
-            {[...segments].map(([code, name]) => (
+            {/* One stacked bar per segment, in the one order the API gives them (D62). */}
+            {data.segments.map(({ code, name }) => (
               <Bar
                 key={code}
                 dataKey={code}
                 name={name}
                 stackId="mix"
-                barSize={BAR_SIZE}
+                maxBarSize={BAR_SIZE}
                 fill={MIX_COLORS[code] ?? MIX_OTHER}
                 {...STILL}
               />
@@ -105,7 +99,7 @@ function Mix({ data }: { data: CostMixInsight }) {
       ) : null}
       {withheld.length ? (
         <ChartNote>
-          Not shown, fewer than {SMALL_GROUP} people: {withheld.join(', ')}.
+          Not shown: {withheld.map((row) => `${row.country.name}, ${row.reason}`).join('; ')}.
         </ChartNote>
       ) : null}
       <ChartTable
@@ -114,7 +108,7 @@ function Mix({ data }: { data: CostMixInsight }) {
         rows={data.rows.map((row) => [
           row.country.name,
           count(row.headcount),
-          row.segments ? shares(row) : row.headcount ? `fewer than ${SMALL_GROUP} people` : '—',
+          row.segments ? shares(row) : (row.reason ?? '—'),
         ])}
       />
     </>

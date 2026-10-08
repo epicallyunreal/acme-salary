@@ -22,6 +22,7 @@ TODAY = date(2026, 10, 7)
 NEW_YEAR = date(2027, 1, 1)
 USD_RATES = {"label": "October 2026 rates", "effective_from": "2026-10-01"}
 EUR_RATES = {"label": "October 2026 rates", "effective_from": "2026-10-01"}
+FEWER_THAN_5 = "fewer than 5 people"
 
 
 @pytest.fixture
@@ -790,8 +791,8 @@ def gap(
 
 
 NOBODY_ELSE = [
-    gap("NL", "Netherlands", 0, None, 0, None, reason=BOTH),
-    gap("SG", "Singapore", 0, None, 0, None, reason=BOTH),
+    gap("NL", "Netherlands", 0, None, 0, None),
+    gap("SG", "Singapore", 0, None, 0, None),
 ]
 
 
@@ -822,7 +823,7 @@ NOBODY_ELSE = [
                 gap("DE", "Germany", 2, None, 2, None, reason=BOTH),
                 gap("IN", "India", 3, None, 3, None, reason=BOTH),
                 *NOBODY_ELSE,
-                gap("GB", "United Kingdom", 0, None, 0, None, reason=BOTH),
+                gap("GB", "United Kingdom", 0, None, 0, None),
                 gap("US", "United States", 0, None, 5, "120000.00", reason=WOMEN),
                 gap(None, None, 5, "22500.00", 10, "105000.00", "78.6"),
             ],
@@ -919,7 +920,6 @@ def point(month_end, headcount, total_cost):
 
 
 def test_the_month_ends_are_the_24_in_the_24_months_ending_at_on():
-    """On a month-end the list ends at `on` itself, and a leap year keeps its 29 February."""
     ends = queries.month_ends(TODAY)
 
     assert (len(ends), ends[0], ends[1], ends[-1]) == (
@@ -928,14 +928,22 @@ def test_the_month_ends_are_the_24_in_the_24_months_ending_at_on():
         date(2024, 11, 30),
         date(2026, 9, 30),
     )
+
+
+def test_on_a_month_end_the_month_ends_stop_at_on_itself():
     assert queries.month_ends(date(2026, 10, 31))[::23] == [date(2024, 11, 30), date(2026, 10, 31)]
+
+
+def test_a_leap_year_keeps_its_29_february():
     assert date(2024, 2, 29) in queries.month_ends(date(2024, 3, 15))
 
 
 def test_trend_counts_the_people_employed_at_each_month_end_at_one_rate(history):
     """A4 and A5 are EUR, at 1.25 on every date although 1.10 was in effect until October 2026.
-    X1 leaves on 31 March 2025, B1 joins in January 2025, J1 to J4 join through 2026, three
-    raises land on 1 April 2026, and J5 joins on 1 October, after the last month-end."""
+    X1's last day is 31 March 2025, a month-end, so he counts on it and is gone by 30 April. B1
+    joins in January 2025, J1 to J4 through 2026, J4 on 30 September, a month-end that counts
+    him. Three raises land on 1 April 2026, and J5 joins on 1 October, after the last
+    month-end."""
     result = insight("trend")
 
     assert (result["measure"], result["latest"]) == ("total_cost", "2026-09-30")
@@ -972,6 +980,26 @@ def test_a_trend_point_under_five_people_shows_its_headcount_alone(history):
     points = insight("trend", country=["DE"])["points"]
 
     assert [(p["headcount"], p["total_cost"]) for p in points] == [(2, None)] * 20 + [(3, None)] * 4
+
+
+def test_trend_reads_the_country_and_department_filters(history):
+    """US engineering: A1 to A3 and X1 are four, then B1 makes five in January 2025, 100,000 +
+    80,000 + 60,000 + 55,000 + 65,000 = 360,000. X1 leaves in March, and J1 makes five again in
+    November, 375,000 with J1's 70,000. J2 makes six from February 2026, 425,000, the raises
+    443,000 from April, and J4 seven in September, 533,000. A sales hire is left out."""
+    hire("S1", "US", 1_000_000, dept="sales")
+
+    points = insight("trend", country=["US"], department=["engineering"])["points"]
+
+    assert [(p["headcount"], p["total_cost"]) for p in points] == (
+        [(4, None)] * 3
+        + [(5, "360000.00")] * 3
+        + [(4, None)] * 7
+        + [(5, "375000.00")] * 3
+        + [(6, "425000.00")] * 2
+        + [(6, "443000.00")] * 5
+        + [(7, "533000.00")]
+    )
 
 
 def test_include_exited_does_not_apply_to_trend(history):
@@ -1016,7 +1044,7 @@ def test_three_leavers_withhold_leavers_joiners_and_pay_changes(lookups):
 
     assert insight("cost-bridge")["parts"] == [
         part("start", 9, "511000.00"),
-        part("leavers", 3, None, "fewer than 5 people"),
+        part("leavers", 3, None, FEWER_THAN_5),
         part("joiners", 5, None, "withheld with the leavers"),
         part("pay_changes", 6, None, "withheld with the leavers"),
         part("end", 11, "733000.00"),
@@ -1037,12 +1065,8 @@ def test_pay_changes_summed_from_the_stayers_match_the_balancing_figure(lookups)
 
     b = queries.bridge(filters(), fx.RateTable.load(TODAY))
 
-    assert (b.pay_changes, b.summed_pay_changes, b.currencies) == (
-        Decimal("0.12"),
-        Decimal("0.13"),
-        1,
-    )
-    assert abs(b.pay_changes - b.summed_pay_changes) <= Decimal("0.03") * b.currencies
+    assert (b.pay_changes, b.summed_pay_changes) == (Decimal("0.12"), Decimal("0.13"))
+    assert abs(b.pay_changes - b.summed_pay_changes) <= Decimal("0.03")
     parts = [p["amount"] for p in insight("cost-bridge")["parts"]]
     assert parts == ["12500.13", "-6250.06", "6250.06", "0.12", "12500.25"]
 
@@ -1052,6 +1076,94 @@ def test_include_exited_does_not_apply_to_the_bridge(lookups):
     build_history(with_leavers=True)
 
     assert insight("cost-bridge", include_exited=True) == insight("cost-bridge")
+
+
+def test_a_start_or_end_under_five_shows_its_people_alone(lookups):
+    """Engineering: three stay on 10,000 and five join on 20,000, so the start has three people
+    and the end eight, 30,000 + 100,000 = 130,000. Sales is the mirror: three stay and five
+    leave. Each time the stayers are too few, so the other change goes with them."""
+    for n in range(3):
+        hire(f"E{n}", "US", 10_000)
+        hire(f"S{n}", "US", 10_000, dept="sales")
+    for n in range(5):
+        hire(f"J{n}", "US", 20_000, joined=date(2026, 1, 15))
+        hire(f"L{n}", "US", 20_000, left=date(2026, 1, 31), dept="sales")
+
+    assert insight("cost-bridge", department=["engineering"])["parts"] == [
+        part("start", 3, None, FEWER_THAN_5),
+        part("leavers", 0, "0.00"),
+        part("joiners", 5, None, "withheld with the pay changes"),
+        part("pay_changes", 3, None, FEWER_THAN_5),
+        part("end", 8, "130000.00"),
+    ]
+    assert insight("cost-bridge", department=["sales"])["parts"] == [
+        part("start", 8, "130000.00"),
+        part("leavers", 5, None, "withheld with the pay changes"),
+        part("joiners", 0, "0.00"),
+        part("pay_changes", 3, None, FEWER_THAN_5),
+        part("end", 3, None, FEWER_THAN_5),
+    ]
+
+
+def test_four_leavers_are_withheld_and_five_are_shown(lookups):
+    """Five stay on 10,000 and four leave on 20,000: start 130,000, end 50,000, the leavers too
+    few and the pay changes with them. A fifth leaver shows every part: start 150,000, leavers
+    -100,000, no pay change, end 50,000."""
+    for n in range(5):
+        hire(f"S{n}", "US", 10_000)
+    for n in range(4):
+        hire(f"L{n}", "US", 20_000, left=date(2026, 1, 31))
+
+    assert insight("cost-bridge")["parts"] == [
+        part("start", 9, "130000.00"),
+        part("leavers", 4, None, FEWER_THAN_5),
+        part("joiners", 0, "0.00"),
+        part("pay_changes", 5, None, "withheld with the leavers"),
+        part("end", 5, "50000.00"),
+    ]
+
+    hire("L4", "US", 20_000, left=date(2026, 1, 31))
+
+    assert insight("cost-bridge")["parts"] == [
+        part("start", 10, "150000.00"),
+        part("leavers", 5, "-100000.00"),
+        part("joiners", 0, "0.00"),
+        part("pay_changes", 5, "0.00"),
+        part("end", 5, "50000.00"),
+    ]
+
+
+def test_two_short_changes_each_say_so_and_the_third_names_the_first(lookups):
+    """Five stay on 10,000, three leave on 20,000 and two join on 30,000: start and end are both
+    50,000 + 60,000 = 110,000."""
+    for n in range(5):
+        hire(f"S{n}", "US", 10_000)
+    for n in range(3):
+        hire(f"L{n}", "US", 20_000, left=date(2026, 1, 31))
+    for n in range(2):
+        hire(f"J{n}", "US", 30_000, joined=date(2026, 1, 15))
+
+    assert insight("cost-bridge")["parts"] == [
+        part("start", 8, "110000.00"),
+        part("leavers", 3, None, FEWER_THAN_5),
+        part("joiners", 2, None, FEWER_THAN_5),
+        part("pay_changes", 5, None, "withheld with the leavers"),
+        part("end", 7, "110000.00"),
+    ]
+
+
+def test_the_bridge_counts_who_is_employed_on_its_two_dates(lookups):
+    """The start is 7 October 2025. A last day of 6 October is in neither date, a last day of
+    the 7th makes a leaver, and joining on `on` makes a joiner."""
+    for n in range(5):
+        hire(f"S{n}", "US", 10_000)
+    hire("Gone", "US", 20_000, left=date(2025, 10, 6))
+    hire("Left", "US", 30_000, left=date(2025, 10, 7))
+    hire("New", "US", 40_000, joined=TODAY)
+
+    people = [p["people"] for p in insight("cost-bridge")["parts"]]
+
+    assert people == [6, 1, 1, 5, 6]
 
 
 # by-tenure (D62)
@@ -1072,16 +1184,31 @@ def tenure(*headcounts_and_medians):
     ("level", "rows"),
     [
         ("all", tenure((0, None), (0, None), (0, None), (27, "75000.00"), (0, None))),
+        ("1", tenure((0, None), (0, None), (0, None), (4, None), (0, None))),
         ("3", tenure((0, None), (0, None), (0, None), (5, "87500.00"), (0, None))),
         ("6", tenure((0, None), (0, None), (0, None), (3, None), (0, None))),
     ],
 )
 def test_by_tenure_within_a_level(people, level, rows):
     """DESIGN 9's people joined on 1 January 2020, six years before `on`. Level 3 is U5, U6, I3,
-    I9 and D2, whose median is D2's 87,500. Level 6 has three, under five (D59)."""
+    I9 and D2, whose median is D2's 87,500. Level 1 has four, U1, U2, I1 and I7, and level 6
+    three, under five (D59)."""
     result = insight("by-tenure", control={"level": level})
 
     assert (result["level"], result["rows"]) == (level, rows)
+
+
+def test_completed_years_count_whole_years_to_the_anniversary():
+    """A day short of an anniversary is a year fewer. Someone who joined on 29 February has their
+    anniversary on 28 February in a year without one."""
+    years = queries.completed_years
+
+    assert years(date(2020, 10, 8), TODAY) == 5
+    assert years(date(2020, 10, 7), TODAY) == 6
+    assert years(date(2020, 2, 29), date(2026, 2, 27)) == 5
+    assert years(date(2020, 2, 29), date(2026, 2, 28)) == 6
+    assert years(date(2020, 2, 29), date(2024, 2, 28)) == 3
+    assert years(date(2020, 2, 29), date(2024, 2, 29)) == 4
 
 
 def test_each_tenure_band_starts_on_its_anniversary(lookups):
@@ -1123,6 +1250,20 @@ def test_a_leavers_tenure_is_counted_to_their_last_date(lookups):
     assert [row["headcount"] for row in rows] == [0, 0, 0, 1, 0]
 
 
+# The Netherlands in its own currency, so no rate is needed
+
+NL_LOCAL = {"country": ["NL"], "currency": "local"}
+
+
+def hire_nl(gender="female", gross=50_000, *, level=1, bonus=0, lines=None):
+    CompensationRecordFactory(
+        employee=EmployeeFactory(country=country("NL"), gender=gender, level=level),
+        lines=lines or {"BASE": Decimal(gross)},
+        bonus_annual=Decimal(bonus),
+        effective_from=date(2024, 1, 1),
+    )
+
+
 # cost-mix (D62)
 
 
@@ -1130,19 +1271,32 @@ def segment(code, name, share):
     return {"code": code, "name": name, "share_pct": share}
 
 
-def mix(code, name, headcount, segments=None):
-    return {"country": {"code": code, "name": name}, "headcount": headcount, "segments": segments}
+def mix(code, name, headcount, segments=None, reason=None):
+    return {
+        "country": {"code": code, "name": name},
+        "headcount": headcount,
+        "segments": segments,
+        "reason": reason,
+    }
 
 
 def test_cost_mix_gives_each_country_its_shares_of_total_cost(people):
     """DESIGN 9's lines are fixed shares of gross. India: base 0.6, HRA 0.25, allowances 0.15
     and employer 0.12, of a total cost of 1.12. The US: base 1, employer 0.1, of 1.1. Nobody has
-    a bonus. Germany has four people and the UK one, so they show their headcount alone."""
+    a bonus. Germany has four people and the UK one, so they show their headcount alone. The
+    segments come once, in the order the card stacks them."""
     result = insight("cost-mix")
 
     assert result["view"] == "cost"
+    assert result["segments"] == [
+        {"code": "BASE", "name": "Base salary"},
+        {"code": "HRA", "name": "House rent allowance"},
+        {"code": "ALLOWANCES", "name": "Allowances"},
+        {"code": "BONUS", "name": "Bonus"},
+        {"code": "EMPLOYER_CONTRIBUTION", "name": "Employer contribution"},
+    ]
     assert result["rows"] == [
-        mix("DE", "Germany", 4),
+        mix("DE", "Germany", 4, reason=FEWER_THAN_5),
         mix(
             "IN",
             "India",
@@ -1157,7 +1311,7 @@ def test_cost_mix_gives_each_country_its_shares_of_total_cost(people):
         ),
         mix("NL", "Netherlands", 0),
         mix("SG", "Singapore", 0),
-        mix("GB", "United Kingdom", 1),
+        mix("GB", "United Kingdom", 1, reason=FEWER_THAN_5),
         mix(
             "US",
             "United States",
@@ -1173,9 +1327,13 @@ def test_cost_mix_gives_each_country_its_shares_of_total_cost(people):
 
 def test_cost_mix_take_home_splits_gross_into_net_and_each_deduction(people):
     """India's tax is 0.1 of gross and the US's 0.2."""
-    rows = insight("cost-mix", control={"view": "take_home"}, country=["IN", "US"])["rows"]
+    result = insight("cost-mix", control={"view": "take_home"}, country=["IN", "US"])
 
-    assert rows == [
+    assert result["segments"] == [
+        {"code": "NET", "name": "Net pay"},
+        {"code": "TAX", "name": "Income tax"},
+    ]
+    assert result["rows"] == [
         mix(
             "IN",
             "India",
@@ -1191,147 +1349,261 @@ def test_cost_mix_take_home_splits_gross_into_net_and_each_deduction(people):
     ]
 
 
-# gender-gap's views (D62), in the Netherlands' own currency so no rate is needed
+def test_five_people_show_a_bar_and_four_their_headcount_alone(people):
+    """US engineering is U1 to U5, German engineering D1 to D4."""
+    rows = insight("cost-mix", country=["DE", "US"], department=["engineering"])["rows"]
 
-NL_LOCAL = {"country": ["NL"], "currency": "local"}
-
-
-def hire_nl(gender, gross, *, level=1, bonus=0):
-    CompensationRecordFactory(
-        employee=EmployeeFactory(country=country("NL"), gender=gender, level=level),
-        lines={"BASE": Decimal(gross)},
-        bonus_annual=Decimal(bonus),
-        effective_from=date(2024, 1, 1),
-    )
+    assert [(row["headcount"], row["reason"]) for row in rows] == [(4, FEWER_THAN_5), (5, None)]
+    assert rows[1]["segments"] is not None
 
 
-def bonus_side(headcount, receiving, pct, mean_bonus, median_bonus):
+def test_a_bonus_held_by_four_hides_the_bar_and_by_five_shows_it(lookups):
+    """Six on 50,000, four with a bonus of 5,000: the bonus share would give back what those four
+    are paid. A seventh with a bonus makes five: base 350,000 and bonus 25,000 of 375,000, so
+    93.3% and 6.7%."""
+    for bonus in (5000, 5000, 5000, 5000, 0, 0):
+        hire_nl(bonus=bonus)
+
+    (row,) = insight("cost-mix", **NL_LOCAL)["rows"]
+
+    assert row == mix("NL", "Netherlands", 6, reason="Bonus held by fewer than 5 people")
+
+    hire_nl(bonus=5000)
+    result = insight("cost-mix", **NL_LOCAL)
+
+    assert result["rows"] == [
+        mix(
+            "NL",
+            "Netherlands",
+            7,
+            [segment("BASE", "Base salary", "93.3"), segment("BONUS", "Bonus", "6.7")],
+        )
+    ]
+
+
+def test_a_deduction_held_by_four_hides_the_take_home_bar(lookups):
+    """Six people, four of them with a tax line: net pay and tax would give back their pay."""
+    for taxed in (True, True, True, True, False, False):
+        tax = {"TAX": Decimal(10_000)} if taxed else {}
+        hire_nl(lines={"BASE": Decimal(50_000), **tax})
+
+    result = insight("cost-mix", control={"view": "take_home"}, **NL_LOCAL)
+
+    assert result["rows"] == [
+        mix("NL", "Netherlands", 6, reason="Income tax held by fewer than 5 people")
+    ]
+    assert result["segments"] == []
+
+
+# gender-gap's views (D62)
+
+
+NETHERLANDS = {"code": "NL", "name": "Netherlands"}
+
+
+def bonus_side(headcount, receiving, pct, median_bonus):
     return {
         "headcount": headcount,
         "receiving": receiving,
         "receiving_pct": pct,
-        "mean_bonus": mean_bonus,
         "median_bonus": median_bonus,
     }
 
 
+def bonus_view() -> dict:
+    """The Netherlands' row; overall is the same group."""
+    (row, overall) = insight("gender-gap", control={"view": "bonus"}, **NL_LOCAL)["rows"]
+    assert overall == {**row, "country": None}
+    return row
+
+
 def test_the_bonus_view_compares_who_receives_one_and_how_much(lookups):
     """Five of six women receive 1,000 to 5,000, mean and median 3,000. All six men receive
-    2,000 to 7,000, mean 4,500 and median (4,000 + 5,000) / 2 = 4,500. Both gaps are
-    (4,500 - 3,000) / 4,500 = 33.3% of men's bonus. Overall is the same group."""
+    2,000 to 6,000 and 10,000, mean 5,000 and median (4,000 + 5,000) / 2 = 4,500. The mean gap
+    is (5,000 - 3,000) / 5,000 = 40.0% of men's bonus and the median gap (4,500 - 3,000) / 4,500
+    = 33.3%. No mean amount is published (D62). The other and the undisclosed employee are
+    counted beside and change nothing."""
     for bonus in (1000, 2000, 3000, 4000, 5000, 0):
-        hire_nl("female", 50_000, bonus=bonus)
-    for bonus in (2000, 3000, 4000, 5000, 6000, 7000):
-        hire_nl("male", 50_000, bonus=bonus)
-    netherlands = {
-        "country": {"code": "NL", "name": "Netherlands"},
-        "female": bonus_side(6, 5, "83.3", "3000.00", "3000.00"),
-        "male": bonus_side(6, 6, "100.0", "4500.00", "4500.00"),
-        "other_count": 0,
-        "undisclosed_count": 0,
-        "mean_gap_pct": "33.3",
+        hire_nl("female", bonus=bonus)
+    for bonus in (2000, 3000, 4000, 5000, 6000, 10_000):
+        hire_nl("male", bonus=bonus)
+    hire_nl("other", bonus=9000)
+    hire_nl("undisclosed")
+
+    result = insight("gender-gap", control={"view": "bonus"}, **NL_LOCAL)
+
+    assert result["view"] == "bonus"
+    assert bonus_view() == {
+        "country": NETHERLANDS,
+        "female": bonus_side(6, 5, "83.3", "3000.00"),
+        "male": bonus_side(6, 6, "100.0", "4500.00"),
+        "other_count": 1,
+        "undisclosed_count": 1,
+        "mean_gap_pct": "40.0",
         "median_gap_pct": "33.3",
         "reason": None,
     }
 
-    result = insight("gender-gap", control={"view": "bonus"}, **NL_LOCAL)
 
-    assert (result["view"], result["rows"]) == (
-        "bonus",
-        [netherlands, {**netherlands, "country": None}],
+def test_a_bonus_gap_needs_five_of_each_with_a_bonus(lookups):
+    """Four of six women receive a bonus: the shares show, the medians and gaps do not. A fifth
+    woman with one shows them: 1,000 to 5,000 against 2,000 to 7,000, means and medians 3,000
+    and 4,500, so both gaps are 33.3%."""
+    for bonus in (1000, 2000, 3000, 4000, 0, 0):
+        hire_nl("female", bonus=bonus)
+    for bonus in (2000, 3000, 4000, 5000, 6000, 7000):
+        hire_nl("male", bonus=bonus)
+
+    row = bonus_view()
+
+    assert (row["female"], row["male"]) == (
+        bonus_side(6, 4, "66.7", None),
+        bonus_side(6, 6, "100.0", None),
+    )
+    assert (row["mean_gap_pct"], row["median_gap_pct"], row["reason"]) == (
+        None,
+        None,
+        "fewer than 5 women with a bonus",
+    )
+
+    hire_nl("female", bonus=5000)
+    row = bonus_view()
+
+    assert row["female"] == bonus_side(7, 5, "71.4", "3000.00")
+    assert (row["mean_gap_pct"], row["median_gap_pct"], row["reason"]) == ("33.3", "33.3", None)
+
+
+def test_a_bonus_reason_names_both_sides_when_both_are_short(lookups):
+    for bonus in (1000, 2000, 3000, 4000, 0):
+        hire_nl("female", bonus=bonus)
+    for bonus in (1000, 2000, 3000, 0, 0):
+        hire_nl("male", bonus=bonus)
+
+    assert bonus_view()["reason"] == "fewer than 5 women and fewer than 5 men with a bonus"
+
+
+def test_bonus_shares_need_five_women_and_five_men(lookups):
+    for _ in range(4):
+        hire_nl("female", bonus=1000)
+    for _ in range(5):
+        hire_nl("male", bonus=1000)
+
+    row = bonus_view()
+
+    assert (row["female"], row["male"], row["reason"]) == (
+        bonus_side(4, None, None, None),
+        bonus_side(5, None, None, None),
+        WOMEN,
     )
 
 
-def test_a_bonus_gap_needs_five_of_each_with_a_bonus(lookups):
-    """Three of six women receive a bonus: the shares show, the amounts and gaps do not."""
-    for bonus in (1000, 2000, 3000, 0, 0, 0):
-        hire_nl("female", 50_000, bonus=bonus)
-    for bonus in (2000, 3000, 4000, 5000, 6000, 7000):
-        hire_nl("male", 50_000, bonus=bonus)
-
-    (row, _) = insight("gender-gap", control={"view": "bonus"}, **NL_LOCAL)["rows"]
-
-    assert row["female"] == bonus_side(6, 3, "50.0", None, None)
-    assert row["male"] == bonus_side(6, 6, "100.0", None, None)
-    assert (row["mean_gap_pct"], row["reason"]) == (None, "fewer than 5 women with a bonus")
+def quartile(number, women, men, women_pct, men_pct):
+    return {
+        "quartile": number,
+        "headcount": women + men,
+        "female": women,
+        "male": men,
+        "female_pct": women_pct,
+        "male_pct": men_pct,
+    }
 
 
-def test_the_quartiles_rank_everyone_and_break_a_tie_by_employee_id(lookups):
-    """22 people cut at 5, 11 and 16. The fifth and sixth both earn 54,000: the woman, hired
-    first, closes the lowest quartile and the man opens the next. Other and undisclosed are in
-    the top quartile and counted beside the women and men."""
-    pay = [50_000, 51_000, 52_000, 53_000, 54_000, 54_000] + [56_000 + 1000 * n for n in range(16)]
-    genders = ["female", "male"] * 10 + ["other", "undisclosed"]
-    for gross, gender in zip(pay, genders, strict=True):
+def test_the_quartiles_rank_women_and_men_and_break_a_tie_by_employee_id(lookups):
+    """Ten women and ten men cut at 5, 10 and 15. The fifth and sixth both earn 54,000: the man,
+    hired first, closes the lowest quartile and the woman opens the next, where ranking women
+    first would swap them. Other and undisclosed are counted beside and never ranked: on 30,000
+    the one who is other would be lowest (D62)."""
+    first_six = [
+        (50_000, "female"),
+        (51_000, "male"),
+        (52_000, "female"),
+        (53_000, "male"),
+        (54_000, "male"),
+        (54_000, "female"),
+    ]
+    rest = [(56_000 + 1000 * n, ("female", "male")[n % 2]) for n in range(14)]
+    for gross, gender in first_six + rest:
         hire_nl(gender, gross)
+    hire_nl("other", 30_000)
+    hire_nl("undisclosed", 200_000)
 
     result = insight("gender-gap", control={"view": "quartiles"}, **NL_LOCAL)
 
-    def quartile(number, headcount, women, men, other, undisclosed, women_pct, men_pct):
-        return {
-            "quartile": number,
-            "headcount": headcount,
-            "female": women,
-            "male": men,
-            "other": other,
-            "undisclosed": undisclosed,
-            "female_pct": women_pct,
-            "male_pct": men_pct,
-        }
-
-    assert (result["headcount"], result["reason"]) == (22, None)
+    assert (
+        result["headcount"],
+        result["other_count"],
+        result["undisclosed_count"],
+        result["reason"],
+    ) == (20, 1, 1, None)
     assert result["quartiles"] == [
-        quartile(1, 5, 3, 2, 0, 0, "60.0", "40.0"),
-        quartile(2, 6, 3, 3, 0, 0, "50.0", "50.0"),
-        quartile(3, 5, 2, 3, 0, 0, "40.0", "60.0"),
-        quartile(4, 6, 2, 2, 1, 1, "33.3", "33.3"),
+        quartile(1, 2, 3, "40.0", "60.0"),
+        quartile(2, 3, 2, "60.0", "40.0"),
+        quartile(3, 3, 2, "60.0", "40.0"),
+        quartile(4, 2, 3, "40.0", "60.0"),
     ]
 
 
-def test_quartiles_need_twenty_people(people):
-    result = insight("gender-gap", control={"view": "quartiles"}, country=["IN"])
+def test_quartiles_need_twenty_women_and_men_five_of_each(lookups):
+    """Four women and fifteen men are 19, and the undisclosed one is not ranked. A sixteenth man
+    makes 20, with four women. A fifth woman makes 21, cut at 5, 10 and 15."""
+    for _ in range(4):
+        hire_nl("female")
+    for _ in range(15):
+        hire_nl("male")
+    hire_nl("undisclosed")
 
-    assert (result["headcount"], result["quartiles"], result["reason"]) == (
-        12,
-        None,
-        "fewer than 20 people",
-    )
+    def quartiles():
+        result = insight("gender-gap", control={"view": "quartiles"}, **NL_LOCAL)
+        sizes = [q["headcount"] for q in result["quartiles"]] if result["quartiles"] else None
+        return (result["headcount"], sizes, result["reason"])
+
+    assert quartiles() == (19, None, "fewer than 20 people")
+    hire_nl("male")
+    assert quartiles() == (20, None, WOMEN)
+    hire_nl("female")
+    assert quartiles() == (21, [5, 5, 5, 6], None)
 
 
 def test_the_by_level_view_flags_a_mean_gap_of_five_percent_either_way(lookups):
-    """Level 1: women 40,000 to 48,000 (mean 44,000), men 44,000 to 52,000 (mean 48,000), a gap
-    of 8.3%, flagged. Level 2: 50,000 against 52,000, 3.8%, not. Level 3: women 60,000, men
-    55,000, -9.1%, flagged as well. Levels 4 to 6 have nobody."""
+    """Level 1: women's mean 46,000 and median 44,000, men's 50,000 and 48,000, gaps of 8.0% and
+    8.3%, flagged. Level 2: 95,000 against 100,000, exactly 5.0%, flagged. Level 3: 95,001
+    against 100,000 is 4.999%, shown as 5.0 and not flagged, since the flag reads the gap before
+    rounding. Level 4: women 60,000, men 55,000, -9.1%, flagged as well. Level 5 has four women,
+    and level 6 nobody. The other and the undisclosed employee are counted per country."""
     for women, men, level in (
-        ((40_000, 42_000, 44_000, 46_000, 48_000), (44_000, 46_000, 48_000, 50_000, 52_000), 1),
-        ((50_000,) * 5, (52_000,) * 5, 2),
-        ((60_000,) * 5, (55_000,) * 5, 3),
+        ((40_000, 42_000, 44_000, 46_000, 58_000), (44_000, 46_000, 48_000, 50_000, 62_000), 1),
+        ((95_000,) * 5, (100_000,) * 5, 2),
+        ((95_001,) * 5, (100_000,) * 5, 3),
+        ((60_000,) * 5, (55_000,) * 5, 4),
+        ((50_000,) * 4, (50_000,) * 5, 5),
     ):
         for gross in women:
             hire_nl("female", gross, level=level)
         for gross in men:
             hire_nl("male", gross, level=level)
+    hire_nl("other", 70_000, level=1)
+    hire_nl("undisclosed", 70_000, level=4)
 
-    rows = insight("gender-gap", control={"view": "by_level"}, **NL_LOCAL)["rows"]
+    result = insight("gender-gap", control={"view": "by_level"}, **NL_LOCAL)
 
-    def level_row(level, women, men, mean_gap, median_gap, flagged, reason=None):
+    def level_row(level, women, men, mean_gap=None, median_gap=None, flagged=False, reason=None):
         return {
-            "country": {"code": "NL", "name": "Netherlands"},
+            "country": NETHERLANDS,
             "level": level,
-            "female": dict(zip(("headcount", "mean_gross", "median_gross"), women, strict=True)),
-            "male": dict(zip(("headcount", "mean_gross", "median_gross"), men, strict=True)),
+            "female": {"headcount": women[0], "median_gross": women[1]},
+            "male": {"headcount": men[0], "median_gross": men[1]},
             "mean_gap_pct": mean_gap,
             "median_gap_pct": median_gap,
             "flagged": flagged,
             "reason": reason,
         }
 
-    nobody = (0, None, None)
-    assert rows == [
-        level_row(1, (5, "44000.00", "44000.00"), (5, "48000.00", "48000.00"), "8.3", "8.3", True),
-        level_row(2, (5, "50000.00", "50000.00"), (5, "52000.00", "52000.00"), "3.8", "3.8", False),
-        level_row(
-            3, (5, "60000.00", "60000.00"), (5, "55000.00", "55000.00"), "-9.1", "-9.1", True
-        ),
-        *[level_row(level, nobody, nobody, None, None, False, BOTH) for level in (4, 5, 6)],
+    assert result["rows"] == [
+        level_row(1, (5, "44000.00"), (5, "48000.00"), "8.0", "8.3", True),
+        level_row(2, (5, "95000.00"), (5, "100000.00"), "5.0", "5.0", True),
+        level_row(3, (5, "95001.00"), (5, "100000.00"), "5.0", "5.0", False),
+        level_row(4, (5, "60000.00"), (5, "55000.00"), "-9.1", "-9.1", True),
+        level_row(5, (4, None), (5, None), reason=WOMEN),
+        level_row(6, (0, None), (0, None)),
     ]
+    assert result["others"] == [{"country": NETHERLANDS, "other_count": 1, "undisclosed_count": 1}]

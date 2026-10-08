@@ -6,12 +6,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { useInsight } from '../../api/insights';
 import { setSession } from '../../lib/auth';
+import type { MixView, TrendMeasure } from '../../api/types';
 import {
   bonusGap,
   costBridgeShown,
   distribution,
   levelGapView,
   quartileGap,
+  quartileGapWithheld,
   summary,
 } from '../../test/fixtures/insights';
 import { renderWithProviders } from '../../test/render';
@@ -52,8 +54,8 @@ function Gap() {
   const query = useInsight('gender-gap', DASHBOARD_DEFAULTS);
   return <GenderGapCard query={query} />;
 }
-function Mixes() {
-  const query = useInsight('cost-mix', DASHBOARD_DEFAULTS, { view: 'cost' });
+function Mixes({ view = 'cost' }: { view?: MixView }) {
+  const query = useInsight('cost-mix', DASHBOARD_DEFAULTS, { view });
   return <CostMixCard query={query} />;
 }
 function Tenures() {
@@ -64,9 +66,15 @@ function Bridge({ includeExited = false }: { includeExited?: boolean }) {
   const query = useInsight('cost-bridge', DASHBOARD_DEFAULTS);
   return <CostBridgeCard query={query} includeExited={includeExited} />;
 }
-function Trend({ includeExited = false }: { includeExited?: boolean }) {
-  const query = useInsight('trend', DASHBOARD_DEFAULTS, { measure: 'total_cost' });
-  return <TrendCard query={query} measure="total_cost" includeExited={includeExited} />;
+function Trend({
+  includeExited = false,
+  measure = 'total_cost',
+}: {
+  includeExited?: boolean;
+  measure?: TrendMeasure;
+}) {
+  const query = useInsight('trend', DASHBOARD_DEFAULTS, { measure });
+  return <TrendCard query={query} measure={measure} includeExited={includeExited} />;
 }
 
 /** One row of a chart's table, read the way a screen reader reads it. */
@@ -263,6 +271,7 @@ describe('insight cards', () => {
         "Follows EU Directive 2023/970 Article 9 and the UK's six gender pay gap measures, on annual pay. Not a statutory filing: no hours, no legal entities.",
       ),
     ).toBeInTheDocument();
+    expect(await row('Gender pay gap', 'Netherlands')).toEqual(['0', '—', '0', '—', '0', '0', '—']);
     expect(await row('Gender pay gap', 'Overall')).toEqual([
       '13',
       'USD 62,500',
@@ -286,7 +295,7 @@ describe('insight cards', () => {
       within(india)
         .getAllByRole('cell')
         .map((cell) => cell.textContent),
-    ).toEqual(['5 of 6 (83.3%)', '6 of 6 (100.0%)', '33.3%', '33.3%', '0, 0']);
+    ).toEqual(['5 of 6 (83.3%)', '6 of 6 (100.0%)', '40.0%', '33.3%', '1, 0']);
     const us = within(table)
       .getByRole('rowheader', { name: 'United States' })
       .closest('tr') as HTMLElement;
@@ -298,17 +307,33 @@ describe('insight cards', () => {
     renderWithProviders(<Gap />);
 
     expect(await row('Pay quartiles by gender', 'Lower quartile')).toEqual([
+      '2 (40.0%)',
+      '3 (60.0%)',
+    ]);
+    expect(await row('Pay quartiles by gender', 'Upper middle')).toEqual([
       '3 (60.0%)',
       '2 (40.0%)',
-      '0',
-      '0',
     ]);
-    expect(await row('Pay quartiles by gender', 'Upper quartile')).toEqual([
-      '2 (33.3%)',
-      '2 (33.3%)',
-      '1',
-      '1',
-    ]);
+    expect(
+      screen.getByText('Not ranked, counted beside: 1 other and 1 undisclosed.'),
+    ).toBeInTheDocument();
+  });
+
+  it('withheld quartiles say what they need and still count the unranked', async () => {
+    answer('gender-gap', quartileGapWithheld);
+    renderWithProviders(<Gap />);
+
+    expect(
+      await screen.findByText(
+        'Shown for 20 women and men or more, with 5 of each; these filters have fewer than 20 people.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Not ranked, counted beside: 0 other and 0 undisclosed.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('table', { name: 'Pay quartiles by gender' }),
+    ).not.toBeInTheDocument();
   });
 
   it('the by-level view flags a gap of 5% or more and names the threshold', async () => {
@@ -320,7 +345,7 @@ describe('insight cards', () => {
       within(within(table).getByRole('rowheader', { name }).closest('tr') as HTMLElement)
         .getAllByRole('cell')
         .map((cell) => cell.textContent);
-    expect(cells('Netherlands, L1')).toEqual(['5', '5', '8.3%', '8.3%', '5% or more']);
+    expect(cells('Netherlands, L1')).toEqual(['5', '5', '8.0%', '8.3%', '5% or more']);
     expect(cells('Netherlands, L2')).toEqual(['5', '5', '3.8%', '3.8%', '']);
     expect(cells('Netherlands, L3')).toEqual([
       '4',
@@ -334,22 +359,32 @@ describe('insight cards', () => {
         '5% or more is the threshold in EU Directive 2023/970 Article 10 for a gap between women and men.',
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText('Counted by country, not by level: Netherlands 1 other, 0 undisclosed.'),
+    ).toBeInTheDocument();
   });
 
   it('the trend names its latest month-end and rates, and its gaps, month by month', async () => {
     renderWithProviders(<Trend />);
 
     expect(
-      await screen.findByText('Month-end totals, latest 30 Sept 2026, at October 2026 rates.'),
+      await screen.findByText('Month-end totals, latest 30 Sep 2026, at October 2026 rates.'),
     ).toBeInTheDocument();
     expect(await row('Cost trend by month-end', '31 Oct 2024')).toEqual(['4', UNDER_FIVE]);
-    expect(await row('Cost trend by month-end', '30 Sept 2026')).toEqual(['27', 'USD 2,435,450']);
+    expect(await row('Cost trend by month-end', '30 Sep 2026')).toEqual(['27', 'USD 2,435,450']);
     expect(
       screen.getByText(
         'A gap is a month-end with fewer than 5 people, where total cost is not shown.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Include exited doesn't apply/)).not.toBeInTheDocument();
+  });
+
+  it('the trend by headcount has no gaps to explain, its table unchanged', async () => {
+    renderWithProviders(<Trend measure="headcount" />);
+
+    expect(await row('Cost trend by month-end', '31 Oct 2024')).toEqual(['4', UNDER_FIVE]);
+    expect(screen.queryByText(/A gap is a month-end/)).not.toBeInTheDocument();
   });
 
   it('the trend says Include exited does not apply to it while the box is ticked', async () => {
@@ -373,14 +408,16 @@ describe('insight cards', () => {
     expect(await row('Cost bridge for the year', 'Pay changes')).toEqual(['6', '+USD 23,000']);
     expect(await row('Cost bridge for the year', 'End')).toEqual(['11', 'USD 733,000']);
     expect(screen.queryByText(/any one could be worked out/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Include exited doesn't apply/)).not.toBeInTheDocument();
   });
 
-  it('a bridge with a short change shows the three by their people, and says why', async () => {
+  it('a bridge with a short change shows the others with people by their people alone', async () => {
     renderWithProviders(<Bridge includeExited />);
 
     expect(await row('Cost bridge for the year', 'Leavers')).toEqual(['1', UNDER_FIVE]);
-    expect(await row('Cost bridge for the year', 'Joiners')).toEqual([
-      '0',
+    expect(await row('Cost bridge for the year', 'Joiners')).toEqual(['0', 'USD 0']);
+    expect(await row('Cost bridge for the year', 'Pay changes')).toEqual([
+      '27',
       'withheld with the leavers',
     ]);
     expect(await row('Cost bridge for the year', 'End')).toEqual(['27', 'USD 2,435,450']);
@@ -411,10 +448,25 @@ describe('insight cards', () => {
       'Base salary 90.9%, Bonus 0.0%, Employer contribution 9.1%',
     ]);
     expect(await row('Shares of total cost by country', 'Germany')).toEqual(['4', UNDER_FIVE]);
+    expect(await row('Shares of total cost by country', 'Singapore')).toEqual([
+      '7',
+      'Bonus held by fewer than 5 people',
+    ]);
     expect(await row('Shares of total cost by country', 'Netherlands')).toEqual(['0', '—']);
     expect(
-      screen.getByText('Not shown, fewer than 5 people: Germany, United Kingdom.'),
+      screen.getByText(
+        'Not shown: Germany, fewer than 5 people; Singapore, Bonus held by fewer than 5 people; United Kingdom, fewer than 5 people.',
+      ),
     ).toBeInTheDocument();
+  });
+
+  it('the take-home mix gives shares of gross pay', async () => {
+    renderWithProviders(<Mixes view="take_home" />);
+
+    expect(await row('Shares of gross pay by country', 'India')).toEqual([
+      '12',
+      'Net pay 90.0%, Income tax 10.0%',
+    ]);
   });
 
   it('a card that fails to load says so, and its Retry loads it', async () => {

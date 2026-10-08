@@ -32,21 +32,22 @@ export function compactTick(currency: string) {
   return (value: number) => formatCompact(String(value), currency);
 }
 
-/** The cost mix's segments (D62): base and net in the first series, each allowance a lighter
- * tint of it, bonus and tax in the second, other deductions a tint of that, and the employer's
- * contribution in the marker grey. */
+/** The cost mix's segments (D62): base and net pay in the first series, bonus and income tax in
+ * the second, the employer's contribution in the marker grey, and each country's own component
+ * a swatch of its own, so no two segments of a view share one. */
 export const MIX_COLORS: Record<string, string> = {
   BASE: tokens.series[0],
-  NET: tokens.series[0],
-  HRA: '#6FA3E3',
-  HOLIDAY_ALLOWANCE: '#6FA3E3',
-  AWS: '#6FA3E3',
-  ALLOWANCES: '#A9C9EF',
+  HRA: tokens.mix.ochre,
+  ALLOWANCES: tokens.mix.teal,
+  HOLIDAY_ALLOWANCE: tokens.mix.plum,
+  AWS: tokens.mix.navy,
   BONUS: tokens.series[1],
-  TAX: tokens.series[1],
-  NATIONAL_INSURANCE: '#F3A27F',
-  SOCIAL_INSURANCE: '#F3A27F',
-  CPF: '#F3A27F',
   EMPLOYER_CONTRIBUTION: tokens.chart.marker,
+  NET: tokens.series[0],
+  TAX: tokens.series[1],
+  NATIONAL_INSURANCE: tokens.mix.teal,
+  SOCIAL_INSURANCE: tokens.mix.purple,
+  CPF: tokens.mix.brown,
 };
-export const MIX_OTHER = '#9AA1AB';
+/** A component the palette does not know yet. */
+export const MIX_OTHER = tokens.mix.other;

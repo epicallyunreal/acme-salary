@@ -330,7 +330,6 @@ BONUS_COLUMNS = (
     ("Headcount", "headcount"),
     ("Receiving", "receiving"),
     ("Receiving %", "receiving_pct"),
-    ("Mean bonus", "mean_bonus"),
     ("Median bonus", "median_bonus"),
     ("Mean gap %", "mean_gap_pct"),
     ("Median gap %", "median_gap_pct"),
@@ -341,7 +340,8 @@ BONUS_COLUMNS = (
 
 
 def bonus_table(payload: dict) -> Table:
-    """One row per group and gender, the group's gaps and reason on each of its rows."""
+    """One row per group and gender, the group's gaps and reason on each of its rows. No mean
+    amount, as on the card (D62)."""
     rows = []
     for row in payload["rows"]:
         code, name = group_of(row)
@@ -357,7 +357,6 @@ def bonus_table(payload: dict) -> Table:
                     side["headcount"],
                     side.get("receiving"),
                     side.get("receiving_pct"),
-                    side.get("mean_bonus"),
                     side.get("median_bonus"),
                     row["mean_gap_pct"],
                     row["median_gap_pct"],
@@ -373,10 +372,10 @@ QUARTILE_COLUMNS = (
     ("Headcount", "headcount"),
     ("Women", "female"),
     ("Men", "male"),
-    ("Other", "other"),
-    ("Undisclosed", "undisclosed"),
     ("Women %", "female_pct"),
     ("Men %", "male_pct"),
+    ("Other not ranked", "other_count"),
+    ("Undisclosed not ranked", "undisclosed_count"),
     ("Reason", "reason"),
     ("Currency", "currency"),
     ("Rates", "rates"),
@@ -384,10 +383,19 @@ QUARTILE_COLUMNS = (
 
 
 def quartiles_table(payload: dict) -> Table:
-    """One row per quartile, lowest first, or one row of the headcount when withheld."""
+    """One row per quartile of women and men, lowest first, or one row of their headcount when
+    withheld. Other and undisclosed are counted beside on every row, never ranked (D62)."""
+    beside = (payload["other_count"], payload["undisclosed_count"])
     if payload["quartiles"] is None:
-        empty = (None,) * 6
-        row = (None, payload["headcount"], *empty, payload["reason"], *currency_and_rates(payload))
+        empty = (None,) * 4
+        row = (
+            None,
+            payload["headcount"],
+            *empty,
+            *beside,
+            payload["reason"],
+            *currency_and_rates(payload),
+        )
         return table(QUARTILE_COLUMNS, [row])
     rows = [
         (
@@ -395,10 +403,9 @@ def quartiles_table(payload: dict) -> Table:
             q["headcount"],
             q["female"],
             q["male"],
-            q["other"],
-            q["undisclosed"],
             q["female_pct"],
             q["male_pct"],
+            *beside,
             None,
             *currency_and_rates(payload),
         )
@@ -412,14 +419,14 @@ LEVEL_GAP_COLUMNS = (
     ("Country", "country"),
     ("Level", "level"),
     ("Women", "women"),
-    ("Women mean", "women_mean"),
     ("Women median", "women_median"),
     ("Men", "men"),
-    ("Men mean", "men_mean"),
     ("Men median", "men_median"),
     ("Mean gap %", "mean_gap_pct"),
     ("Median gap %", "median_gap_pct"),
     ("Flag", "flag"),
+    ("Other in country", "other_count"),
+    ("Undisclosed in country", "undisclosed_count"),
     ("Reason", "reason"),
     ("Currency", "currency"),
     ("Rates", "rates"),
@@ -428,21 +435,26 @@ FLAG = "5% or more, the threshold in EU Directive 2023/970 Article 10"
 
 
 def level_gaps_table(payload: dict) -> Table:
-    """One row per country and level, a flagged gap named in the card's words (D62)."""
+    """One row per country and level, a flagged gap named in the card's words. The country's
+    other and undisclosed employees are counted on each of its rows, as the card counts them
+    beside, never per level (D62)."""
+    beside = {
+        others["country"]["code"]: (others["other_count"], others["undisclosed_count"])
+        for others in payload["others"]
+    }
     rows = [
         (
             row["country"]["code"],
             row["country"]["name"],
             row["level"],
             row["female"]["headcount"],
-            row["female"]["mean_gross"],
             row["female"]["median_gross"],
             row["male"]["headcount"],
-            row["male"]["mean_gross"],
             row["male"]["median_gross"],
             row["mean_gap_pct"],
             row["median_gap_pct"],
             FLAG if row["flagged"] else None,
+            *beside[row["country"]["code"]],
             row["reason"],
             *currency_and_rates(payload),
         )
@@ -550,12 +562,12 @@ MIX_COLUMNS = (
 
 def cost_mix_table(payload: dict) -> Table:
     """One row per country and segment, for the view the card picked, a withheld country one row
-    of its headcount (D62)."""
+    of its headcount and the card's reason (D62)."""
     rows = []
     for row in payload["rows"]:
         code, name, headcount = row["country"]["code"], row["country"]["name"], row["headcount"]
         if row["segments"] is None:
-            reason = withheld(headcount, None, SMALL_GROUP)
+            reason = row["reason"]
             rows.append((code, name, headcount, None, None, reason, *currency_and_rates(payload)))
             continue
         for segment in row["segments"]:

@@ -52,18 +52,25 @@ export function CostBridgeCard({
   );
 }
 
-/** A figure for the table and the labels: the signed amount, or why it is withheld. */
+/** A figure for the table and the labels: the amount, a change with its sign, or why it is
+ * withheld. */
 function amountText(part: BridgePart, currency: string): string {
   if (part.amount === null) return part.reason ?? '';
-  // A rise carries its plus; a fall its minus from the formatter; nothing for none.
-  const sign = !TOTALS.includes(part.part) && Number(part.amount) > 0 ? '+' : '';
-  return `${sign}${formatMoney(part.amount, currency)}`;
+  return formatMoney(part.amount, currency, { signed: !TOTALS.includes(part.part) });
+}
+
+interface BridgeBar {
+  part: BridgePart;
+  label: string;
+  /** From the running total before the part to the one after, or `null` with no bar. */
+  range: [number, number] | null;
+  text: string;
 }
 
 /** Each change floats from the running total before it to the one after, start and end stand on
  * zero, and a withheld part has no bar. */
-function bars(parts: BridgePart[], currency: string) {
-  const rows = [];
+function bars(parts: BridgePart[], currency: string): BridgeBar[] {
+  const rows: BridgeBar[] = [];
   let running = 0;
   for (const part of parts) {
     const value = plot(part.amount);
@@ -116,7 +123,7 @@ function Bridge({ data, includeExited }: { data: CostBridgeInsight; includeExite
               );
             }}
           />
-          <Bar dataKey="range" barSize={BAR_SIZE * 2} {...STILL}>
+          <Bar dataKey="range" maxBarSize={BAR_SIZE} {...STILL}>
             {rows.map((row) => (
               <Cell
                 key={row.part.part}

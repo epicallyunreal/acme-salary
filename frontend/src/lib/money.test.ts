@@ -19,6 +19,12 @@ describe('formatMoney', () => {
     expect(formatMoney('9007199254740993.00', 'USD')).toBe(`USD${nbsp}9,007,199,254,740,993`);
   });
 
+  it('writes a change with its sign, and none for no change', () => {
+    expect(formatMoney('23000.00', 'USD', { signed: true })).toBe(`+USD${nbsp}23,000`);
+    expect(formatMoney('-6250.06', 'USD', { signed: true })).toBe(`-USD${nbsp}6,250`);
+    expect(formatMoney('0.00', 'USD', { signed: true })).toBe(`USD${nbsp}0`);
+  });
+
   it('rounds half up when the figure has more decimals than shown', () => {
     expect(formatMoney('12345.50', 'GBP')).toBe(`GBP${nbsp}12,346`);
   });
