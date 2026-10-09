@@ -23,8 +23,10 @@ python manage.py migrate --noinput
 python manage.py flushexpiredtokens
 python manage.py seed_data --active 10000 --exited 5000 --seed 42 --if-empty
 
+# gunicorn 25.1's control socket, off: nothing uses gunicornc, and acme's HOME is /root (D73).
 exec gunicorn acme_salary.wsgi:application \
   --bind "0.0.0.0:${PORT:-8000}" \
   --workers 1 \
   --threads 8 \
-  --timeout 600
+  --timeout 600 \
+  --no-control-socket

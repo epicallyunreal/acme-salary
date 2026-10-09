@@ -975,7 +975,7 @@ set -euo pipefail
 python manage.py migrate --noinput
 python manage.py flushexpiredtokens
 python manage.py seed_data --active 10000 --exited 5000 --seed 42 --if-empty
-exec gunicorn acme_salary.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --threads 8 --timeout 600
+exec gunicorn acme_salary.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --threads 8 --timeout 600 --no-control-socket
 ```
 
 Long requests (D72): Fly's proxy closes a connection that carries no data for 60 s, which no setting of the app changes, so a staging or an approve throttled past that is cut while the worker finishes it, and the pages poll for the result (section 6). gunicorn's `--timeout` is 600 s from step 10. The step checked locally that a gthread worker lets a request longer than its timeout finish: gunicorn 26.2.0 with `--timeout 5` against a view that sleeps 10 s answered 200 after 10.0 s with no worker kill, the timeout being the worker's heartbeat, which the gthread loop keeps alive while its threads work. So the server finishes the work whichever rule applies, and the pages' polling (section 6) is what a reviewer sees.
