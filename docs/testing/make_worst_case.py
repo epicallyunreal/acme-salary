@@ -3,9 +3,9 @@
 From backend/: uv run python ../docs/testing/make_worst_case.py
 
 Five new employees at the edges the columns allow: the longest legacy code, full name, email and
-designation, every amount on one record at its upper bound, a long Polish name, a one-letter
-given name, a Devanagari name and a CJK name, levels 1 and 6, and joining dates on 1 April 2020,
-the reporting cut-off, and on 29 February 2024. Every row is valid, so the sheet can be approved
+designation, every earning, the bonus and the employer contribution on one record at their upper
+bound, a long Polish name, a one-letter given name, a Devanagari name and a CJK name, levels 1 and
+6, and joining dates on 1 April 2020, the reporting cut-off, and on 29 February 2024. Every row is valid, so the sheet can be approved
 and its employees looked at in the directory and on their pages.
 """
 

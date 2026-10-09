@@ -53,7 +53,8 @@ def main() -> None:
     raster(32).save(PUBLIC / "favicon.ico", sizes=[(32, 32)])
     # The home screen draws its own rounded corners, so the touch icon is square and opaque.
     touch = Image.new("RGB", (180, 180), PRIMARY)
-    touch.paste(raster(180), mask=raster(180))
+    icon = raster(180)
+    touch.paste(icon, mask=icon)
     touch.save(PUBLIC / "apple-touch-icon.png")
     for name in ("favicon.svg", "favicon.ico", "apple-touch-icon.png"):
         print(name, (PUBLIC / name).stat().st_size, "bytes")

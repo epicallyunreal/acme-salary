@@ -144,13 +144,13 @@ def main() -> None:
     # Every row rule of section 7 that a staged row can show, one row each.
     harini = staff(rows, "IN")
     victor = leaver(rows, "IN")
-    longest = "x" * 300
+    too_long = "x" * 300
     row_rules = [
         new_hire(10, legacy_code=None),
         new_hire(11, designation=None),
         new_hire(12, legacy_code="E2E-" + "9" * 29),
         new_hire(13, full_name="N" * 121),
-        new_hire(14, designation=longest),
+        new_hire(14, designation=too_long),
         new_hire(15, legacy_code="E2E-DUP"),
         new_hire(16, legacy_code="E2E-DUP"),
         new_hire(17, email="e2e.twice@acme.example"),
