@@ -413,39 +413,60 @@ Plugin skills and connectors: `ui-ux-pro-max` for the layout, `frontend-design` 
 
 ## Step 13. End-to-end UI test
 
-Added by the owner before Ship on 9 October (D74), and moved to step 13 when Layout and Help went first (D75), with Ship step 14. Run by claude-opus-5-5, the earlier steps having run on claude-fable-5-1. Paused at the directory on 9 October, its findings so far listed in the step 12 report. Since D75 the directory's scenario reads 10, 20 and 50 rows a page, and the review's blocker and warnings sit in the summary strip's message slot.
+Added by the owner before Ship on 9 October (D74), and moved to step 13 when Layout and Help went first (D75), with Ship step 14. Run by claude-opus-5-5, the earlier steps having run on claude-fable-5-1. Paused at the directory on 9 October, before the layout changed. Its findings are fixed first, in A, and nothing from the paused run is reused (D76).
 
-Goal: the finished app driven through its real UI with the Claude in Chrome tools, in full on the seeded compose container from HEAD at `http://localhost:8000` and read-only on `https://acme.nutanprabhat.dev`, and `docs/TESTING.md` written: what is built, page by page against SPEC F1 to F9 and section 10, what was tested, scenario by scenario with the result, and every error path and edge case produced through the UI. The brief asks for a video and test artifacts, and this is the written one.
+Goal: the carried fixes made, then the finished app driven through its real UI with the Claude in Chrome tools, in full on the compose container rebuilt from HEAD at `http://localhost:8000` and read-only on `https://acme.nutanprabhat.dev` after the owner's deploy, and `docs/TESTING.md` written: what is built, page by page against SPEC, the pass scenario by scenario with the result, every error path and edge case produced through the UI, what was found and fixed, and what is not covered with its test. The brief asks for a video and test artifacts, and this is the written one.
+
+Order: A the carried fixes, B the local pass, fixing what it finds, C a report to the owner, who then deploys, D the live pass on the deployed release, E `docs/TESTING.md` and the close.
 
 Rules:
 
-1. The Claude in Chrome tools, checked present before anything else. The owner grants the extension site access for `localhost:8000` and `acme.nutanprabhat.dev` only. Pages are read through screenshots and the page text, and no screenshot is committed.
-2. Sign-in: the agent never types, reads, stores or logs the password. Whenever a page needs a session it stops and the owner signs in in that tab. `docs/TESTING.md` names the account as the HR Manager.
-3. Local: the compose container from HEAD, seeded, the same image as live. Everything may be exercised there, the reset included. The owner stops and starts the container when a scenario needs it.
-4. Live: read-only. No upload, approve, revision, exit or create, and nothing typed into the RESET field. A scenario that would write is local-only.
-5. No native browser dialog is triggered (the `beforeunload` prompt, alert, confirm), since one blocks the extension. The `beforeunload` path is covered by its unit test and recorded as such.
-6. Order locally: the read-only scenarios on the untouched seed, then the writes, then the error paths that need data, then the reset and the base import, so the dashboard numbers recorded are the seed's.
-7. A bug found is fixed in the step with a test that would have caught it, one commit per fix with the usual gate. A change to specified behaviour goes to the owner first with the options. Anything larger than a small fix goes under P1 with the reason.
+1. The Claude in Chrome tools, with site access granted by the owner for `localhost:8000` and `acme.nutanprabhat.dev` only. Pages are read through screenshots and the page text, and no screenshot is committed.
+2. Sign-in: the agent never types, reads, stores or logs a password. Whenever a page needs a session it stops and the owner signs in in that tab. `docs/TESTING.md` names the account the HR Manager and nothing more.
+3. No native browser dialog is triggered (`beforeunload`, alert, confirm), since one blocks the extension.
+4. Container stops, starts and rebuilds are the owner's (`docker compose build && docker compose up -d` keeps the seed).
+5. Live: read-only. No upload, approve, revision, exit, create or RESET.
+6. A bug found is fixed in the step with a test that would have caught it, one commit per fix through the gate. A change to specified behaviour goes to the owner first with options, and anything larger than a small fix goes under P1 with the reason.
 
-Scenarios, the minimum, locally in this order: session, the dashboard on the seed, the directory, the employee page, a new employee, the five generated files imported from the Demo data page (newhires, diwali-bonus, april-raises, promotions, exits), the reset and the base import from empty, and the keyboard. Then every message, refusal and empty or error state that SPEC section 7, section 8 and F1 to F9 name, produced through the UI once, with its trigger, the exact text and where it appeared, and the owner's list beyond it. A message the UI cannot produce goes under Not covered with the unit test that covers it, by name. Live, read-only: the dashboard default view and one preset, one filter, one card export, the directory's page 2 and one search, one employee page, Imports and Demo data opened, one sample downloaded, a bad employee URL and an unknown route, then sign out.
+A. The carried fixes, each with a test that fails before it (D76):
 
-Files to change: `docs/TESTING.md` (new: the environment, What is built, The pass, Error paths and edge cases, Found and fixed, Not covered), `docs/DECISIONS.md` (D74 and what the pass decided), `docs/PLAN.md`, `README.md` (one line in the Test section pointing at `docs/TESTING.md`), and the code and tests of any fix.
+1. A 400 is an answer, not a lost connection. No 4xx is retried, the client's own refresh still handling the first 401, and a 400 shows the API's words where its cause is: one message under the dashboard's filter bar with Clear filters beside it, in place of ten card errors, and the directory's on the Designation field. The connection message stays for no answer and a 5xx.
+2. One result reads "1 employee matches".
+3. Cleared filters never come back. Every URL updater builds from the latest URL, since React Router 8.4's `setSearchParams` hands its updater the params of the render that made it, and CommitField drops its draft and pending timer when its value changes from outside, as Clear filters does.
+4. A route error page in the app's own words, with Reload and Go to the dashboard, inside the frame.
+5. The owner's choices. A period link that cannot be read opens on Last 12 months, the URL replaced, with one line saying so. Gross min above Gross max says "Gross min is above Gross max" under the two fields, the grid as it is. The Designation field's helper reads "Separate titles with commas, press Enter to apply". The review's action chip reads No-op.
+6. The README's tour: the review's actions are create, update, revise and no-op, and a row with a last day records an exit.
+7. A password change ends every earlier session: SimpleJWT's revoke claim (`CHECK_REVOKE_TOKEN`), carried by `rotate()` and the access token it mints, so `/auth/me/` answers 401 after `changepassword` and a fresh login works. The README keeps `revoke_sessions` after `changepassword` as a second step.
+8. No formula can start after a semicolon in the CSV export: a formula start after a `;` inside a text cell is escaped as one at the cell's start is, in CSV only.
 
-Tests: one per bug found, a test that would have caught it. The pass itself is the step's test, recorded rather than automated.
+Items 7 and 8 close the two leads the security audit accepted: their strict xfails pass, so the markers come off and the tests stay as guards, and their rows in `docs/reviews/security-audit-2026-10-08.md` move from Accepted to Fixed with the commit.
+
+B. The local pass, on the container rebuilt from HEAD after A, at 1280×720 unless a scenario says otherwise: the read-only scenarios first on the untouched seed, then the writes, then the error paths that need data, then the reset and the base import. The scenarios are 1 session, 2 the dashboard, 3 the directory, 4 the employee page, 5 a new employee, 6 the five generated files imported from Demo data, 7 the reset and the base import from empty, 8 the keyboard and 9 Help. Then every message, refusal and empty or error state that SPEC section 7, section 8 and F1 to F9 name is produced once through the UI and recorded with its trigger, its exact text and where it showed, with the owner's list beyond it. A worst-case sheet, kept as `docs/testing/worst-case.xlsx` with the command that made it, goes through the import and is read on the directory, the employee page, the dashboard cards and an export at 1280×720, 1024×768 and 200% zoom. The owner stops and starts the container for the error states. What the UI cannot produce goes under Not covered with the test that covers it.
+
+C. A report to the owner before the deploy: what A and B found and fixed, with the commits.
+
+D. Live, read-only, after the deploy: the dashboard's default view, one preset, one filter and one card export, the directory's page 2 and one search, one employee page, Imports, Demo data and Help opened, one sample downloaded, a bad employee URL and an unknown route, then sign out.
+
+E. `docs/TESTING.md`: the environment (commits, image, Chrome and extension versions, date, window sizes), "What is built" page by page against SPEC, "The pass" as a table of number, area, steps, expected, observed and result, "Error paths and edge cases" as a table of trigger, message or state shown, where and result, "Found and fixed" with commits, the paused run's findings first and marked as found before the layout change, and "Not covered" with the covering test. Plain prose, no em dashes, no semicolons, no passwords.
+
+Files to change: A's code and tests in `frontend/src` (`App.tsx`, `api/client.ts`, `pages/Dashboard.tsx`, `Employees.tsx` and `ImportReview.tsx`, `components/filters/`, `components/layout/`, `router.tsx`) and in `backend` (`acme_salary/settings/base.py`, `apps/exports/writers.py`, `tests/accounts/`, `tests/exports/`, `tests/security/`), `docs/reviews/security-audit-2026-10-08.md`, `README.md` (the tour, the operator note, and one line in Test pointing at `docs/TESTING.md`), `docs/testing/worst-case.xlsx` and the command that made it, `docs/TESTING.md` (new), `docs/SPEC.md`, `docs/DESIGN.md`, `docs/DECISIONS.md`, `docs/PLAN.md`, and the code and tests of any fix the pass finds.
+
+Tests: A's, each failing before its fix, then one per bug the pass finds. The pass itself is the step's test, recorded rather than automated.
 
 Commits:
 
-1. `docs: plan step 12, the end-to-end UI test (D74)`
-2. One `fix(<area>): ...` per bug found, each with its test.
-3. `docs: the end-to-end UI test recorded (step 13)` (finish-step by hand as in step 11: the four reviewers, DECISIONS and PLAN updated, the README line, and a report before the owner deploys that says which release the live pass ran on and whether before or after any fix)
+1. `docs: plan step 13 as the owner set it, the carried fixes first (D76)`
+2. One commit per item of A, eight, each with its test.
+3. One `fix(<area>): ...` per bug the pass finds, each with its test.
+4. `docs: the end-to-end pass recorded (step 13)` (finish-step by hand as in step 11: the four reviewers, DECISIONS and PLAN, the README's Test line, the worst-case sheet, after the live pass)
 
-Hours: 6.
+Hours: 10, grown from 6 with the carried fixes and the worst-case data.
 
-Acceptance closed: no new SPEC criterion. The step evidences F1 to F9 and section 10 through the UI, and `docs/TESTING.md` is the brief's written test artifact beside the Ship step's video.
+Acceptance closed: SPEC F8's criterion that a password change ends earlier sessions and F6's escape after a semicolon. The step evidences F1 to F9 and section 10 through the UI, and `docs/TESTING.md` is the brief's written test artifact beside the Ship step's video.
 
-Risks: a native dialog stops the extension, so a form with unsaved changes is never left by navigating away. The login and reset throttles are keyed on the client address, so hitting them locks the owner out of that host for a minute or an hour. The live pass reads shared demo data a reviewer may be changing at the time.
+Risks: a native dialog stops the extension, so nothing is left by navigating away while the busy dialog runs. The login and reset throttles are keyed on the client address, so hitting them locks the owner out of that host for a minute or an hour. Every live session ends once at the deploy that brings the revoke claim. The live pass reads shared demo data a reviewer may be changing at the time.
 
-Plugin skills and connectors: `claude-in-chrome` for the pass, `/log-decision`, Context7 if a fix calls a library API. No design skill: the step tests the UI and designs nothing.
+Plugin skills and connectors: `claude-in-chrome` for the pass, `/log-decision`, Context7 for SimpleJWT and React Router. No design skill: the route error page and the messages follow DESIGN 6's states.
 
 ## Step 14. Ship
 
@@ -484,10 +505,10 @@ Plugin skills and connectors: `/log-decision`. No design or library skill.
 | 10 Demo data | 9.0 | 55.5 | added before Hardening (D72) |
 | 11 Hardening | 8.0 | 63.5 | the audit's leads, the guardrails and the README added on 9 October (D73) |
 | 12 Layout and Help | 6.0 | 69.5 | added before the end-to-end pass (D75) |
-| 13 End-to-end UI test | 6.0 | 75.5 | added before Ship (D74) |
-| 14 Ship | 1.5 | 77.0 | |
+| 13 End-to-end UI test | 10.0 | 79.5 | added before Ship (D74), the carried fixes first (D76) |
+| 14 Ship | 1.5 | 81.0 | |
 
-Total: 77 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64), step 10 before it the same day (D72), step 11 grew by the security audit's leads, the guardrails and the README on 9 October (D73), step 13 was added before Ship the same day (D74) and step 12 before it (D75), so the planned close column stops at step 7.
+Total: 81 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64), step 10 before it the same day (D72), step 11 grew by the security audit's leads, the guardrails and the README on 9 October (D73), step 13 was added before Ship the same day (D74) and step 12 before it (D75), so the planned close column stops at step 7.
 
 Submission target: the morning of 8 October 2026 IST, full scope, per DECISIONS D19 and D23. The owner decides at the end on any overrun. At these estimates and with no breaks from a 12:30 start, steps 1 to 4 close by 06:00 on 8 October, step 5 by 11:00, step 6 by 15:00 and steps 7 to 9 by 20:30; the planned close column is the number D23 asks for, so each step's slip is visible against it at the time, not after. The table assumes continuous work; the owner's own stop time is not in it.
 
@@ -506,7 +527,7 @@ Shrink order if time runs short (SPEC section 15: steps 7 and 11 shrink before a
 5. Approve the dependency prompts under rule 9 (`uv add`, `npm install`) as they come, each with its DECISIONS line.
 6. Answer any `Question for the human` a reviewer raises at a step close; the step waits on it.
 7. In step 12: sign in locally for the window checks in Chrome, and deploy the step before step 13 starts, so the live pass sees the new layout.
-8. In step 13: grant the Claude in Chrome extension site access for `localhost:8000` and `acme.nutanprabhat.dev`, start the seeded compose container from HEAD, sign in whenever a page asks, and stop and start the container when a scenario needs it.
+8. In step 13: grant the Claude in Chrome extension site access for `localhost:8000` and `acme.nutanprabhat.dev`, rebuild and start the compose container from HEAD after the carried fixes, sign in whenever a page asks, stop and start the container when a scenario needs it, type the password into the reset dialog when the pass reaches it, and deploy after the report so the live pass runs on the release.
 9. In step 14: record the demo video on the live URL, give Claude Code the link for the README, and make the GitHub repository public.
 
 ## Questions for the owner
