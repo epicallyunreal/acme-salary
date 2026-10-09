@@ -210,7 +210,26 @@ export function Dashboard() {
             </Box>
             <KpiRow query={summary} includeExited={filters.include_exited} />
             {nobody ? (
-              <EmptyState message={`No one matches these filters ${when}. Clear a filter.`} />
+              <EmptyState
+                message={
+                  filtered ? (
+                    `No one matches these filters ${when}. Clear a filter.`
+                  ) : (
+                    // Nobody on file and nothing filtered: say how people get in (D78).
+                    <>
+                      No employees yet. Import a spreadsheet on the{' '}
+                      <Link component={RouterLink} to="/imports">
+                        Imports page
+                      </Link>
+                      , or use the sample files on{' '}
+                      <Link component={RouterLink} to="/demo">
+                        Demo data
+                      </Link>
+                      .
+                    </>
+                  )
+                }
+              />
             ) : (
               <CardGrid>
                 <TrendCard

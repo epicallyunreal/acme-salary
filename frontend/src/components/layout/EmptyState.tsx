@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 interface EmptyStateProps {
   /** One sentence that says what to do next. */
-  message: string;
+  message: ReactNode;
   action?: ReactNode;
 }
 

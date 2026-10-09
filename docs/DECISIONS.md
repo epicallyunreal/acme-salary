@@ -698,6 +698,14 @@ Decision: on 9 October the owner chose that a page past the last opens the last 
 
 Consequences: an old link or one to a list that has shrunk never shows a connection message, and the history keeps one entry for it. The P1 list in SPEC section 16 names the search limit with its reason.
 
+## D78. Before the deploy: an empty dashboard, a deploy under an open tab, and two Help sentences
+
+Context: the local pass of step 13 left three observations the owner took up on 9 October. After a reset and the base import, Spent in period reads high against the seed. With nobody on file and no filter set, the dashboard said "No one matches these filters today. Clear a filter." A page whose code failed to load kept the error page until a full reload, which anyone with the app open across a deploy meets, since the old chunk files are gone.
+
+Decision: Spent in period reading high is D72's design, every employee carrying today's pay back to joining after a base import, so the Demo data note names it beside the trend and the bridge. With no filter set and nobody on file, the dashboard says "No employees yet. Import a spreadsheet on the Imports page, or use the sample files on Demo data.", both pages linked, as the directory's empty state does, and "No one matches these filters" stays for a filtered view. On Vite's `vite:preloadError` the app reloads the page once, guarded in `sessionStorage` so it can never loop, the guard cleared once a page has loaded, and when a reload has already been tried the error page with Reload stays. Help names the Audit tab in How it works step 3, and its currency answer says rates are kept from September 2026, so an earlier period is converted at September 2026's rates (D22).
+
+Consequences: a deploy no longer strands an open tab on the error page. The live pass and `docs/TESTING.md` follow these changes.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

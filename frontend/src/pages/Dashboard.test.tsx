@@ -565,6 +565,31 @@ describe('Dashboard', () => {
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument();
   });
 
+  it('says there is nobody yet, with the ways to add people, when no filter is set (D78)', async () => {
+    server.use(
+      http.get('/api/v1/insights/:name/', ({ params }) =>
+        HttpResponse.json(
+          params.name === 'summary' ? nobody : insightFor(String(params.name), false),
+        ),
+      ),
+    );
+    renderApp('/');
+
+    const message = await screen.findByText(/^No employees yet\./);
+    expect(message).toHaveTextContent(
+      'No employees yet. Import a spreadsheet on the Imports page, or use the sample files on Demo data.',
+    );
+    expect(within(message).getByRole('link', { name: 'Imports page' })).toHaveAttribute(
+      'href',
+      '/imports',
+    );
+    expect(within(message).getByRole('link', { name: 'Demo data' })).toHaveAttribute(
+      'href',
+      '/demo',
+    );
+    expect(screen.queryByText(/No one matches these filters/)).not.toBeInTheDocument();
+  });
+
   it('says on which day no one matches when the period ends before today', async () => {
     server.use(
       http.get('/api/v1/insights/:name/', ({ params }) =>

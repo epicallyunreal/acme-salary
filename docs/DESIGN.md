@@ -653,6 +653,7 @@ Error and empty states, one sentence that says what to do next:
 | Review grid, status filter empty | "No rows with this status. Choose another status." |
 | Employee not found | "This employee does not exist. Go back to the directory." |
 | Dashboard, empty population | "No one matches these filters today. Clear a filter." (the headcount shows 0, the money figures `—`) |
+| Dashboard, nobody on file and no filter set | "No employees yet. Import a spreadsheet on the Imports page, or use the sample files on Demo data.", both named pages linked (D78) |
 | Dashboard, a filter the API refuses (400) | the API's own words in one alert under the filter bar, with Clear filters beside it, in place of the cards (D58, D76) |
 | Directory, a filter the API refuses (400) | the API's own words under that filter's field, more than 20 titles on Designation, and above the grid for a parameter the bar has no field for (D61, D76) |
 | Dashboard, a link whose period cannot be read | the dashboard on Last 12 months, the URL replaced, and the line "This link's period could not be read, so the dashboard shows the last 12 months." (D76) |
