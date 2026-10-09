@@ -52,14 +52,17 @@ interface ServerGridProps<Row extends GridValidRowModel> {
   initialColumnVisibility?: GridColumnVisibilityModel;
   /** One sentence for the empty overlay that says what to do next. */
   emptyMessage: string;
-  /** Rows of a given height let the grid size itself; a minimum keeps short lists tidy. */
-  height?: number | string;
   /** `() => 'auto'` lets a row grow to its content, for cells that hold messages. */
   getRowHeight?: DataGridProps<Row>['getRowHeight'];
 }
 
 // jsdom has no layout, so the virtualiser would render no rows under Vitest.
 const inTests = import.meta.env.MODE === 'test';
+
+// The grid takes the height its page leaves (D75), down to about eight compact rows: the 52 px
+// toolbar, the 39 px header, eight 36 px rows, the 52 px pager and the two borders. Below that
+// the page outgrows main, and main scrolls.
+export const GRID_FLOOR = 52 + 39 + 8 * 36 + 52 + 2;
 
 /** The faint up-down icon a sortable column shows at rest, about 3.4:1 on white (D63). */
 function UnsortedIcon({ className, fontSize }: Pick<SvgIconProps, 'className' | 'fontSize'>) {
@@ -86,7 +89,9 @@ function togglable(columns: GridColDef[]): string[] {
 /**
  * A DataGrid with everything server-side (DESIGN section 6): the page, sort and filters live in
  * the URL, the grid only reports what the user did. The grid's own filter panel is off, the
- * FilterBar is the one place to filter. The pager numbers its pages (D64).
+ * FilterBar is the one place to filter. The pager numbers its pages (D64). It is a flex item that
+ * fills its page's column (`FillPage`), the flex parent MUI X documents, so it scrolls its rows
+ * itself and the page does not (D75).
  */
 export function ServerGrid<Row extends GridValidRowModel>({
   rows,
@@ -99,7 +104,6 @@ export function ServerGrid<Row extends GridValidRowModel>({
   onSortModelChange,
   initialColumnVisibility,
   emptyMessage,
-  height = 'calc(100vh - 280px)',
   getRowHeight,
 }: ServerGridProps<Row>) {
   return (
@@ -131,8 +135,8 @@ export function ServerGrid<Row extends GridValidRowModel>({
       disableVirtualization={inTests}
       getRowHeight={getRowHeight}
       sx={{
-        height,
-        minHeight: 360,
+        flex: 1,
+        minHeight: GRID_FLOOR,
         bgcolor: 'background.paper',
         borderColor: 'divider',
         '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 },

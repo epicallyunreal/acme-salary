@@ -11,7 +11,8 @@ import {
   ListItemText,
   Typography,
 } from '@mui/material';
-import { NavLink, Outlet, useMatch, useNavigate } from 'react-router';
+import { useLayoutEffect, useRef } from 'react';
+import { NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router';
 
 import { useLogout, useMe } from '../../api/auth';
 
@@ -50,24 +51,39 @@ function NavItem({ label, to, pattern, Icon }: (typeof NAV_ITEMS)[number]) {
   );
 }
 
-/** Left navigation, a top bar with the signed-in email and Sign out, and the page outlet. */
+/** Left navigation, a top bar with the signed-in email and Sign out, and the page outlet, in a
+ * frame of the window's height: the nav and the top bar never scroll, and `main` is the one
+ * scroll container (D75). */
 export function AppShell() {
   const { data: user } = useMe();
   const signOut = useLogout();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+
+  // A new page starts at its top, as the window did. main takes focus unless the page focused a
+  // control of its own, so Page Down and Space scroll the new page without a click first. A
+  // change of filters keeps the path, and with it the place on the page.
+  useLayoutEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    main.scrollTop = 0;
+    if (!main.contains(document.activeElement)) main.focus({ preventScroll: true });
+  }, [pathname]);
 
   const onSignOut = () => {
     signOut.mutate(undefined, { onSettled: () => navigate('/login', { replace: true }) });
   };
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
       <Box
         component="nav"
         aria-label="Main"
         sx={{
           width: NAV_WIDTH,
           flexShrink: 0,
+          overflowY: 'auto',
           borderRight: 1,
           borderColor: 'divider',
           bgcolor: 'background.paper',
@@ -87,6 +103,7 @@ export function AppShell() {
         <Box
           component="header"
           sx={{
+            flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'flex-end',
@@ -105,7 +122,21 @@ export function AppShell() {
             Sign out
           </Button>
         </Box>
-        <Box component="main" sx={{ p: 6, flex: 1, minWidth: 0 }}>
+        <Box
+          component="main"
+          ref={mainRef}
+          // Focusable from code only, so the keys that scroll reach it after a route change. It is
+          // a place to read from, not a control, so it draws no focus ring.
+          tabIndex={-1}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            overflowY: 'auto',
+            p: 6,
+            '&:focus-visible': { outline: 'none' },
+          }}
+        >
           <Outlet />
         </Box>
       </Box>

@@ -47,7 +47,7 @@ export function Login() {
   const { ref: passwordRef, ...passwordField } = register('password');
 
   return (
-    <Box component="main" sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center', p: 4 }}>
+    <Box component="main" sx={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', p: 4 }}>
       <Paper sx={{ width: '100%', maxWidth: 400, p: 8 }}>
         <Typography variant="h1" component="h1">
           ACME Salary

@@ -22,7 +22,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
       <Box
         role="status"
         aria-label="Loading"
-        sx={{ display: 'grid', placeItems: 'center', minHeight: '100vh' }}
+        sx={{ display: 'grid', placeItems: 'center', minHeight: '100dvh' }}
       >
         <CircularProgress size={28} />
       </Box>

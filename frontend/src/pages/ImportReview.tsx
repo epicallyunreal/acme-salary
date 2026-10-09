@@ -26,6 +26,7 @@ import { rowsWord } from '../components/imports/counts';
 import { TemplateMenu } from '../components/imports/TemplateMenu';
 import { EmptyState } from '../components/layout/EmptyState';
 import { ErrorState } from '../components/layout/ErrorState';
+import { FillPage } from '../components/layout/FillPage';
 import { PageHeader } from '../components/layout/PageHeader';
 import { StatusChip } from '../components/layout/StatusChip';
 import { DEFAULT_PAGE_SIZE, PAGE_SIZES } from '../lib/constants';
@@ -180,13 +181,13 @@ function ReviewPage({ batchId }: { batchId: number }) {
   const filtered = Boolean(view.status || view.search);
 
   return (
-    <>
+    <FillPage>
       <Button
         component={Link}
         to="/imports"
         size="small"
         startIcon={<ArrowBackIcon fontSize="small" />}
-        sx={{ mb: 3, ml: -2 }}
+        sx={{ mb: 3, ml: -2, alignSelf: 'flex-start' }}
       >
         Imports
       </Button>
@@ -308,7 +309,7 @@ function ReviewPage({ batchId }: { batchId: number }) {
           {notice?.text}
         </Alert>
       </Snackbar>
-    </>
+    </FillPage>
   );
 }
 

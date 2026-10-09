@@ -19,6 +19,7 @@ import {
   toSortModel,
 } from '../components/grid/serverModel';
 import { ErrorState } from '../components/layout/ErrorState';
+import { FillPage } from '../components/layout/FillPage';
 import { PageHeader } from '../components/layout/PageHeader';
 
 /** The directory (SPEC F4, section 10): a server-side grid whose state lives in the URL. */
@@ -44,7 +45,7 @@ export function Employees() {
   const count = employees.data?.count;
 
   return (
-    <>
+    <FillPage>
       <PageHeader
         title="Employees"
         actions={
@@ -97,6 +98,6 @@ export function Employees() {
           }
         />
       )}
-    </>
+    </FillPage>
   );
 }
