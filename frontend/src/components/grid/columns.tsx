@@ -184,9 +184,10 @@ interface ImportRowColumnOptions {
   canSkip: boolean;
 }
 
-/** Columns of the import review grid (DESIGN section 6): the row, its status and action, the
- * code and the name, then every column the sheet had, as typed, then the messages and the skip
- * toggle. Rows come in sheet order, so nothing sorts. */
+/** Columns of the import review grid (DESIGN section 6): the skip toggle first, as the pencil
+ * leads the directory, then the row, its status and its messages, then its action, the code and
+ * the name, then every column the sheet had, as typed (the owner's order of 9 October, D75). Rows
+ * come in sheet order, so nothing sorts. */
 export function importRowColumns(
   sheetColumns: string[],
   { onToggleSkip, canSkip }: ImportRowColumnOptions,
@@ -200,38 +201,13 @@ export function importRowColumns(
     renderCell: ({ row }) => <SheetCell row={row} field={field} />,
   });
   return [
-    { field: 'row_number', headerName: 'Row', width: 70, sortable: false, cellClassName: 'num' },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 110,
-      sortable: false,
-      renderCell: ({ row }) => <StatusChip status={row.status} />,
-    },
-    {
-      field: 'action',
-      headerName: 'Action',
-      width: 100,
-      sortable: false,
-      renderCell: ({ row }) => (row.action ? <StatusChip status={row.action} /> : null),
-    },
-    cell('legacy_code', 'legacy_code', 130),
-    cell('full_name', 'Name', 180),
-    ...sheetColumns
-      .filter((field) => field !== 'legacy_code' && field !== 'full_name')
-      .map((field) => cell(field, field, IDENTITY_WIDTHS[field] ?? 120)),
-    {
-      field: 'messages',
-      headerName: 'Messages',
-      width: 380,
-      sortable: false,
-      renderCell: ({ row }) => <RowMessagesCell row={row} />,
-    },
     {
       field: 'skip',
       headerName: 'Skip',
       width: 100,
       sortable: false,
+      hideable: false,
+      disableColumnMenu: true,
       renderCell: ({ row, tabIndex }) => {
         const skipped = row.status === 'skipped';
         return (
@@ -248,5 +224,32 @@ export function importRowColumns(
         );
       },
     },
+    { field: 'row_number', headerName: 'Row', width: 70, sortable: false, cellClassName: 'num' },
+    {
+      field: 'status',
+      headerName: 'Status',
+      width: 110,
+      sortable: false,
+      renderCell: ({ row }) => <StatusChip status={row.status} />,
+    },
+    {
+      field: 'messages',
+      headerName: 'Messages',
+      width: 380,
+      sortable: false,
+      renderCell: ({ row }) => <RowMessagesCell row={row} />,
+    },
+    {
+      field: 'action',
+      headerName: 'Action',
+      width: 100,
+      sortable: false,
+      renderCell: ({ row }) => (row.action ? <StatusChip status={row.action} /> : null),
+    },
+    cell('legacy_code', 'legacy_code', 130),
+    cell('full_name', 'Name', 180),
+    ...sheetColumns
+      .filter((field) => field !== 'legacy_code' && field !== 'full_name')
+      .map((field) => cell(field, field, IDENTITY_WIDTHS[field] ?? 120)),
   ];
 }
