@@ -98,3 +98,4 @@ def test_refresh_session_refuses_a_token_from_before_a_password_change(hr_user):
         services.refresh_session(raw)
 
     assert refused.value.get_codes() == "password_changed"
+    assert str(refused.value.detail) == "The user's password has been changed."

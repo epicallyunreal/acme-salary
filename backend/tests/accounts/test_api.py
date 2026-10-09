@@ -46,10 +46,23 @@ def test_a_password_change_ends_every_earlier_session_and_a_fresh_login_works(an
     hr_user.save()
 
     assert me(anon, before["access"]) == 401
-    assert refresh(anon, before["refresh"]).status_code == 401
+    refused = refresh(anon, before["refresh"])
+    assert refused.status_code == 401
+    assert refused.json()["detail"] == "The user's password has been changed."
     fresh = login(anon, password="rotated-lantern-staple-42")
     assert fresh.status_code == 200
     assert me(anon, fresh.json()["access"]) == 200
+
+
+def test_an_access_token_rotated_before_a_password_change_is_refused_after_it(anon, hr_user):
+    """A token minted by a refresh before the change carries the old claim too (SPEC F8, D76)."""
+    rotated = refresh(anon, login(anon).json()["refresh"]).json()
+    assert me(anon, rotated["access"]) == 200
+
+    hr_user.set_password("rotated-lantern-staple-42")  # a dummy, never a real credential
+    hr_user.save()
+
+    assert me(anon, rotated["access"]) == 401
 
 
 def test_login_with_a_wrong_password_is_401(anon, hr_user):

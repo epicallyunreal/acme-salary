@@ -4,10 +4,10 @@ Claim: changing the HR Manager's password (`manage.py changepassword` is set_pas
 save) ends no session. A refresh token issued before the change still rotates at
 /api/v1/auth/refresh/ into an access token that opens the API, until the session's 12-hour end.
 
-The test asserts the secure behaviour: after the change, the old refresh token is refused, or
-the access token it mints is refused at /api/v1/auth/me/. Fixed by SimpleJWT's revoke claim
-(D76), so the test now guards the fix: an assertion failure means the weakness is back. A
-pytest.fail from a setup or outcome check is a plain failure, never read as the weakness.
+The test asserts the secure behaviour: after the change, the old refresh token is refused at the
+refresh itself. Fixed by SimpleJWT's revoke claim (D76), and at the refresh by `refresh_session`
+since the step 13 close, so the test now guards both: an assertion failure means the weakness is
+back. A pytest.fail from a setup or outcome check is a plain failure, never read as the weakness.
 """
 
 import pytest
@@ -53,4 +53,4 @@ def test_a_password_change_ends_the_session_of_an_earlier_refresh_token(anon, hr
     if outcome not in {(200, 200), (200, 401), (401, None)}:
         pytest.fail(f"unexpected outcome (refresh, me) = {outcome}: {refreshed.content!r}")
 
-    assert outcome != (200, 200), "the pre-change refresh token still opens the API"
+    assert outcome == (401, None), "the pre-change refresh token still refreshes"

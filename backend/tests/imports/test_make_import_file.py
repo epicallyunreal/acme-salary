@@ -583,3 +583,20 @@ def test_a_csv_cell_takes_the_exports_escape_after_a_semicolon_too():
 
     assert _csv_text("Ann;=1+1") == "Ann;'=1+1"
     assert _csv_text("=SUM(A1)") == "'=SUM(A1)"
+
+
+def test_the_csv_file_reads_back_with_the_exports_escape_after_each_separator():
+    """file_bytes is what make_import_file writes: a formula after a separator is quoted (D76)."""
+    import csv
+    import io
+
+    from apps.imports.samples import file_bytes
+
+    content = file_bytes(
+        ["full_name", "designation"],
+        [{"full_name": "Ann;=1+1", "designation": "Lead\n=1+1"}],
+        ".csv",
+    )
+
+    rows = list(csv.reader(io.StringIO(content.decode("utf-8"))))
+    assert rows == [["full_name", "designation"], ["Ann;'=1+1", "Lead\n'=1+1"]]

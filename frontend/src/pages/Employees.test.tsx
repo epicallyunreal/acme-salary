@@ -586,21 +586,26 @@ describe('Employees', () => {
     expect(screen.getByRole('grid')).toBeInTheDocument();
   });
 
-  it("shows a refused country under the Country field, in the API's words (D76)", async () => {
-    server.use(
-      http.get('/api/v1/employees/', () =>
-        HttpResponse.json({ country: ['Unknown country_code: XX'] }, { status: 400 }),
-      ),
-    );
-    renderApp('/employees?country=XX');
+  it.each([
+    ['Country', 'country', 'XX', 'Unknown country_code: XX'],
+    ['Department', 'department', 'NOPE', 'Unknown department_code: NOPE'],
+  ])(
+    "shows a refused %s under its field, in the API's words (D76)",
+    async (label, key, code, message) => {
+      server.use(
+        http.get('/api/v1/employees/', () =>
+          HttpResponse.json({ [key]: [message] }, { status: 400 }),
+        ),
+      );
+      renderApp(`/employees?${key}=${code}`);
 
-    const country = await screen.findByRole('combobox', { name: 'Country' });
-    const field = country.closest('.MuiFormControl-root') as HTMLElement;
-    expect(await within(field).findByText('Unknown country_code: XX')).toBeInTheDocument();
-    expect(country).toHaveAccessibleDescription('Unknown country_code: XX');
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Could not load employees/)).not.toBeInTheDocument();
-  });
+      const select = await screen.findByRole('combobox', { name: label });
+      await waitFor(() => expect(select).toHaveAccessibleDescription(message));
+      expect(screen.getByText(message)).toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Could not load employees/)).not.toBeInTheDocument();
+    },
+  );
 
   it('says a refusal the bar has no field for above the grid, never as a lost connection', async () => {
     server.use(
@@ -679,6 +684,37 @@ describe('Employees', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?country=IN&page=6'));
     expect(router.state.historyAction).toBe('REPLACE');
     expect(await screen.findByText('ACME-51')).toBeInTheDocument();
+    expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
+  });
+
+  it('counts the last page from a fresh page 1 when the list shrank, not the cached one (D77)', async () => {
+    let total = 60;
+    server.use(
+      http.get('/api/v1/employees/', ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        const page = Number(params.get('page') ?? '1');
+        const pageSize = Number(params.get('page_size') ?? '25');
+        if ((page - 1) * pageSize >= total) {
+          return HttpResponse.json({ detail: 'Invalid page.' }, { status: 404 });
+        }
+        const rows = sixtyRows(params);
+        return HttpResponse.json({
+          ...rows,
+          count: total,
+          results: rows.results.filter((row) => row.id <= total),
+        });
+      }),
+    );
+    const { router } = renderApp('/employees?country=IN');
+    expect(await screen.findByText('ACME-1')).toBeInTheDocument();
+
+    // Page 1 is cached with 60, six pages. The list shrinks to two before page 5 is opened.
+    total = 15;
+    await act(() => router.navigate('/employees?country=IN&page=5'));
+
+    await waitFor(() => expect(router.state.location.search).toBe('?country=IN&page=2'));
+    expect(await screen.findByText('ACME-11')).toBeInTheDocument();
+    expect(router.state.location.search).toBe('?country=IN&page=2');
     expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
   });
 
