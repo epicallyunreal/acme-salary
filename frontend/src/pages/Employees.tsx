@@ -77,7 +77,7 @@ export function Employees() {
           count === undefined ? undefined : (
             <Typography component="span" variant="body2" className="num">
               {count.toLocaleString('en-US')} {count === 1 ? 'employee' : 'employees'}
-              {filtered ? ' match' : ''}
+              {filtered ? (count === 1 ? ' matches' : ' match') : ''}
             </Typography>
           )
         }

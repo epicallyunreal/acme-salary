@@ -575,6 +575,26 @@ describe('Employees', () => {
     expect(screen.queryByText(/Could not load employees/)).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['1 employee', 1, ''],
+    ['4 employees', 4, ''],
+    ['1 employee matches', 1, '?search=asha'],
+    ['4 employees match', 4, '?search=a'],
+  ])('says "%s" for %i employees at /employees%s', async (text, count, search) => {
+    server.use(
+      http.get('/api/v1/employees/', () =>
+        HttpResponse.json({
+          ...employeePage,
+          count,
+          results: employeePage.results.slice(0, count),
+        }),
+      ),
+    );
+    renderApp(`/employees${search}`);
+
+    expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
   it('says what to do when the filters match nothing', async () => {
     server.use(
       http.get('/api/v1/employees/', () =>
