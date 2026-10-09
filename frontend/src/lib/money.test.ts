@@ -56,5 +56,9 @@ describe('isAbove', () => {
     expect(isAbove('100000', '100000.00')).toBe(false);
     // Past what a float holds exactly, the cent still counts.
     expect(isAbove('99999999999999999.01', '99999999999999999')).toBe(true);
+    // A sign belongs to the whole amount, cents included.
+    expect(isAbove('-5.50', '-5.40')).toBe(false);
+    expect(isAbove('-0.50', '0')).toBe(false);
+    expect(isAbove('0', '-0.50')).toBe(true);
   });
 });

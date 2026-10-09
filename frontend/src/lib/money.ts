@@ -88,8 +88,10 @@ export function monthly(value: string): string {
 }
 
 function cents(value: string): bigint {
-  const [whole, fraction = ''] = value.split('.');
-  return BigInt(whole || '0') * 100n + BigInt((fraction + '00').slice(0, 2));
+  const negative = value.startsWith('-');
+  const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.');
+  const amount = BigInt(whole || '0') * 100n + BigInt((fraction + '00').slice(0, 2));
+  return negative ? -amount : amount;
 }
 
 /** Whether one amount, as the URL or the API writes it, is above another: compared in cents as
