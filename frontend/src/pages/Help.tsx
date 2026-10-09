@@ -118,7 +118,7 @@ const QUESTIONS: Question[] = [
     id: 'same-file-twice',
     question: 'What happens if I import the same file twice?',
     answer:
-      'Nothing changes the second time. Rows are matched to employees by their legacy code, so a row that repeats what is already on file, a scheduled revision included, is marked No changes and left out when you approve.',
+      'Nothing changes the second time. Rows are matched to employees by their legacy code, so a row that repeats what is already on file, a scheduled revision included, is counted as No-op and left out when you approve.',
   },
   // D72 and SPEC section 13's long requests: the busy dialog and the polling after a cut.
   {
