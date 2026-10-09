@@ -9,7 +9,7 @@ import { useLogin } from '../api/auth';
 import { ApiError } from '../api/client';
 import { Credit } from '../components/layout/Credit';
 import { useAccessToken } from '../lib/auth';
-import { safeNext } from '../lib/navigation';
+import { pageTitle, safeNext } from '../lib/navigation';
 
 const loginSchema = z.object({
   email: z.email('Enter your email address'),
@@ -38,7 +38,7 @@ export function Login() {
   });
   // The login has no PageHeader to name the tab, and a sign-out would leave the last page's name.
   useEffect(() => {
-    document.title = 'Sign in · ACME Salary';
+    document.title = pageTitle('Sign in');
   }, []);
 
   if (token !== null) return <Navigate to={safeNext(params.get('next'))} replace />;

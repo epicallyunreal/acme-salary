@@ -27,6 +27,11 @@ export function safeNext(next: string | null): string {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+/** The tab's title for a page: `Employees · ACME Salary`. */
+export function pageTitle(name: string): string {
+  return `${name} · ACME Salary`;
+}
+
 /** A full reload, which also fetches the page's code again, as after a deploy. */
 export function reloadPage() {
   window.location.reload();

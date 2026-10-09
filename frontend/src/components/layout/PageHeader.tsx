@@ -1,6 +1,8 @@
 import { Box, Typography } from '@mui/material';
 import { type ReactNode, useEffect } from 'react';
 
+import { pageTitle } from '../../lib/navigation';
+
 interface PageHeaderProps {
   title: string;
   subtitle?: ReactNode;
@@ -10,7 +12,7 @@ interface PageHeaderProps {
 /** The h1 of every page with its actions on the right; also sets the document title. */
 export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
   useEffect(() => {
-    document.title = `${title} · ACME Salary`;
+    document.title = pageTitle(title);
   }, [title]);
 
   return (
