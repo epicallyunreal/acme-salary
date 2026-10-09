@@ -706,6 +706,14 @@ Decision: Spent in period reading high is D72's design, every employee carrying 
 
 Consequences: a deploy no longer strands an open tab on the error page. The live pass and `docs/TESTING.md` follow these changes.
 
+## D79. An emptied database stays empty across restarts
+
+Context: the entrypoint runs `seed_data --if-empty` on every boot, right for a fresh volume, a first boot killed part way and `docker compose up` from the README. The end-to-end pass found it also undoes a deliberate Empty the database whenever the machine restarts: the local container, rebuilt after the second reset, seeded again on start. On Fly a deploy, host maintenance or a crash would do the same behind the reviewer, and keep the site down for the seed's minute, longer on a spent CPU balance.
+
+Decision: on 9 October the owner chose that `--if-empty` also skips while the reset's one `demo_reset` audit entry exists. An emptied database stays empty across restarts until the base file is imported or the operator runs `reset_demo`, which rebuilds the tables and the audit log with them. A fresh database, and one an interrupted seed left empty, are seeded as before, since the seed is one transaction and leaves no entry.
+
+Consequences: a restart can no longer refill the demo behind someone who emptied it, and a boot after a reset is as quick as one on a seeded database.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

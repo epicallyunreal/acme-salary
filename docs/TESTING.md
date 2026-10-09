@@ -12,7 +12,7 @@ The run was paused once, on 9 October, so that the layout and Help (step 12, D75
 | Driver | Claude Code (claude-opus-5-5) through the Claude in Chrome tools, extension 1.0.99, site access for localhost:8000 and acme.nutanprabhat.dev only |
 | Browser | Chrome 154 on macOS, a 1512 by 982 screen at device pixel ratio 2 |
 | Local target | `docker compose` on http://localhost:8000, the seeded database of 10,000 on staff and 5,000 leavers from seed 42, `NUM_PROXIES` 0 |
-| Commits | the pass began on `e6db3bc` (part A and the owner's helper text), and each defect it found was fixed and rebuilt into the container as it went, `c6f36c9` and then `0d22453` (image `6a2389080921`) for the first reset and base import. The error paths below ran on `5f2106e` (image `165ef1a459dc`), which holds the four changes made after the first report, and the second reset closed them. `5e95a51`, found in that round, was rebuilt (image `62304b2d1713`) and checked last, on the seed the container rebuilt on start once the database was empty. The reload after a deploy (`58fc79a`) is covered by its test alone, see Not covered |
+| Commits | the pass began on `e6db3bc` (part A and the owner's helper text), and each defect it found was fixed and rebuilt into the container as it went, `c6f36c9` and then `0d22453` (image `6a2389080921`) for the first reset and base import. The error paths below ran on `5f2106e` (image `165ef1a459dc`), which holds the four changes made after the first report, and the second reset closed them. `5e95a51`, found in that round, was rebuilt (image `62304b2d1713`) and checked last, on the seed the container rebuilt on start once the database was empty. That re-seed behind a deliberate reset was itself a defect, fixed in the commit that changed this note (D79): an emptied database now stays empty across restarts. The reload after a deploy (`58fc79a`) is covered by its test alone, see Not covered |
 | Window sizes | 1280 by 720 CSS pixels for the pass, 1280 by 680 for the first scenarios while the screen was shorter, 1024 by 768, and 1280 by 720 at 200% zoom, which is 640 by 360 |
 | Sign-in | the HR Manager, signed in by the owner in the tab whenever a session was needed. No password was typed, read or kept by Claude Code. Deliberately wrong passwords were typed on localhost alone, for the login and reset refusals |
 | Live target | https://acme.nutanprabhat.dev, read-only, see Live pass |
@@ -268,6 +268,7 @@ Found in this pass and fixed:
 | After Sign out the login tab kept the last page's title | `c6f36c9` |
 | A page past the last showed the connection message | `0d22453` (D77) |
 | A 409's message read "detail scheduled revision on 2027-04-01 must be cancelled before exit", the response's key on screen | `5e95a51` |
+| A restart after Empty the database seeded the demo again behind the reviewer | D79, the commit that records it here |
 | An empty dashboard with no filter said to clear a filter | `52efca1` (D78) |
 | A page whose code was gone, as after a deploy, stayed on the error page | `58fc79a` (D78) |
 

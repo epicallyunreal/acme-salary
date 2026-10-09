@@ -136,6 +136,47 @@ def test_a_negative_count_or_leavers_with_nobody_on_staff_is_refused(active, exi
     assert Employee.objects.count() == 0
 
 
+def test_if_empty_leaves_a_database_emptied_on_the_demo_data_page_empty():
+    """The reset's one demo_reset entry marks it, so a restart never seeds behind it (D79)."""
+    AuditLog.objects.create(
+        action=AuditLog.Action.DEMO_RESET, entity_type="demo_database", entity_id=0, after={}
+    )
+
+    out = seed(20, 10, if_empty=True)
+
+    assert "emptied on the Demo data page" in out
+    assert not Employee.objects.exists()
+
+
+def test_if_empty_seeds_a_fresh_database():
+    seed(20, 10, if_empty=True)
+
+    assert Employee.objects.count() == 30
+
+
+def test_if_empty_seeds_again_after_a_seed_cut_short(monkeypatch):
+    """The seed is one transaction, so a first boot killed part way leaves nothing behind."""
+    real = seed_module.bulk_apply
+    calls = []
+
+    def cut_short(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(seed_module, "CHUNK", 5)
+    monkeypatch.setattr(seed_module, "bulk_apply", cut_short)
+    with pytest.raises(KeyboardInterrupt):
+        seed(20, 10, if_empty=True)
+    assert not Employee.objects.exists()
+    monkeypatch.setattr(seed_module, "bulk_apply", real)
+
+    seed(20, 10, if_empty=True)
+
+    assert Employee.objects.count() == 30
+
+
 def test_reset_and_if_empty_exclude_each_other():
     with pytest.raises(CommandError, match="exclude each other"):
         seed(20, 10, reset=True, if_empty=True)

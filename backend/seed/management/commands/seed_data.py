@@ -18,6 +18,7 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
+from apps.audit.models import AuditLog
 from apps.compensation import validators
 from apps.compensation.services import bulk_apply
 from apps.employees.models import Employee
@@ -103,12 +104,23 @@ class Command(BaseCommand):
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--reset", action="store_true", help="wipe the business tables first")
         parser.add_argument(
-            "--if-empty", action="store_true", help="do nothing when employees already exist"
+            "--if-empty",
+            action="store_true",
+            help="do nothing when employees exist or the Demo data page emptied the database",
         )
 
     def handle(self, *args, **options):
         if options["reset"] and options["if_empty"]:
             raise CommandError("--reset and --if-empty exclude each other")
+        # The boot seed fills a fresh volume, or one a first boot left empty part way. A database
+        # emptied on the Demo data page carries its one demo_reset entry and stays empty across
+        # restarts, until the base file is imported or the operator runs reset_demo (D79).
+        if (
+            options["if_empty"]
+            and AuditLog.objects.filter(action=AuditLog.Action.DEMO_RESET).exists()
+        ):
+            self.stdout.write("the database was emptied on the Demo data page, nothing to do")
+            return
         if Employee.objects.exists():
             if options["if_empty"]:
                 self.stdout.write("employees exist, nothing to do")
