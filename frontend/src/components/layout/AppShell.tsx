@@ -17,6 +17,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-router';
 
 import { useLogout, useMe } from '../../api/auth';
+import { FRAME_MIN_WIDTH } from '../../lib/constants';
 
 const NAV_WIDTH = 208;
 
@@ -66,8 +67,9 @@ function NavItem({ label, to, pattern, Icon }: NavEntry) {
 }
 
 /** Left navigation, a top bar with the signed-in email and Sign out, and the page outlet, in a
- * frame of the window's height: the nav and the top bar never scroll, and `main` is the one
- * scroll container (D75). */
+ * frame of the window's height and at least 1024 px wide: the nav and the top bar never scroll,
+ * and `main` is the one scroll container (D75). A narrower window scrolls sideways rather than
+ * crushing the nav and the filters. */
 export function AppShell() {
   const { data: user } = useMe();
   const signOut = useLogout();
@@ -90,7 +92,7 @@ export function AppShell() {
   };
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh', overflow: 'hidden' }}>
+    <Box sx={{ display: 'flex', height: '100dvh', minWidth: FRAME_MIN_WIDTH, overflow: 'hidden' }}>
       <Box
         component="nav"
         aria-label="Main"

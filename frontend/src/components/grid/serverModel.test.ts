@@ -106,7 +106,7 @@ describe('URL round trip', () => {
       joined_before: '2026-09-30',
       currency: 'local' as const,
       page: 3,
-      page_size: 100,
+      page_size: 50,
       ordering: '-gross',
     };
 
@@ -118,6 +118,15 @@ describe('URL round trip', () => {
     expect(fromSearchParams(params)).toEqual(state);
   });
 
+  it('opens a link with a page size the grid does not offer, 25 and 100 included, at 10 (D75)', () => {
+    for (const size of ['25', '100', '7']) {
+      expect(fromSearchParams(new URLSearchParams(`page_size=${size}`)).page_size).toBe(10);
+    }
+    for (const size of [10, 20, 50]) {
+      expect(fromSearchParams(new URLSearchParams(`page_size=${size}`)).page_size).toBe(size);
+    }
+  });
+
   it('falls back to defaults for malformed values instead of sending them to the API', () => {
     const params = new URLSearchParams(
       'page=abc&page_size=7&status=gone&currency=gbp&level=1,x,9&ordering=salary&gross_min=1e5&joined_after=yesterday',
@@ -126,7 +135,7 @@ describe('URL round trip', () => {
     const state = fromSearchParams(params);
 
     expect(state.page).toBe(1);
-    expect(state.page_size).toBe(25);
+    expect(state.page_size).toBe(10);
     expect(state.status).toBe('active');
     expect(state.currency).toBe('usd');
     expect(state.level).toEqual([1]);

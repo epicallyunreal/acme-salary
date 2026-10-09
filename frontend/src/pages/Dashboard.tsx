@@ -22,6 +22,7 @@ import { RateMonthLabel } from '../components/insights/RateMonthLabel';
 import { TrendCard } from '../components/insights/TrendCard';
 import { EmptyState } from '../components/layout/EmptyState';
 import { PageHeader } from '../components/layout/PageHeader';
+import { FRAME_MIN_WIDTH } from '../lib/constants';
 import { formatDate } from '../lib/dates';
 import { todayUtc } from '../lib/period';
 
@@ -52,7 +53,7 @@ const LEVELS = [
 // The filter bar sticks only where the window has room for it and the cards below (D75). On a
 // small or zoomed-in window it wraps to several lines and would cover most of the view, so there it
 // scrolls away with the page.
-const STICKY_ROOM = '@media (min-width: 1000px) and (min-height: 600px)';
+const STICKY_ROOM = `@media (min-width: ${FRAME_MIN_WIDTH}px) and (min-height: 600px)`;
 
 /** While the bar sticks, main keeps that much room at its top when it scrolls a control into
  * view, so a control reached with the keyboard is never hidden under the bar (WCAG 2.4.11). */

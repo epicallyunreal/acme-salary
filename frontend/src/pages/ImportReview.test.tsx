@@ -82,6 +82,13 @@ describe('ImportReview', () => {
     ).toBeInTheDocument();
   });
 
+  it('stands its grid ten rows high whatever the window, 505 px (D75)', async () => {
+    renderApp('/imports/3');
+    await screen.findByText('Ravi Iyer');
+
+    expect(document.querySelector('.MuiDataGrid-root')).toHaveStyle({ height: '505px' });
+  });
+
   it('numbers its pages and jumps to the one typed, or the nearest there is, in the URL', async () => {
     const user = userEvent.setup();
     const asked: (string | null)[] = [];
@@ -93,7 +100,7 @@ describe('ImportReview', () => {
       }),
     );
     const { router } = renderApp('/imports/3?page=4');
-    await screen.findByText('Person 76');
+    await screen.findByText('Person 31');
 
     const pager = screen.getByRole('navigation', { name: 'pagination navigation' });
     expect(
@@ -107,16 +114,16 @@ describe('ImportReview', () => {
       'Go to page 3',
       'page 4',
       'Go to page 5',
-      'Go to page 10',
+      'Go to page 25',
       'Go to next page',
     ]);
     expect(within(pager).getByText('…')).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('Go to page'), '12{Enter}');
+    await user.type(screen.getByLabelText('Go to page'), '30{Enter}');
 
-    await screen.findByText('Person 226');
-    expect(router.state.location.search).toBe('?page=10');
-    expect(asked).toEqual(['4', '10']);
+    await screen.findByText('Person 241');
+    expect(router.state.location.search).toBe('?page=25');
+    expect(asked).toEqual(['4', '25']);
   });
 
   it('numbers its pages for the rows per page the URL holds', async () => {
@@ -128,11 +135,11 @@ describe('ImportReview', () => {
         return HttpResponse.json(rowsPage(url, MANY_ROWS));
       }),
     );
-    renderApp('/imports/3?page_size=100&page=2');
+    renderApp('/imports/3?page_size=50&page=2');
 
-    await screen.findByText('Person 101');
-    expect(asked).toEqual([['2', '100']]);
-    expect(screen.getByText('101–200 of 250')).toBeInTheDocument();
+    await screen.findByText('Person 51');
+    expect(asked).toEqual([['2', '50']]);
+    expect(screen.getByText('51–100 of 250')).toBeInTheDocument();
     const pager = screen.getByRole('navigation', { name: 'pagination navigation' });
     expect(within(pager).getByRole('button', { name: 'page 2' })).toHaveAttribute(
       'aria-current',

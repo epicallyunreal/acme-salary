@@ -10,7 +10,7 @@ import { server } from '../test/setup';
 import { SEARCH_DELAY_MS } from '../components/filters/FilterBar';
 import { expectEveryFieldLabelled } from '../test/a11y';
 
-/** Sixty rows, so the directory has three pages of 25; every row is a copy of the fixture. */
+/** Sixty rows, so the directory has six pages of 10; every row is a copy of the fixture. */
 function sixtyRows(params: URLSearchParams) {
   const page = Number(params.get('page') ?? '1');
   const pageSize = Number(params.get('page_size') ?? '25');
@@ -105,6 +105,13 @@ describe('Employees', () => {
     expect(within(asha).getByText('Engineering')).toHaveAttribute('title', 'Engineering');
   });
 
+  it('stands its grid ten rows high whatever the window, 505 px (D75)', async () => {
+    renderApp('/employees');
+    await rowsShown();
+
+    expect(document.querySelector('.MuiDataGrid-root')).toHaveStyle({ height: '505px' });
+  });
+
   it('shows by default the columns a 1280 px window has room for, the rest in the chooser', async () => {
     renderApp('/employees');
     await rowsShown();
@@ -176,7 +183,7 @@ describe('Employees', () => {
     const { router } = renderApp('/employees?page=2&country=IN');
     const user = userEvent.setup();
 
-    await screen.findByText('ACME-26');
+    await screen.findByText('ACME-11');
     expect(seen.map((params) => params.get('page'))).toEqual(['2']);
     expect(Object.fromEntries(new URLSearchParams(router.state.location.search))).toEqual({
       page: '2',
@@ -185,7 +192,7 @@ describe('Employees', () => {
 
     await user.click(screen.getByRole('button', { name: /next page/i }));
 
-    await screen.findByText('ACME-51');
+    await screen.findByText('ACME-21');
     expect(seen.at(-1)?.get('page')).toBe('3');
     expect(seen.at(-1)?.get('country')).toBe('IN');
     expect(seen.map((params) => params.get('page'))).toEqual(['2', '3']);
@@ -200,33 +207,33 @@ describe('Employees', () => {
     const user = userEvent.setup();
     const { router } = renderApp('/employees?page=5');
 
-    await screen.findByText('ACME-101');
-    expect(screen.getByText('101–125 of 10,000')).toBeInTheDocument();
+    await screen.findByText('ACME-41');
+    expect(screen.getByText('41–50 of 10,000')).toBeInTheDocument();
     expect(pageButtons()).toEqual([
       'Go to previous page',
       'Go to page 1',
       'Go to page 4',
       'page 5',
       'Go to page 6',
-      'Go to page 400',
+      'Go to page 1000',
       'Go to next page',
     ]);
     expect(screen.getByRole('button', { name: 'page 5' })).toHaveAttribute('aria-current', 'page');
     expect(screen.getAllByText('…')).toHaveLength(2);
 
-    await user.click(screen.getByRole('button', { name: 'Go to page 400' }));
+    await user.click(screen.getByRole('button', { name: 'Go to page 1000' }));
 
-    await screen.findByText('ACME-9976');
-    expect(router.state.location.search).toBe('?page=400');
+    await screen.findByText('ACME-9991');
+    expect(router.state.location.search).toBe('?page=1000');
     // At either end the pager shows more neighbours, so it keeps its width.
     expect(pageButtons()).toEqual([
       'Go to previous page',
       'Go to page 1',
-      'Go to page 396',
-      'Go to page 397',
-      'Go to page 398',
-      'Go to page 399',
-      'page 400',
+      'Go to page 996',
+      'Go to page 997',
+      'Go to page 998',
+      'Go to page 999',
+      'page 1000',
       'Go to next page',
     ]);
     expect(screen.getByRole('button', { name: 'Go to next page' })).toBeDisabled();
@@ -240,15 +247,15 @@ describe('Employees', () => {
 
     await user.type(screen.getByLabelText('Go to page'), '37{Enter}');
 
-    await screen.findByText('ACME-901');
+    await screen.findByText('ACME-361');
     expect(router.state.location.search).toBe('?page=37');
     expect(seen.at(-1)?.get('page')).toBe('37');
     expect(screen.getByLabelText('Go to page')).toHaveValue(null);
 
-    await user.type(screen.getByLabelText('Go to page'), '999{Enter}');
+    await user.type(screen.getByLabelText('Go to page'), '1999{Enter}');
 
-    await screen.findByText('ACME-9976');
-    expect(router.state.location.search).toBe('?page=400');
+    await screen.findByText('ACME-9991');
+    expect(router.state.location.search).toBe('?page=1000');
 
     await user.type(screen.getByLabelText('Go to page'), '0{Enter}');
 
@@ -282,20 +289,31 @@ describe('Employees', () => {
     // jsdom applies no media query, so MUI X keeps its Rows per page select hidden here, as on a
     // phone. The size it sets is read from the URL like the page.
     const seen = recordRequests({ rows: 10000 });
-    renderApp('/employees?page_size=100&page=2');
+    renderApp('/employees?page_size=50&page=2');
 
-    await screen.findByText('ACME-101');
-    expect([seen[0].get('page'), seen[0].get('page_size')]).toEqual(['2', '100']);
-    expect(screen.getByText('101–200 of 10,000')).toBeInTheDocument();
-    expect(pageButtons()).toContain('Go to page 100');
-    expect(pageButtons()).not.toContain('Go to page 400');
+    await screen.findByText('ACME-51');
+    expect([seen[0].get('page'), seen[0].get('page_size')]).toEqual(['2', '50']);
+    expect(screen.getByText('51–100 of 10,000')).toBeInTheDocument();
+    expect(pageButtons()).toContain('Go to page 200');
+    expect(pageButtons()).not.toContain('Go to page 1000');
+  });
+
+  it('opens a link with 25 or 100 rows a page at 10, the size the grid stands (D75)', async () => {
+    for (const size of ['25', '100']) {
+      const seen = recordRequests({ rows: 10000 });
+      const { unmount } = renderApp(`/employees?page_size=${size}`);
+
+      await screen.findByText('1–10 of 10,000');
+      expect(seen[0].get('page_size')).toBe('10');
+      unmount();
+    }
   });
 
   it('sends the URL state to the API and a filter change goes back to page 1', async () => {
     const seen = recordRequests({ rows: 60 });
     renderApp('/employees?page=2&ordering=-gross&level=3');
     const user = userEvent.setup();
-    await screen.findByText('ACME-26');
+    await screen.findByText('ACME-11');
 
     expect(seen).toHaveLength(1);
     expect(seen[0].get('page')).toBe('2');

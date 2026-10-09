@@ -56,7 +56,7 @@ describe('useUrlFilters', () => {
   it('resets the filters and the search, keeps the sort and the page size, and goes to page 1', () => {
     const { result } = renderHook(() => useUrlFilters(), {
       wrapper: wrapperAt(
-        '/employees?country=IN&search=rao&currency=eur&page_size=100&page=2&ordering=-gross',
+        '/employees?country=IN&search=rao&currency=eur&page_size=50&page=2&ordering=-gross',
       ),
     });
 
@@ -64,7 +64,7 @@ describe('useUrlFilters', () => {
 
     expect(result.current.state).toEqual({
       ...DEFAULT_STATE,
-      page_size: 100,
+      page_size: 50,
       ordering: '-gross',
     });
   });

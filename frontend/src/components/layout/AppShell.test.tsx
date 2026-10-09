@@ -21,6 +21,8 @@ describe('AppShell', () => {
     expect(main).toHaveAttribute('tabindex', '-1');
     // The containing block of whatever a page positions, so nothing scrolls the window.
     expect(main).toHaveStyle({ position: 'relative', overflowY: 'auto' });
+    // Never narrower than 1024 px: a narrower window scrolls sideways (D75).
+    expect(main.parentElement?.parentElement).toHaveStyle({ minWidth: '1024px' });
   });
 
   it('puts main back at the top and focuses it when the page changes', async () => {

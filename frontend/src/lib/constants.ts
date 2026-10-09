@@ -5,8 +5,14 @@ import type { Gender } from '../api/types';
 export const API_PREFIX = '/api/v1';
 export const REFRESH_STORAGE_KEY = 'acme.refresh';
 
-export const PAGE_SIZES = [25, 50, 100] as const;
-export const DEFAULT_PAGE_SIZE = 25;
+// The grids stand ten rows high, so the default page fits one exactly. A link with any other size,
+// 25 and 100 included, opens at 10. The API's maximum stays 100 (the owner's choice, D75).
+export const PAGE_SIZES = [10, 20, 50] as const;
+export const DEFAULT_PAGE_SIZE = 10;
+
+/** The app's frame is never narrower: a narrower window scrolls sideways rather than crushing the
+ * nav and the filters (D75). */
+export const FRAME_MIN_WIDTH = 1024;
 
 export const REPORTING_CURRENCIES = ['usd', 'eur', 'local'] as const;
 export const EMPLOYEE_STATUSES = ['active', 'exited', 'upcoming'] as const;
