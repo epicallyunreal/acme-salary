@@ -46,9 +46,7 @@ def test_a_password_change_ends_every_earlier_session_and_a_fresh_login_works(an
     hr_user.save()
 
     assert me(anon, before["access"]) == 401
-    rotated = refresh(anon, before["refresh"])
-    assert rotated.status_code == 200
-    assert me(anon, rotated.json()["access"]) == 401
+    assert refresh(anon, before["refresh"]).status_code == 401
     fresh = login(anon, password="rotated-lantern-staple-42")
     assert fresh.status_code == 200
     assert me(anon, fresh.json()["access"]) == 200

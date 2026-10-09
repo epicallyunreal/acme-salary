@@ -85,3 +85,16 @@ def test_rotate_carries_the_revoke_claim_to_both_new_tokens(hr_user):
     expected = get_md5_hash_password(hr_user.password)
     assert rotated.payload[api_settings.REVOKE_TOKEN_CLAIM] == expected
     assert access.payload[api_settings.REVOKE_TOKEN_CLAIM] == expected
+
+
+def test_refresh_session_refuses_a_token_from_before_a_password_change(hr_user):
+    """The refresh itself fails once the password changes, rather than minting access tokens
+    that are each refused (D76)."""
+    raw = str(RefreshToken.for_user(hr_user))
+    hr_user.set_password("rotated-lantern-staple-42")  # a dummy, never a real credential
+    hr_user.save()
+
+    with pytest.raises(AuthenticationFailed) as refused:
+        services.refresh_session(raw)
+
+    assert refused.value.get_codes() == "password_changed"

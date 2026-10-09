@@ -14,6 +14,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from rest_framework_simplejwt.utils import get_md5_hash_password
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,12 @@ def refresh_session(raw_token: str) -> tuple[AccessToken, RefreshToken]:
             raise AuthenticationFailed(
                 "No active account found with the given credentials", "no_active_account"
             )
+        # A token issued before a password change ends here, rather than rotating into access
+        # tokens that are each refused (D76).
+        if api_settings.CHECK_REVOKE_TOKEN and refresh.payload.get(
+            api_settings.REVOKE_TOKEN_CLAIM
+        ) != get_md5_hash_password(user.password):
+            raise AuthenticationFailed("The user's password has been changed.", "password_changed")
         return rotate(refresh)
     except TokenError:
         revoke_on_reuse(raw_token)
