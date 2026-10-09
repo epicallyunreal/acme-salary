@@ -63,6 +63,15 @@ describe('Login', () => {
     );
   });
 
+  it('names its own tab, whatever page the visitor left (found in the end-to-end pass)', async () => {
+    document.title = 'Help · ACME Salary';
+
+    renderApp('/login');
+
+    await screen.findByRole('button', { name: 'Sign in' });
+    expect(document.title).toBe('Sign in · ACME Salary');
+  });
+
   it('asks for both fields before sending anything', async () => {
     renderApp('/login');
     const user = userEvent.setup();

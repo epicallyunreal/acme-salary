@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Alert, Box, Button, Paper, TextField, Typography } from '@mui/material';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import { z } from 'zod';
@@ -34,6 +35,10 @@ export function Login() {
     mode: 'onBlur',
     defaultValues: { email: '', password: '' },
   });
+  // The login has no PageHeader to name the tab, and a sign-out would leave the last page's name.
+  useEffect(() => {
+    document.title = 'Sign in · ACME Salary';
+  }, []);
 
   if (token !== null) return <Navigate to={safeNext(params.get('next'))} replace />;
 
