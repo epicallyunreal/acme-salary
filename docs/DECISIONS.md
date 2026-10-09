@@ -672,6 +672,16 @@ Decision: step 12, End-to-end UI test, drives the app through its real UI with t
 
 Consequences: the brief's test artifact is a document a reviewer can read beside the video, each row repeatable by hand. It records one commit and one release, not a regression suite, so Playwright stays P1. The live site proves reading alone, and the writes are proven on the same image locally. Ship becomes step 13 and P1 step 14 in SPEC section 15 and PLAN.
 
+Amended 9 Oct: the owner put Layout and Help first as step 12 (D75), so this pass runs as step 13, Ship is step 14 and P1 step 15. The pass was paused at the directory, and its findings so far carry into step 13.
+
+## D75. Before the end-to-end pass: a fixed frame, grids that fill the window, and a Help page
+
+Context: on Employees and Import review the window scrolled and the grid scrolled inside it, two scrollbars whose share changed with the window. `ServerGrid` sized itself to `calc(100vh - 280px)` with a 360 px floor while what sits above it varies: the filter bar wraps to two or three lines on a narrower window, and the review page stacks its summary, state, alerts and filters. `AppShell` was `min-height: 100vh` with the body scrolling, so the nav and the top bar scrolled away, and on the dashboard the filter bar that decides every card scrolled out of sight. The owner paused the end-to-end pass (D74) on 9 October to put this first, so that pass sees the final layout. A better `calc` was the alternative, and it would still guess the height of what sits above the grid.
+
+Decision: step 12, Layout and Help. The shell is a fixed frame of the window's height (`100dvh`, which Login and SessionGate use too), the nav and the top bar outside `main`, and `main` the one scroll container, put back at the top on a route change and focused so Page Down and Space scroll it without a click. Employees and Import review are a flex column inside `main`, their header, filters and alerts at natural height and the grid in the space left (`flex: 1`, `min-height: 0`, as MUI X documents for a flex parent), with a floor of about eight rows below which `main` scrolls. The dashboard's filter bar sticks to the top of `main` on the page background with a hairline under it, beside one quiet link, "Why are some figures hidden?", to the Help answer. Text cells that can truncate carry their full value as a native title, which adds no motion. A ninth page, Help at `/help`, sits under a divider with Demo data in the nav: How it works in six steps and twelve questions answered from SPEC and DECISIONS, each with an anchor, static, with no API call. No API change, no new dependency, and nothing any page does changes.
+
+Consequences: the grid's height follows the window and whatever sits above it, so no number in the code guesses it, and the page scrolls only below the grid's floor. The paused pass resumes as step 13 with its findings carried, and Ship becomes step 14.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

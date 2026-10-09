@@ -2,7 +2,7 @@ Owner decision: approved. Steps 1 to 7 on 7 October, steps 8 to 10 on 8 October 
 
 # ACME Salary Management: Plan
 
-What gets built, in what order, from `docs/SPEC.md` v2.1 section 15, the way `docs/DESIGN.md` describes it. Thirteen steps, each 2 to 6 commits, each closed by `/finish-step` (lint, tests, the four reviewers, DECISIONS and PERFORMANCE updates, one closing commit named after the step). A later step does not start before the earlier one is green and committed. Nothing marked P1 is built before the Ship step. Hours are focused wall-clock hours with Claude Code doing the work and the owner reviewing at each step close; they include the `/finish-step` cycle (two suite runs plus four reviewer agents, 20 to 30 minutes per step).
+What gets built, in what order, from `docs/SPEC.md` v2.1 section 15, the way `docs/DESIGN.md` describes it. Fourteen steps, each 2 to 6 commits, each closed by `/finish-step` (lint, tests, the four reviewers, DECISIONS and PERFORMANCE updates, one closing commit named after the step). A later step does not start before the earlier one is green and committed. Nothing marked P1 is built before the Ship step. Hours are focused wall-clock hours with Claude Code doing the work and the owner reviewing at each step close; they include the `/finish-step` cycle (two suite runs plus four reviewer agents, 20 to 30 minutes per step).
 
 ## Dependency graph
 
@@ -19,8 +19,9 @@ flowchart LR
   S9["9 Realistic seed,<br/>a period, numbered pages"]
   S10["10 Demo data"]
   S11["11 Hardening"]
-  S12["12 End-to-end<br/>UI test"]
-  S13["13 Ship"]
+  S12["12 Layout and Help"]
+  S13["13 End-to-end<br/>UI test"]
+  S14["14 Ship"]
   S1 -->|settings, test harness, CI, live target| S2
   S2 -->|models, fx, validators, pick_shown, factories| S3
   S3 -->|JWT, app shell, session, ServerGrid, FilterBar, detail serializer| S4
@@ -42,8 +43,9 @@ flowchart LR
   S9 -->|seed and period timings| S11
   S8 -->|cards to polish| S11
   S10 -->|demo page and reset| S11
-  S11 -->|the finished app, deployed| S12
-  S12 --> S13
+  S11 -->|shell, grids, pages| S12
+  S12 -->|the final layout, deployed| S13
+  S13 --> S14
 ```
 
 ## Step 1. Scaffold and skeleton, deployed
@@ -362,9 +364,45 @@ Risks: a missed target discovered here has the least time to fix; that is why th
 
 Plugin skills and connectors: `/perf-timing`, `/log-decision`, `ui-ux-pro-max` for empty states, focus and the error summary, `frontend-design` for the copy of every state, Context7 for Django 6.1's transaction and CSP settings, DRF 3.18's throttling and parsers, and SimpleJWT's blacklist models.
 
-## Step 12. End-to-end UI test
+## Step 12. Layout and Help
 
-Added by the owner before Ship on 9 October (D74), which becomes step 13. Run by claude-opus-5-5, the earlier steps having run on claude-fable-5-1.
+Added by the owner on 9 October (D75), before the end-to-end pass, which becomes step 13 with Ship step 14. The pass was paused at the directory, and its findings so far carry into step 13.
+
+Goal: one scroll container and one scrollbar where there were two, the nav, the top bar and the dashboard's filters always in view, full values on hover where a text cell truncates, and a Help page that explains the app in plain words.
+
+Scope: layout and one static page. No API change, no new dependency, no change to what any page does, to colours, type or the grid's behaviour, and no motion.
+
+1. App shell: a fixed frame of the window's height (`100dvh`, and `100vh` becomes `100dvh` in Login and SessionGate). The nav and the top bar never scroll, and `main` is the one scroll container. `main` goes back to the top on a route change, as the window did, and takes focus so Page Down and Space scroll it without a click.
+2. Employees and Import review: a flex column inside `main`, the header, filters and alerts at their natural height and the grid in the space left (`flex: 1`, `min-height: 0`, from MUI X's layout docs on a flex parent, checked with Context7). The `calc` height goes. The page does not scroll and the grid is the only vertical scrollbar, with a floor of about eight rows below which the page may scroll, and the report says at which window height that starts. No horizontal page scroll at the sizes below.
+3. Dashboard: the filter bar sticks to the top of `main` as the cards scroll, on the page background with a hairline under it, so the period, filters and currency stay in view. Beside it one quiet link, "Why are some figures hidden?", to the Help answer.
+4. Grid cells that truncate with an ellipsis show the full value on hover: name, email, designation, department, and the review grid's messages if they truncate. Numbers, amounts and dates are never truncated.
+5. Help, a ninth page at `/help`, in the nav under a divider with Demo data. "How it works": six numbered steps, Import, Review, Approve, Maintain, Understand and Share, and a closing line on the Demo data page. "Questions": an accordion of about twelve, each answered in two to four sentences from SPEC and DECISIONS, with the D-number in a code comment and never on the page, and an anchor on each. Static: no API call, no state, PageHeader and the theme as on every page. Plain words, no em dashes, no semicolons. The full text goes in the step report for the owner to approve.
+6. README: the tour gains one line for Help.
+
+Files to change: `src/components/layout/AppShell.tsx` and `SessionGate.tsx`, `src/pages/Login.tsx`, `src/components/grid/ServerGrid.tsx` and `columns.tsx`, `src/components/imports/RowCells.tsx`, `src/pages/Employees.tsx`, `ImportReview.tsx` and `Dashboard.tsx`, `src/components/filters/FilterBar.tsx`, `src/pages/Help.tsx` (new), `src/router.tsx`, their tests, `docs/DESIGN.md` (section 6), `docs/SPEC.md` (section 10's ninth page), `docs/DECISIONS.md`, `README.md`.
+
+Tests: jsdom covers what it can see: the shell's structure (the nav and the top bar outside `main`, `main` the focusable scroll container, put back at the top and focused on a route change), the Help nav item and its `aria-current`, the Help headings, steps and anchors, an anchor in the URL opening its answer, the dashboard link's target, and the hover titles. The layout itself is checked in Chrome, signed in by the owner: at 1280×720, 1440×900 and 1920×1080, Employees and Import review (a batch with alerts staged locally) show one vertical scrollbar, the grid's, and no horizontal page scroll, the nav and the top bar stay put on every page, the dashboard's filter bar stays in view to the last card, the dashboard link lands on the Help answer, and at 200% zoom on 1280×720 nothing is cut off and every control is reachable. The window checks go in the step report with their sizes.
+
+Commits:
+
+1. `docs: plan step 12, layout and Help (D75)`
+2. `fix(layout): a fixed frame with main the one scroller, and grids that fill the window`
+3. `feat(help): the Help page, how it works and the questions`
+4. `fix(dashboard): the filter bar stays in view, with a link to the hidden figures answer`
+5. `fix(grid): truncated text cells show their full value on hover`
+6. `docs: layout and Help (step 12)` (finish-step by hand as in step 11: the four reviewers, DESIGN, SPEC section 10, DECISIONS, PLAN, the README line, and a report with the Help text and the window checks before the owner deploys)
+
+Hours: 4.
+
+Acceptance closed: SPEC section 10's ninth page and the owner's window checks.
+
+Risks: MUI X sizes a grid from its parent, so a parent without a definite height gives a grid of no rows or one that grows without end, which the flex column and its floor answer. A sticky bar over the cards needs a background and a layer above them, or the charts show through it. Focusing `main` on a route change must not take focus from a field a page focuses itself.
+
+Plugin skills and connectors: `ui-ux-pro-max` for the layout, `frontend-design` for the Help page, `/frontend-page` for the route and the nav item, Context7 for MUI X 9's layout on a flex parent, `/log-decision`.
+
+## Step 13. End-to-end UI test
+
+Added by the owner before Ship on 9 October (D74), and moved to step 13 when Layout and Help went first (D75), with Ship step 14. Run by claude-opus-5-5, the earlier steps having run on claude-fable-5-1. Paused at the directory on 9 October, its findings so far listed in the step 12 report.
 
 Goal: the finished app driven through its real UI with the Claude in Chrome tools, in full on the seeded compose container from HEAD at `http://localhost:8000` and read-only on `https://acme.nutanprabhat.dev`, and `docs/TESTING.md` written: what is built, page by page against SPEC F1 to F9 and section 10, what was tested, scenario by scenario with the result, and every error path and edge case produced through the UI. The brief asks for a video and test artifacts, and this is the written one.
 
@@ -388,7 +426,7 @@ Commits:
 
 1. `docs: plan step 12, the end-to-end UI test (D74)`
 2. One `fix(<area>): ...` per bug found, each with its test.
-3. `docs: the end-to-end UI test recorded (step 12)` (finish-step by hand as in step 11: the four reviewers, DECISIONS and PLAN updated, the README line, and a report before the owner deploys that says whether the live pass ran on release 18 before or after any fix)
+3. `docs: the end-to-end UI test recorded (step 13)` (finish-step by hand as in step 11: the four reviewers, DECISIONS and PLAN updated, the README line, and a report before the owner deploys that says which release the live pass ran on and whether before or after any fix)
 
 Hours: 6.
 
@@ -398,7 +436,7 @@ Risks: a native dialog stops the extension, so a form with unsaved changes is ne
 
 Plugin skills and connectors: `claude-in-chrome` for the pass, `/log-decision`, Context7 if a fix calls a library API. No design skill: the step tests the UI and designs nothing.
 
-## Step 13. Ship
+## Step 14. Ship
 
 Goal: the final build is live, smoke-tested on the live URL, recorded, and the repository is public.
 
@@ -409,7 +447,7 @@ Tests: none new. A manual smoke test on the live URL in the order of the demo: s
 Commits:
 
 1. `docs: final decisions, performance notes and demo video link`
-2. `chore: ship (step 13)`
+2. `chore: ship (step 14)`
 
 Hours: 1.5, of which the demo recording is the owner's.
 
@@ -434,18 +472,19 @@ Plugin skills and connectors: `/log-decision`. No design or library skill.
 | 9 Realistic seed, a period, numbered pages | 11.0 | 46.5 | added before Hardening (D64) |
 | 10 Demo data | 9.0 | 55.5 | added before Hardening (D72) |
 | 11 Hardening | 8.0 | 63.5 | the audit's leads, the guardrails and the README added on 9 October (D73) |
-| 12 End-to-end UI test | 6.0 | 69.5 | added before Ship (D74) |
-| 13 Ship | 1.5 | 71.0 | |
+| 12 Layout and Help | 4.0 | 67.5 | added before the end-to-end pass (D75) |
+| 13 End-to-end UI test | 6.0 | 73.5 | added before Ship (D74) |
+| 14 Ship | 1.5 | 75.0 | |
 
-Total: 71 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64), step 10 before it the same day (D72), step 11 grew by the security audit's leads, the guardrails and the README on 9 October (D73), and step 12 was added before Ship the same day (D74), so the planned close column stops at step 7.
+Total: 75 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64), step 10 before it the same day (D72), step 11 grew by the security audit's leads, the guardrails and the README on 9 October (D73), step 13 was added before Ship the same day (D74) and step 12 before it (D75), so the planned close column stops at step 7.
 
 Submission target: the morning of 8 October 2026 IST, full scope, per DECISIONS D19 and D23. The owner decides at the end on any overrun. At these estimates and with no breaks from a 12:30 start, steps 1 to 4 close by 06:00 on 8 October, step 5 by 11:00, step 6 by 15:00 and steps 7 to 9 by 20:30; the planned close column is the number D23 asks for, so each step's slip is visible against it at the time, not after. The table assumes continuous work; the owner's own stop time is not in it.
 
-Shrink order if time runs short (SPEC section 15: steps 7 and 11 shrink before anything in 1 to 6, 8, 9, 10, 12 or 13):
+Shrink order if time runs short (SPEC section 15: steps 7 and 11 shrink before anything in 1 to 6, 8, 9, 10, 12, 13 or 14):
 
 1. Step 11 first: the accessibility pass and the per-page state polish drop; `/perf-timing`, the PERFORMANCE row and the README stay, because the `[measured]` criteria and the demo credentials depend on them.
 2. Step 7 second: insight exports and the XLSX and JSON writers drop; the directory CSV export stays, because it is the one F6 criterion a reviewer will click.
-3. Nothing in steps 1 to 6, 8, 9, 10, 12 or 13 is cut. Step 14 (P1) does not start.
+3. Nothing in steps 1 to 6, 8, 9, 10, 12, 13 or 14 is cut. Step 15 (P1) does not start.
 
 ## What the owner does by hand
 
@@ -455,8 +494,9 @@ Shrink order if time runs short (SPEC section 15: steps 7 and 11 shrink before a
 4. Start Docker Desktop if a local `docker compose up` check is wanted before the Ship step; CI builds the image on every push either way.
 5. Approve the dependency prompts under rule 9 (`uv add`, `npm install`) as they come, each with its DECISIONS line.
 6. Answer any `Question for the human` a reviewer raises at a step close; the step waits on it.
-7. In step 12: grant the Claude in Chrome extension site access for `localhost:8000` and `acme.nutanprabhat.dev`, start the seeded compose container from HEAD, sign in whenever a page asks, and stop and start the container when a scenario needs it.
-8. In step 13: record the demo video on the live URL, give Claude Code the link for the README, and make the GitHub repository public.
+7. In step 12: sign in locally for the window checks in Chrome, and deploy the step before step 13 starts, so the live pass sees the new layout.
+8. In step 13: grant the Claude in Chrome extension site access for `localhost:8000` and `acme.nutanprabhat.dev`, start the seeded compose container from HEAD, sign in whenever a page asks, and stop and start the container when a scenario needs it.
+9. In step 14: record the demo video on the live URL, give Claude Code the link for the README, and make the GitHub repository public.
 
 ## Questions for the owner
 
