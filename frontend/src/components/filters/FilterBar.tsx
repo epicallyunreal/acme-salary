@@ -276,7 +276,7 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
             })
           }
           error={errorOn('designation')}
-          helperText="Separate titles with commas, press Enter to apply"
+          helperText="Commas between titles, Enter applies"
           width={240}
         />
         <MultiSelect

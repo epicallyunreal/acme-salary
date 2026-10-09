@@ -645,7 +645,7 @@ describe('Employees', () => {
     renderApp('/employees');
 
     expect(await screen.findByRole('textbox', { name: 'Designation' })).toHaveAccessibleDescription(
-      'Separate titles with commas, press Enter to apply',
+      'Commas between titles, Enter applies',
     );
   });
 
