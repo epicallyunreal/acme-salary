@@ -81,35 +81,38 @@ interface ChartTableProps {
 }
 
 /** The chart's figures as text for screen readers, every row included: the chart is the
- * supplement and the table the record (ui-ux-pro-max's chart guidance). */
+ * supplement and the table the record (ui-ux-pro-max's chart guidance). A table cannot be shrunk
+ * to 1 px nor clip what it holds, so the hiding is done by a block around it (D75). */
 export function ChartTable({ caption, head, rows }: ChartTableProps) {
   return (
-    <Box component="table" sx={visuallyHidden}>
-      <caption>{caption}</caption>
-      <thead>
-        <tr>
-          {head.map((cell) => (
-            <th key={cell} scope="col">
-              {cell}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={String(row[0])}>
-            {row.map((cell, index) =>
-              index === 0 ? (
-                <th key={index} scope="row">
-                  {cell}
-                </th>
-              ) : (
-                <td key={index}>{cell}</td>
-              ),
-            )}
+    <Box sx={visuallyHidden}>
+      <table>
+        <caption>{caption}</caption>
+        <thead>
+          <tr>
+            {head.map((cell) => (
+              <th key={cell} scope="col">
+                {cell}
+              </th>
+            ))}
           </tr>
-        ))}
-      </tbody>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={String(row[0])}>
+              {row.map((cell, index) =>
+                index === 0 ? (
+                  <th key={index} scope="row">
+                    {cell}
+                  </th>
+                ) : (
+                  <td key={index}>{cell}</td>
+                ),
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </Box>
   );
 }

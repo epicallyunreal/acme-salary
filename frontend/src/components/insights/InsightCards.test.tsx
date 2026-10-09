@@ -28,6 +28,7 @@ import { ByLevelCard } from './ByLevelCard';
 import { ByTenureCard } from './ByTenureCard';
 import { CostBridgeCard } from './CostBridgeCard';
 import { CostMixCard } from './CostMixCard';
+import { ChartTable } from './InsightCard';
 import { DistributionCard } from './DistributionCard';
 import { GenderGapCard } from './GenderGapCard';
 import { KpiRow } from './KpiRow';
@@ -584,5 +585,27 @@ describe('insight cards', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(await screen.findByRole('table', { name: 'Payroll by country' })).toBeInTheDocument();
+  });
+});
+
+describe('ChartTable', () => {
+  it('hides the table inside a 1 px block, since a table neither shrinks nor clips (D75)', async () => {
+    renderWithProviders(
+      <ChartTable
+        caption="Payroll by country"
+        head={['Country', 'Headcount']}
+        rows={[['India', 4504]]}
+      />,
+    );
+
+    const table = await screen.findByRole('table', { name: 'Payroll by country' });
+    // Positioned itself, the table kept its full size where it stood and scrolled the window.
+    expect(table).not.toHaveStyle({ position: 'absolute' });
+    expect(table.parentElement).toHaveStyle({
+      position: 'absolute',
+      width: '1px',
+      height: '1px',
+      overflow: 'hidden',
+    });
   });
 });

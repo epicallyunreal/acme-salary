@@ -149,6 +149,9 @@ export function AppShell() {
           // a place to read from, not a control, so it draws no focus ring.
           tabIndex={-1}
           sx={{
+            // The containing block of anything a page positions, such as the text a screen reader
+            // alone reads, so nothing escapes the scroll container and scrolls the window.
+            position: 'relative',
             flex: 1,
             minHeight: 0,
             minWidth: 0,

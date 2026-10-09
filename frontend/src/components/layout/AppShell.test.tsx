@@ -19,6 +19,8 @@ describe('AppShell', () => {
     ).toBeInTheDocument();
     // Focusable from code, out of the tab order (D75).
     expect(main).toHaveAttribute('tabindex', '-1');
+    // The containing block of whatever a page positions, so nothing scrolls the window.
+    expect(main).toHaveStyle({ position: 'relative', overflowY: 'auto' });
   });
 
   it('puts main back at the top and focuses it when the page changes', async () => {

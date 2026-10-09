@@ -1,4 +1,6 @@
-/** Read by screen readers, not shown: a header a column needs, or a chart's numbers as a table. */
+/** Read by screen readers, not shown: a header a column needs, or the block around a chart's
+ * table. Put it on a block or an inline element, never on a table, which neither shrinks to 1 px
+ * nor clips what it holds (D75). */
 export const visuallyHidden = {
   position: 'absolute',
   width: '1px',
