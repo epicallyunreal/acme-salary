@@ -47,6 +47,17 @@ export const FILTER_KEYS = [
   'currency',
 ] as const satisfies readonly (keyof DirectoryFilters)[];
 
+/** The directory's filters a 400 can name, each shown under its own field (D76). The rest are
+ * read from the URL only as values the API accepts. */
+export const FIELDS_WITH_ERRORS: ReadonlySet<string> = new Set([
+  'search',
+  'designation',
+  'gross_min',
+  'gross_max',
+  'joined_after',
+  'joined_before',
+]);
+
 export const DEFAULT_STATE: GridState = {
   search: '',
   country: [],

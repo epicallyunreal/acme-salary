@@ -549,8 +549,40 @@ describe('Dashboard', () => {
       await screen.findByText('No one matches these filters on 31 Mar 2026. Clear a filter.'),
     ).toBeInTheDocument();
   });
-  it('every card says so when its insight does not load, each with its own Retry', async () => {
-    server.use(http.get('/api/v1/insights/:name/', () => HttpResponse.json({}, { status: 500 })));
+  it("shows a filter the API refuses in the API's words, once, under the bar, with Clear filters", async () => {
+    const refused: string[] = [];
+    server.use(
+      http.get('/api/v1/insights/:name/', ({ request, params }) => {
+        if (new URL(request.url).searchParams.get('country') !== 'XX')
+          return HttpResponse.json(insightFor(String(params.name), false));
+        refused.push(String(params.name));
+        return HttpResponse.json({ country: ['Unknown country_code: XX'] }, { status: 400 });
+      }),
+    );
+    const { router } = renderApp('/?country=XX');
+    const user = userEvent.setup();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Unknown country_code: XX');
+    const bar = screen.getByRole('region', { name: 'Filters' });
+    expect(bar.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await waitFor(() => expect([...refused].sort()).toEqual(INSIGHTS));
+    // In place of the cards, and never the connection message.
+    expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Key figures' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: QUESTIONS[0] })).not.toBeInTheDocument();
+
+    await user.click(within(alert).getByRole('button', { name: 'Clear filters' }));
+
+    expect(await screen.findByRole('heading', { name: QUESTIONS[0] })).toBeInTheDocument();
+    expect(router.state.location.search).toBe('');
+  });
+
+  it.each([
+    ['the server fails', () => HttpResponse.json({}, { status: 500 })],
+    ['no answer comes', () => HttpResponse.error()],
+  ])('every card says so when %s, each with its own Retry', async (_, answer) => {
+    server.use(http.get('/api/v1/insights/:name/', answer));
     renderApp('/');
 
     // One per insight the dashboard draws, each with the state table's sentence.

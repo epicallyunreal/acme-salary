@@ -654,7 +654,7 @@ Error and empty states, one sentence that says what to do next:
 | Employee not found | "This employee does not exist. Go back to the directory." |
 | Dashboard, empty population | "No one matches these filters today. Clear a filter." (the headcount shows 0, the money figures `—`) |
 | Dashboard, a filter the API refuses (400) | the API's own words in one alert under the filter bar, with Clear filters beside it, in place of the cards (D58, D76) |
-| Directory, a filter the API refuses (400) | the API's own words under that filter's field, more than 20 titles on Designation (D61, D76) |
+| Directory, a filter the API refuses (400) | the API's own words under that filter's field, more than 20 titles on Designation, and above the grid for a parameter the bar has no field for (D61, D76) |
 | Dashboard, a link whose period cannot be read | the dashboard on Last 12 months, the URL replaced, and the line "This link's period could not be read, so the dashboard shows the last 12 months." (D76) |
 | Directory, Gross min above Gross max | "Gross min is above Gross max" under the two fields, the grid as the API answers (D76) |
 | A page that fails to render | "This page could not be shown." with Reload and Go to the dashboard, inside the frame (D76) |

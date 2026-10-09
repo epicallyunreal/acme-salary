@@ -541,6 +541,40 @@ describe('Employees', () => {
     await screen.findByText('Asha Rao');
   });
 
+  it("shows a filter the API refuses in the API's words on that field, the grid kept", async () => {
+    server.use(
+      http.get('/api/v1/employees/', ({ request }) => {
+        const titles = new URL(request.url).searchParams.get('designation')?.split(',') ?? [];
+        return titles.length > 20
+          ? HttpResponse.json(
+              { designation: ['designation accepts at most 20 titles'] },
+              { status: 400 },
+            )
+          : HttpResponse.json(employeePage);
+      }),
+    );
+    const titles = Array.from({ length: 21 }, (_, n) => `Title ${n + 1}`).join(',');
+    renderApp(`/employees?designation=${encodeURIComponent(titles)}`);
+
+    const field = await screen.findByRole('textbox', { name: 'Designation' });
+    await waitFor(() => expect(field).toBeInvalid());
+    expect(field).toHaveAccessibleDescription('designation accepts at most 20 titles');
+    expect(screen.queryByText(/Could not load employees/)).not.toBeInTheDocument();
+    expect(screen.getByRole('grid')).toBeInTheDocument();
+  });
+
+  it('says a refusal the bar has no field for above the grid, never as a lost connection', async () => {
+    server.use(
+      http.get('/api/v1/employees/', () =>
+        HttpResponse.json({ on: ['Enter a valid date.'] }, { status: 400 }),
+      ),
+    );
+    renderApp('/employees');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid date.');
+    expect(screen.queryByText(/Could not load employees/)).not.toBeInTheDocument();
+  });
+
   it('says what to do when the filters match nothing', async () => {
     server.use(
       http.get('/api/v1/employees/', () =>

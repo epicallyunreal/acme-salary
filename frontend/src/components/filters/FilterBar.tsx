@@ -21,6 +21,7 @@ import {
   useState,
 } from 'react';
 
+import type { FieldErrors } from '../../api/client';
 import { useCountries, useDepartments } from '../../api/meta';
 import type { DirectoryStatus, ReportingCurrency } from '../../api/types';
 import { DIRECTORY_STATUSES, LEVELS } from '../../lib/constants';
@@ -35,6 +36,8 @@ interface FilterBarProps {
   onChange: (patch: Partial<DirectoryFilters>) => void;
   onReset: () => void;
   filtered: boolean;
+  /** A 400's messages by field, the API's own words (D76). */
+  errors?: FieldErrors | null;
 }
 
 /** A text field that reports its value on Enter, on blur, or after `delay` ms of quiet. */
@@ -43,12 +46,15 @@ export function CommitField({
   value,
   onCommit,
   delay,
+  error,
   ...rest
 }: {
   label: string;
   value: string;
   onCommit: (value: string) => void;
   delay?: number;
+  /** Why the API refused this value, in its own words, shown under the field. */
+  error?: string;
   type?: string;
   placeholder?: string;
   width?: number;
@@ -94,6 +100,8 @@ export function CommitField({
       onChange={onInput}
       onBlur={() => commit(shown)}
       onKeyDown={onKeyDown}
+      error={Boolean(error)}
+      helperText={error}
       slotProps={{ inputLabel: fieldProps.type === 'date' ? { shrink: true } : undefined }}
       sx={{ width: width ?? 160 }}
       {...fieldProps}
@@ -203,9 +211,10 @@ const STATUS_LABELS: Record<DirectoryStatus, string> = {
 };
 
 /** The directory's filters (SPEC F4). Every control writes straight to the URL state. */
-export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarProps) {
+export function FilterBar({ filters, onChange, onReset, filtered, errors }: FilterBarProps) {
   const localAllowed = filters.country.length === 1;
   const grossCurrency = filters.currency === 'local' ? 'local' : filters.currency.toUpperCase();
+  const errorOn = (field: string) => errors?.[field]?.join(' ');
 
   return (
     <Box
@@ -219,6 +228,7 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         value={filters.search}
         onCommit={(search) => onChange({ search })}
         delay={SEARCH_DELAY_MS}
+        error={errorOn('search')}
         width={240}
       />
       <CountrySelect value={filters.country} onChange={(country) => onChange({ country })} />
@@ -238,6 +248,7 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
               .filter(Boolean),
           })
         }
+        error={errorOn('designation')}
         width={180}
       />
       <MultiSelect
@@ -272,6 +283,7 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         label={`Gross min (${grossCurrency})`}
         value={filters.gross_min}
         onCommit={(gross_min) => onChange({ gross_min })}
+        error={errorOn('gross_min')}
         type="number"
         width={150}
       />
@@ -279,6 +291,7 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         label={`Gross max (${grossCurrency})`}
         value={filters.gross_max}
         onCommit={(gross_max) => onChange({ gross_max })}
+        error={errorOn('gross_max')}
         type="number"
         width={150}
       />
@@ -286,12 +299,14 @@ export function FilterBar({ filters, onChange, onReset, filtered }: FilterBarPro
         label="Joined after"
         value={filters.joined_after}
         onCommit={(joined_after) => onChange({ joined_after })}
+        error={errorOn('joined_after')}
         type="date"
       />
       <CommitField
         label="Joined before"
         value={filters.joined_before}
         onCommit={(joined_before) => onChange({ joined_before })}
+        error={errorOn('joined_before')}
         type="date"
       />
       <CurrencySelect

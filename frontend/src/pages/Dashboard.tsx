@@ -1,7 +1,8 @@
-import { Box, Link, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Link, Stack, Typography } from '@mui/material';
 import { type ReactNode, type RefObject, useId, useLayoutEffect, useRef } from 'react';
 import { Link as RouterLink } from 'react-router';
 
+import { refusal } from '../api/client';
 import { exportInsight } from '../api/exports';
 import { useInsight } from '../api/insights';
 import type { InsightControl, InsightName } from '../api/types';
@@ -99,6 +100,22 @@ export function Dashboard() {
   const byLevel = useInsight('by-level', params);
   const byTenure = useInsight('by-tenure', params, tenureControl);
   const genderGap = useInsight('gender-gap', params, gapControl);
+  // Every card asks with the bar's filters, so a filter the API refuses is refused for each: it
+  // is said once, in the API's words, in place of the cards (D58, D76).
+  const refused = [
+    summary,
+    trend,
+    costBridge,
+    byCountry,
+    byDepartment,
+    costMix,
+    distribution,
+    byLevel,
+    byTenure,
+    genderGap,
+  ]
+    .map((query) => refusal(query.error))
+    .find((errors) => errors !== null);
   const nobody = summary.data?.headcount === 0;
   // The population is the one on the period's last day, today unless the period ends earlier.
   const lastDay = summary.data?.to;
@@ -155,133 +172,157 @@ export function Dashboard() {
           }
         />
       </Box>
-      <Section title="What we spend">
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-          {summary.data ? (
-            <RateMonthLabel rateMonth={summary.data.rate_month} on={summary.data.to} />
-          ) : null}
-          {/* The summary has no card, so its menu sits on the rate month line above it (D60). */}
-          <Box sx={{ ml: 'auto' }}>{exportMenu('summary', 'Export summary', 'the summary')}</Box>
-        </Box>
-        <KpiRow query={summary} includeExited={filters.include_exited} />
-        {nobody ? (
-          <EmptyState message={`No one matches these filters ${when}. Clear a filter.`} />
-        ) : (
-          <CardGrid>
-            <TrendCard
-              query={trend}
-              measure={controls.trend}
-              includeExited={filters.include_exited}
-              actions={
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                  <CardControl
-                    label="Trend measure"
-                    value={controls.trend}
-                    options={MEASURES}
-                    onChange={(measure) => setControl('trend', measure)}
-                  />
-                  {exportMenu('trend', 'Export cost trend', 'the cost trend', trendControl)}
-                </Stack>
-              }
-            />
-            <CostBridgeCard
-              query={costBridge}
-              includeExited={filters.include_exited}
-              actions={exportMenu('cost-bridge', 'Export cost bridge', 'the cost bridge')}
-            />
-            <ByCountryCard
-              query={byCountry}
-              actions={exportMenu(
-                'by-country',
-                'Export payroll by country',
-                'the payroll by country',
-              )}
-            />
-            <ByDepartmentCard
-              query={byDepartment}
-              actions={exportMenu(
-                'by-department',
-                'Export payroll by department',
-                'the payroll by department',
-              )}
-            />
-            <CostMixCard
-              query={costMix}
-              actions={
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                  <CardControl
-                    label="Cost mix view"
-                    value={controls.mix}
-                    options={VIEWS}
-                    onChange={(view) => setControl('mix', view)}
-                  />
-                  {exportMenu('cost-mix', 'Export cost mix', 'the cost mix', mixControl)}
-                </Stack>
-              }
-            />
-          </CardGrid>
-        )}
-      </Section>
-      {nobody ? null : (
+      {refused ? (
+        <Alert
+          severity="error"
+          variant="outlined"
+          action={
+            <Button color="inherit" size="small" onClick={reset}>
+              Clear filters
+            </Button>
+          }
+        >
+          {Object.values(refused)
+            .flat()
+            .map((message, index) => (
+              <Box key={index} component="span" sx={{ display: 'block' }}>
+                {message}
+              </Box>
+            ))}
+        </Alert>
+      ) : (
         <>
-          <Section title="How pay is structured">
-            <CardGrid>
-              <DistributionCard
-                query={distribution}
-                actions={exportMenu(
-                  'distribution',
-                  'Export salary distribution',
-                  'the salary distribution',
-                )}
-              />
-              <ByLevelCard
-                query={byLevel}
-                actions={exportMenu('by-level', 'Export pay by level', 'the pay by level')}
-              />
-              <ByTenureCard
-                query={byTenure}
-                actions={
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                    <CardSelect
-                      label="Level"
-                      value={controls.tenure}
-                      options={LEVELS}
-                      onChange={(level) => setControl('tenure', level)}
-                    />
-                    {exportMenu(
-                      'by-tenure',
-                      'Export pay by tenure',
-                      'the pay by tenure',
-                      tenureControl,
-                    )}
-                  </Stack>
-                }
-              />
-            </CardGrid>
+          <Section title="What we spend">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+              {summary.data ? (
+                <RateMonthLabel rateMonth={summary.data.rate_month} on={summary.data.to} />
+              ) : null}
+              {/* The summary has no card, so its menu sits on the rate month line above it (D60). */}
+              <Box sx={{ ml: 'auto' }}>
+                {exportMenu('summary', 'Export summary', 'the summary')}
+              </Box>
+            </Box>
+            <KpiRow query={summary} includeExited={filters.include_exited} />
+            {nobody ? (
+              <EmptyState message={`No one matches these filters ${when}. Clear a filter.`} />
+            ) : (
+              <CardGrid>
+                <TrendCard
+                  query={trend}
+                  measure={controls.trend}
+                  includeExited={filters.include_exited}
+                  actions={
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                      <CardControl
+                        label="Trend measure"
+                        value={controls.trend}
+                        options={MEASURES}
+                        onChange={(measure) => setControl('trend', measure)}
+                      />
+                      {exportMenu('trend', 'Export cost trend', 'the cost trend', trendControl)}
+                    </Stack>
+                  }
+                />
+                <CostBridgeCard
+                  query={costBridge}
+                  includeExited={filters.include_exited}
+                  actions={exportMenu('cost-bridge', 'Export cost bridge', 'the cost bridge')}
+                />
+                <ByCountryCard
+                  query={byCountry}
+                  actions={exportMenu(
+                    'by-country',
+                    'Export payroll by country',
+                    'the payroll by country',
+                  )}
+                />
+                <ByDepartmentCard
+                  query={byDepartment}
+                  actions={exportMenu(
+                    'by-department',
+                    'Export payroll by department',
+                    'the payroll by department',
+                  )}
+                />
+                <CostMixCard
+                  query={costMix}
+                  actions={
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                      <CardControl
+                        label="Cost mix view"
+                        value={controls.mix}
+                        options={VIEWS}
+                        onChange={(view) => setControl('mix', view)}
+                      />
+                      {exportMenu('cost-mix', 'Export cost mix', 'the cost mix', mixControl)}
+                    </Stack>
+                  }
+                />
+              </CardGrid>
+            )}
           </Section>
-          <Section title="Is pay fair">
-            <CardGrid>
-              <GenderGapCard
-                query={genderGap}
-                actions={
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                    <CardControl
-                      label="Gender gap view"
-                      value={controls.gap}
-                      options={GENDER_VIEWS}
-                      onChange={(view) => setControl('gap', view)}
-                    />
-                    {exportMenu(
-                      'gender-gap',
-                      'Export gender pay gap',
-                      'the gender pay gap',
-                      gapControl,
+          {nobody ? null : (
+            <>
+              <Section title="How pay is structured">
+                <CardGrid>
+                  <DistributionCard
+                    query={distribution}
+                    actions={exportMenu(
+                      'distribution',
+                      'Export salary distribution',
+                      'the salary distribution',
                     )}
-                  </Stack>
-                }
-              />
-            </CardGrid>
-          </Section>
+                  />
+                  <ByLevelCard
+                    query={byLevel}
+                    actions={exportMenu('by-level', 'Export pay by level', 'the pay by level')}
+                  />
+                  <ByTenureCard
+                    query={byTenure}
+                    actions={
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                        <CardSelect
+                          label="Level"
+                          value={controls.tenure}
+                          options={LEVELS}
+                          onChange={(level) => setControl('tenure', level)}
+                        />
+                        {exportMenu(
+                          'by-tenure',
+                          'Export pay by tenure',
+                          'the pay by tenure',
+                          tenureControl,
+                        )}
+                      </Stack>
+                    }
+                  />
+                </CardGrid>
+              </Section>
+              <Section title="Is pay fair">
+                <CardGrid>
+                  <GenderGapCard
+                    query={genderGap}
+                    actions={
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                        <CardControl
+                          label="Gender gap view"
+                          value={controls.gap}
+                          options={GENDER_VIEWS}
+                          onChange={(view) => setControl('gap', view)}
+                        />
+                        {exportMenu(
+                          'gender-gap',
+                          'Export gender pay gap',
+                          'the gender pay gap',
+                          gapControl,
+                        )}
+                      </Stack>
+                    }
+                  />
+                </CardGrid>
+              </Section>
+            </>
+          )}
         </>
       )}
     </>

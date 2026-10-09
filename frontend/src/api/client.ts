@@ -52,6 +52,14 @@ export class ApiError extends Error {
   }
 }
 
+/** A 400's messages by field, the API's own words for a request it refused (D76), or null for
+ * any other failure: no answer, a 5xx, or another status. */
+export function refusal(error: unknown): FieldErrors | null {
+  if (!(error instanceof ApiError) || error.status !== 400) return null;
+  const errors = error.fieldErrors();
+  return Object.keys(errors).length ? errors : null;
+}
+
 type UnauthenticatedHandler = () => void;
 let onUnauthenticated: UnauthenticatedHandler = () => {};
 

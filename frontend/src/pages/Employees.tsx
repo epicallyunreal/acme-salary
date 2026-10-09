@@ -1,8 +1,9 @@
 import AddIcon from '@mui/icons-material/Add';
-import { Button, Stack, Typography } from '@mui/material';
+import { Alert, Button, Stack, Typography } from '@mui/material';
 import { useMemo } from 'react';
 import { Link } from 'react-router';
 
+import { refusal } from '../api/client';
 import { useEmployeeList } from '../api/employees';
 import { exportEmployees } from '../api/exports';
 import { useCountries } from '../api/meta';
@@ -12,6 +13,7 @@ import { useUrlFilters } from '../components/filters/useUrlFilters';
 import { DIRECTORY_HIDDEN_COLUMNS, directoryColumns } from '../components/grid/columns';
 import { ServerGrid } from '../components/grid/ServerGrid';
 import {
+  FIELDS_WITH_ERRORS,
   fromSortModel,
   isFiltered,
   toListParams,
@@ -42,6 +44,12 @@ export function Employees() {
   const employees = useEmployeeList(params);
   const filtered = isFiltered(state);
   const count = employees.data?.count;
+  // A filter the API refuses is said under its field, in the API's words, and never as a lost
+  // connection (D76). A field the bar has no place for is said above the grid.
+  const refused = refusal(employees.error);
+  const elsewhere = Object.entries(refused ?? {})
+    .filter(([field]) => !FIELDS_WITH_ERRORS.has(field))
+    .flatMap(([, messages]) => messages);
 
   return (
     <>
@@ -74,8 +82,19 @@ export function Employees() {
           )
         }
       />
-      <FilterBar filters={state} onChange={set} onReset={reset} filtered={filtered} />
-      {employees.isError ? (
+      <FilterBar
+        filters={state}
+        onChange={set}
+        onReset={reset}
+        filtered={filtered}
+        errors={refused}
+      />
+      {elsewhere.length ? (
+        <Alert severity="error" variant="outlined" sx={{ mb: 3 }}>
+          {elsewhere.join(' ')}
+        </Alert>
+      ) : null}
+      {employees.isError && !refused ? (
         <ErrorState what="employees" onRetry={() => void employees.refetch()} />
       ) : (
         <ServerGrid
