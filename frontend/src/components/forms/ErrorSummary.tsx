@@ -30,11 +30,17 @@ export function ErrorSummary({
   attempt = 0,
 }: ErrorSummaryProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const focusedFor = useRef(0);
   const shown = fields.length + messages.length > 0;
 
+  // Once per failed submit, when its problems are on screen: a form's first invalid submit can
+  // count the attempt a render before its errors arrive.
   useEffect(() => {
-    if (attempt > 0) ref.current?.focus();
-  }, [attempt]);
+    if (attempt > 0 && shown && focusedFor.current !== attempt) {
+      focusedFor.current = attempt;
+      ref.current?.focus();
+    }
+  }, [attempt, shown]);
 
   if (!shown) return null;
 
