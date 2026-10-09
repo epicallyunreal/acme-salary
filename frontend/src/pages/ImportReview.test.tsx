@@ -16,7 +16,7 @@ import { SEARCH_DELAY_MS } from '../components/filters/FilterBar';
 /** The review batch with its error row skipped: nothing stands in the way of approve. */
 const READY: ImportBatch = { ...reviewBatch, error_rows: 0, skipped_rows: 2 };
 
-/** 250 rows, ten pages of 25, each a copy of a review row under a name of its own. */
+/** 250 rows, 25 pages of 10, each a copy of a review row under a name of its own. */
 const MANY_ROWS: ImportRow[] = Array.from({ length: 250 }, (_, index) => {
   const source = reviewRows[index % reviewRows.length];
   const name = `Person ${index + 1}`;
@@ -39,6 +39,13 @@ function summary() {
   return screen.getByLabelText('Batch summary');
 }
 
+/** The strip's one message slot (D75). */
+function messages() {
+  return screen.getByRole('group', { name: 'Batch messages' });
+}
+
+const BLOCKER = '1 row has errors. Skip it or fix the spreadsheet and upload again.';
+
 describe('ImportReview', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -56,7 +63,10 @@ describe('ImportReview', () => {
       await screen.findByRole('heading', { level: 1, name: 'october-raises.xlsx' }),
     ).toBeInTheDocument();
     expect(summary()).toHaveTextContent('Total5Valid2Warning1Error1Skipped1No-op1');
-    expect(screen.getByText('Ignored unknown column: Remarks')).toBeInTheDocument();
+    // The blocker first, then the ignored column, one at a time in the strip's slot (D75).
+    expect(within(messages()).getByText(BLOCKER)).toBeInTheDocument();
+    await user.click(within(messages()).getByRole('button', { name: 'Next message' }));
+    expect(within(messages()).getByText('Ignored unknown column: Remarks')).toBeInTheDocument();
     await screen.findByText('Ravi Iyer');
     const ravi = rowOf('Ravi Iyer');
     expect(within(ravi).getByText('error')).toBeInTheDocument();
@@ -209,10 +219,98 @@ describe('ImportReview', () => {
     renderApp('/imports/3');
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
-    const reason = '1 row has errors. Skip it or fix the spreadsheet and upload again.';
     expect(approve).toBeDisabled();
-    expect(screen.getByText(reason)).toBeInTheDocument();
-    expect(approve).toHaveAccessibleDescription(reason);
+    expect(within(messages()).getByText(BLOCKER)).toBeInTheDocument();
+    expect(approve).toHaveAccessibleDescription(BLOCKER);
+  });
+
+  it('shows the blocker first and steps through three messages, 1/3, wrapping round (D75)', async () => {
+    server.use(
+      http.get('/api/v1/imports/3/', () =>
+        HttpResponse.json({
+          ...reviewBatch,
+          warnings: ['Ignored unknown column: Remarks', 'Ignored unknown column: Notes'],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderApp('/imports/3');
+    await screen.findByText(BLOCKER, { selector: '[title]' });
+    const slot = messages();
+    const approve = screen.getByRole('button', { name: 'Approve' });
+
+    expect(slot).toHaveAttribute('aria-live', 'polite');
+    expect(slot).toHaveAttribute('data-tone', 'warning');
+    expect(within(slot).getByText('1/3')).toBeInTheDocument();
+    expect(within(slot).getByText('Message 1 of 3')).toBeInTheDocument();
+
+    await user.click(within(slot).getByRole('button', { name: 'Next message' }));
+
+    expect(within(slot).getByText('Ignored unknown column: Remarks')).toBeInTheDocument();
+    expect(within(slot).getByText('Message 2 of 3')).toBeInTheDocument();
+    expect(slot).toHaveAttribute('data-tone', 'info');
+    // Approve still says why it is off while a warning shows.
+    expect(approve).toHaveAccessibleDescription(BLOCKER);
+
+    await user.click(within(slot).getByRole('button', { name: 'Next message' }));
+    await user.click(within(slot).getByRole('button', { name: 'Next message' }));
+
+    expect(within(slot).getByText(BLOCKER)).toBeInTheDocument();
+
+    await user.click(within(slot).getByRole('button', { name: 'Previous message' }));
+
+    expect(within(slot).getByText('Ignored unknown column: Notes')).toBeInTheDocument();
+    expect(within(slot).getByText('3/3')).toBeInTheDocument();
+  });
+
+  it('gives a message two lines with the whole of it on hover', async () => {
+    renderApp('/imports/3');
+
+    const text = await within(
+      await screen.findByRole('group', { name: 'Batch messages' }),
+    ).findByText(BLOCKER);
+
+    expect(text).toHaveAttribute('title', BLOCKER);
+  });
+
+  it('shows one message alone, with nothing to step through', async () => {
+    server.use(http.get('/api/v1/imports/3/', () => HttpResponse.json(READY)));
+    renderApp('/imports/3');
+
+    await screen.findByText('Ravi Iyer');
+    const slot = messages();
+
+    expect(within(slot).getByText('Ignored unknown column: Remarks')).toBeInTheDocument();
+    expect(within(slot).queryByRole('button', { name: 'Next message' })).not.toBeInTheDocument();
+    expect(within(slot).queryByText(/Message 1 of/)).not.toBeInTheDocument();
+  });
+
+  it('shows no slot when there is nothing to say', async () => {
+    server.use(http.get('/api/v1/imports/3/', () => HttpResponse.json({ ...READY, warnings: [] })));
+    renderApp('/imports/3');
+
+    await screen.findByText('Ravi Iyer');
+
+    expect(screen.queryByRole('group', { name: 'Batch messages' })).not.toBeInTheDocument();
+  });
+
+  it("the blocker's Show them sets the Status filter to Error", async () => {
+    const asked: (string | null)[] = [];
+    server.use(
+      http.get('/api/v1/imports/3/rows/', ({ request }) => {
+        const url = new URL(request.url);
+        asked.push(url.searchParams.get('status'));
+        return HttpResponse.json(rowsPage(url));
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderApp('/imports/3');
+    await screen.findByText('Ravi Iyer');
+
+    await user.click(within(messages()).getByRole('button', { name: 'Show them' }));
+
+    await waitFor(() => expect(router.state.location.search).toBe('?status=error'));
+    await waitFor(() => expect(asked.at(-1)).toBe('error'));
   });
 
   it('skips a row and refetches the summary, which turns Approve on', async () => {
@@ -555,7 +653,7 @@ describe('ImportReview', () => {
     renderApp('/imports/3');
 
     expect(
-      await screen.findByText(
+      await within(await screen.findByRole('group', { name: 'Batch messages' })).findByText(
         '2 rows have errors. Skip them or fix the spreadsheet and upload again.',
       ),
     ).toBeInTheDocument();

@@ -4,10 +4,10 @@ import {
   Box,
   Button,
   LinearProgress,
+  Link as MuiLink,
   Snackbar,
   TextField,
   Tooltip,
-  Typography,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import type { GridSortModel } from '@mui/x-data-grid';
@@ -21,6 +21,7 @@ import { importRowColumns } from '../components/grid/columns';
 import { ServerGrid } from '../components/grid/ServerGrid';
 import { useBusy } from '../components/busy/busyContext';
 import { ApproveDialog, DiscardDialog } from '../components/imports/BatchDialogs';
+import type { BatchMessage } from '../components/imports/BatchMessages';
 import { BatchSummaryStrip } from '../components/imports/BatchSummaryStrip';
 import { rowsWord } from '../components/imports/counts';
 import { TemplateMenu } from '../components/imports/TemplateMenu';
@@ -29,6 +30,7 @@ import { ErrorState } from '../components/layout/ErrorState';
 import { PageHeader } from '../components/layout/PageHeader';
 import { StatusChip } from '../components/layout/StatusChip';
 import { DEFAULT_PAGE_SIZE, PAGE_SIZES } from '../lib/constants';
+import { visuallyHidden } from '../lib/a11y';
 import { formatDate, formatDateTime } from '../lib/dates';
 
 // The review keeps the sheet's order. One empty sort model serves every render, since a new one
@@ -178,6 +180,31 @@ function ReviewPage({ batchId }: { batchId: number }) {
   const current = batch.data;
   const blocker = approveBlocker(current);
   const filtered = Boolean(view.status || view.search);
+  // The strip's one slot (D75): the blocker first, with the way to its rows, then each warning.
+  const messages: BatchMessage[] = [
+    ...(inReview && blocker
+      ? [
+          {
+            text: blocker,
+            tone: 'warning' as const,
+            action: (
+              <MuiLink
+                component="button"
+                type="button"
+                variant="body2"
+                color="inherit"
+                underline="always"
+                sx={{ fontWeight: 600 }}
+                onClick={() => view.set({ status: 'error' })}
+              >
+                Show them
+              </MuiLink>
+            ),
+          },
+        ]
+      : []),
+    ...current.warnings.map((text) => ({ text, tone: 'info' as const })),
+  ];
 
   return (
     <>
@@ -227,22 +254,14 @@ function ReviewPage({ batchId }: { batchId: number }) {
           </>
         }
       />
-      <BatchSummaryStrip batch={current} />
-      <BatchState batch={current} />
+      {/* What describes Approve while it is off, whichever message the strip shows (D75). */}
       {inReview && blocker ? (
-        <Alert id="approve-blocker" severity="warning" sx={{ mb: 4 }}>
+        <Box component="span" id="approve-blocker" sx={visuallyHidden}>
           {blocker}
-        </Alert>
+        </Box>
       ) : null}
-      {current.warnings.length ? (
-        <Alert severity="info" sx={{ mb: 4 }}>
-          {current.warnings.map((warning) => (
-            <Typography key={warning} variant="body2">
-              {warning}
-            </Typography>
-          ))}
-        </Alert>
-      ) : null}
+      <BatchSummaryStrip batch={current} messages={messages} />
+      <BatchState batch={current} />
       <Box
         component="section"
         aria-label="Filters"

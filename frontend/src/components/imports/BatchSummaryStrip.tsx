@@ -1,6 +1,7 @@
 import { Box, Typography } from '@mui/material';
 
 import type { ImportBatch } from '../../api/types';
+import { type BatchMessage, BatchMessages } from './BatchMessages';
 import { formatCount } from './counts';
 
 type CountField =
@@ -15,28 +16,47 @@ const COUNTS: [string, CountField][] = [
   ['No-op', 'noop_rows'],
 ];
 
-/** The batch's counts as labelled figures (SPEC section 10). A no-op row is valid too. */
-export function BatchSummaryStrip({ batch }: { batch: ImportBatch }) {
+interface BatchSummaryStripProps {
+  batch: ImportBatch;
+  /** The approve blocker, then the batch's warnings, shown one at a time after the figures. */
+  messages?: BatchMessage[];
+}
+
+/** The batch's counts as labelled figures (SPEC section 10), and after No-op the slot for the
+ * blocker and the warnings, so they no longer push the grid down (D75). A no-op row is valid too. */
+export function BatchSummaryStrip({ batch, messages = [] }: BatchSummaryStripProps) {
   return (
     <Box
-      component="dl"
-      aria-label="Batch summary"
-      sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 10, rowGap: 3, m: 0, mb: 5 }}
+      sx={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'stretch',
+        columnGap: 10,
+        rowGap: 3,
+        mb: 5,
+      }}
     >
-      {COUNTS.map(([label, key]) => (
-        <Box key={key}>
-          <Typography component="dt" variant="caption">
-            {label}
-          </Typography>
-          <Typography
-            component="dd"
-            className="num"
-            sx={{ m: 0, fontSize: '1.375rem', fontWeight: 600, lineHeight: 1.3 }}
-          >
-            {formatCount(batch[key])}
-          </Typography>
-        </Box>
-      ))}
+      <Box
+        component="dl"
+        aria-label="Batch summary"
+        sx={{ display: 'flex', flexWrap: 'wrap', columnGap: 10, rowGap: 3, m: 0 }}
+      >
+        {COUNTS.map(([label, key]) => (
+          <Box key={key}>
+            <Typography component="dt" variant="caption">
+              {label}
+            </Typography>
+            <Typography
+              component="dd"
+              className="num"
+              sx={{ m: 0, fontSize: '1.375rem', fontWeight: 600, lineHeight: 1.3 }}
+            >
+              {formatCount(batch[key])}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+      <BatchMessages messages={messages} />
     </Box>
   );
 }
