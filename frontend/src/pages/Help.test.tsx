@@ -84,6 +84,20 @@ describe('Help', () => {
     }
   });
 
+  it('says where the audit trail is and which rates an early period uses (D78)', async () => {
+    setSession({ access: 'access-1', refresh: 'refresh-1' });
+    renderApp('/help');
+    await screen.findByRole('heading', { level: 1, name: 'Help' });
+    const text = document.querySelector('main')?.textContent ?? '';
+
+    expect(text).toContain(
+      "Every change is recorded in the employee's audit trail, with who made it and when, on the Audit tab of their page.",
+    );
+    expect(text).toContain(
+      "Rates are kept from September 2026, so a period that ends earlier is converted at September 2026's rates, and the label says so.",
+    );
+  });
+
   it('opens the answer an anchor names and brings it into view', async () => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
     const scrolled = vi.spyOn(Element.prototype, 'scrollIntoView');

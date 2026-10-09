@@ -30,7 +30,7 @@ const STEPS: Step[] = [
   },
   {
     title: 'Approve',
-    text: "Approve applies every accepted row together, or none of them. Every change is recorded in the employee's audit trail, with who made it and when.",
+    text: "Approve applies every accepted row together, or none of them. Every change is recorded in the employee's audit trail, with who made it and when, on the Audit tab of their page.",
   },
   {
     title: 'Maintain',
@@ -69,7 +69,7 @@ const QUESTIONS: Question[] = [
     id: 'currency',
     question: "Which currency are the figures in, and at which month's rate?",
     answer:
-      "Figures are in US dollars unless you choose euros, or Local when exactly one country is selected. Pay is stored in each country's own currency and converted when you look, at the month's rate in force on the last day of the period, which the dashboard names, such as October 2026 rates. One rate converts the whole period, so a change over time is never a change in exchange rates. The directory and the employee pages convert at today's rate.",
+      "Figures are in US dollars unless you choose euros, or Local when exactly one country is selected. Pay is stored in each country's own currency and converted when you look, at the month's rate in force on the last day of the period, which the dashboard names, such as October 2026 rates. Rates are kept from September 2026, so a period that ends earlier is converted at September 2026's rates, and the label says so. One rate converts the whole period, so a change over time is never a change in exchange rates. The directory and the employee pages convert at today's rate.",
   },
   // D62, D69, D70: who left on or after 1 April 2020, and the three movement figures it skips.
   {
