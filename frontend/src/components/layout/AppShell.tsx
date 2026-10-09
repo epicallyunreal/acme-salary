@@ -7,6 +7,7 @@ import {
   Box,
   Button,
   Divider,
+  Link,
   List,
   ListItemButton,
   ListItemIcon,
@@ -99,6 +100,10 @@ export function AppShell() {
         sx={{
           width: NAV_WIDTH,
           flexShrink: 0,
+          // A column that scrolls on its own when the window is short, so the credit at its foot
+          // follows the items and never covers one (D80).
+          display: 'flex',
+          flexDirection: 'column',
           overflowY: 'auto',
           borderRight: 1,
           borderColor: 'divider',
@@ -120,6 +125,20 @@ export function AppShell() {
             <NavItem key={item.to} {...item} />
           ))}
         </List>
+        <Box sx={{ mt: 'auto', px: 5, pt: 4 }}>
+          <Link
+            href="https://nutanprabhat.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Built by Nutan Prabhat, opens in a new tab"
+            variant="caption"
+            color="text.secondary"
+            underline="hover"
+            sx={{ '&:focus-visible': { textDecoration: 'underline' } }}
+          >
+            Built by Nutan Prabhat
+          </Link>
+        </Box>
       </Box>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <Box

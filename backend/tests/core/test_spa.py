@@ -60,3 +60,19 @@ def test_healthz_wins_over_the_catch_all(client, bundle):
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_whitenoise_serves_the_favicon_from_the_spa_root(client, settings, tmp_path):
+    """The build copies frontend/public to the SPA root, which WhiteNoise serves before the
+    catch-all can answer with index.html, under the security policy that lets 'self' images in
+    (D80)."""
+    from tests.core.test_security_headers import directives
+
+    (tmp_path / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    settings.WHITENOISE_ROOT = str(tmp_path)
+
+    response = client.get("/favicon.svg")
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "image/svg+xml"
+    assert "img-src 'self' data:" in directives(response)

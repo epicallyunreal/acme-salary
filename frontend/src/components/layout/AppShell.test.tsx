@@ -31,6 +31,26 @@ describe('AppShell', () => {
     expect(document.body).toHaveStyle({ height: '100%' });
   });
 
+  it('credits its builder at the foot of the nav, opening in a new tab (D80)', async () => {
+    setSession({ access: 'access-1', refresh: 'refresh-1' });
+
+    renderApp('/employees');
+
+    const nav = await screen.findByRole('navigation', { name: 'Main' });
+    const credit = within(nav).getByRole('link', {
+      name: 'Built by Nutan Prabhat, opens in a new tab',
+    });
+    expect(credit).toHaveTextContent('Built by Nutan Prabhat');
+    expect(credit).toHaveAttribute('href', 'https://nutanprabhat.dev');
+    expect(credit).toHaveAttribute('target', '_blank');
+    expect(credit).toHaveAttribute('rel', 'noopener noreferrer');
+    // The last thing in the nav, after Help.
+    const links = within(nav).getAllByRole('link');
+    expect(links.at(-1)).toBe(credit);
+    // The nav scrolls on its own when the window is short, so the credit never covers an item.
+    expect(nav).toHaveStyle({ overflowY: 'auto', display: 'flex', flexDirection: 'column' });
+  });
+
   it('puts main back at the top and focuses it when the page changes', async () => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
     renderApp('/employees');

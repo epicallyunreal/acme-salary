@@ -714,6 +714,14 @@ Decision: on 9 October the owner chose that `--if-empty` also skips while the re
 
 Consequences: a restart can no longer refill the demo behind someone who emptied it, and a boot after a reset is as quick as one on a seeded database.
 
+## D80. ACME's own icon, and a credit at the foot of the nav
+
+Context: the app shipped no favicon, so the tab showed whatever icon the browser had cached for the host, or a blank globe. And on 9 October the owner chose to credit the builder in the app itself.
+
+Decision: `frontend/public/` holds `favicon.svg`, a rounded square in the theme's primary #2F4A7A with a white "A" drawn as a path so it needs no font, and `favicon.ico` at 32 px and `apple-touch-icon.png` at 180 px drawn from the same points by `frontend/scripts/make_icons.py`, run with `uv run --with pillow` so Pillow never becomes a dependency. The script sits in `frontend/scripts/` rather than beside the icons, since everything in `public/` is published at the site root. `index.html` links all three, so the login and every route share them, WhiteNoise serves them from the SPA root, and `img-src 'self'` lets them in. The nav's foot carries "Built by Nutan Prabhat", a quiet caption link to https://nutanprabhat.dev that opens in a new tab with `rel="noopener noreferrer"` and says so in its accessible name, the nav scrolling on its own so the credit never covers an item.
+
+Consequences: the tab carries ACME's icon on every route, and the credit is on every page that has the nav, never on the login.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

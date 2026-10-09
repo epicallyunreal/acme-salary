@@ -72,7 +72,7 @@ describe('DemoData', () => {
       within(nav)
         .getAllByRole('link')
         .map((link) => link.textContent),
-    ).toEqual(['Dashboard', 'Employees', 'Imports', 'Demo data', 'Help']);
+    ).toEqual(['Dashboard', 'Employees', 'Imports', 'Demo data', 'Help', 'Built by Nutan Prabhat']);
     expect(screen.getByRole('link', { name: 'Demo data' })).toHaveAttribute('aria-current', 'page');
   });
 

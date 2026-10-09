@@ -93,7 +93,7 @@ Every business rule lives in a `services.py` or `queries.py` module and is teste
 
 - `docs/REQUIREMENTS.md`, the one-page requirements document with Incubyte's clarifications
 - `docs/SPEC.md`, the engineering spec, v2.25: data model, API, rules, acceptance criteria
-- `docs/DECISIONS.md`, why things are the way they are, D1 to D79
+- `docs/DECISIONS.md`, why things are the way they are, D1 to D80
 - `docs/PLAN.md` and `docs/DESIGN.md`, what was built, in what order, and how
 - `docs/PERFORMANCE.md`, measured timings, locally and on Fly
 - `docs/reviews/`, the Engineering Manager spec reviews and the security audit with its triage
