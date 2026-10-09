@@ -30,6 +30,30 @@ def test_login_returns_an_access_and_a_refresh_token(anon, hr_user):
     assert set(response.json()) == {"access", "refresh"}
 
 
+def me(client, access):
+    client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
+    status = client.get("/api/v1/auth/me/").status_code
+    client.credentials()
+    return status
+
+
+def test_a_password_change_ends_every_earlier_session_and_a_fresh_login_works(anon, hr_user):
+    """SimpleJWT's revoke claim (D76): what `changepassword` does, set_password then save, ends
+    the earlier access token and whatever its refresh token rotates into."""
+    before = login(anon).json()
+
+    hr_user.set_password("rotated-lantern-staple-42")  # a dummy, never a real credential
+    hr_user.save()
+
+    assert me(anon, before["access"]) == 401
+    rotated = refresh(anon, before["refresh"])
+    assert rotated.status_code == 200
+    assert me(anon, rotated.json()["access"]) == 401
+    fresh = login(anon, password="rotated-lantern-staple-42")
+    assert fresh.status_code == 200
+    assert me(anon, fresh.json()["access"]) == 200
+
+
 def test_login_with_a_wrong_password_is_401(anon, hr_user):
     response = login(anon, password="wrong")
 

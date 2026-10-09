@@ -60,7 +60,7 @@ The same commands run in CI on every push, with `pip-audit` and `npm audit` on t
 
 The app runs as the user `acme` inside the container, so a command run on the live machine runs as that user too: `fly ssh console -u acme -C "python manage.py <command>"`.
 
-- **Rotating the HR password** is two commands, since a session outlives a password change until its 12 hours are up: `python manage.py changepassword <the HR email>`, then `python manage.py revoke_sessions <the HR email>`, which ends every session. Changing `SEED_ADMIN_PASSWORD` never changes a live password; it is read only when the account is first created.
+- **Rotating the HR password**: `python manage.py changepassword <the HR email>` ends every session issued before it, since every token carries a hash of the password (D76). Then, as a second step, `python manage.py revoke_sessions <the HR email>` blacklists the old refresh tokens as well. Changing `SEED_ADMIN_PASSWORD` never changes a live password; it is read only when the account is first created.
 - **`python manage.py reset_demo`** rebuilds the demo database: it empties every business table and seeds the organisation again, about a minute on Fly with the CPU burst balance in hand, longer when the balance is spent. Lookups and rates are rebuilt; the HR account and its password are kept, so rotating the password is the step above, not this. The Demo data page's reset is the same truncation without the seed.
 - **`python manage.py timing`** measures the directory, the insights, the imports and the seed on the seeded database (`docs/PERFORMANCE.md`).
 

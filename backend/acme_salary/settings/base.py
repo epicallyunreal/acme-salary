@@ -171,6 +171,9 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
     # Keeps the session's end across rotations and revokes on reuse (SPEC F8, D21).
     "TOKEN_REFRESH_SERIALIZER": "apps.accounts.serializers.SessionRefreshSerializer",
+    # Every token carries a hash of the password, so a password change ends every session
+    # issued before it, rotated tokens included (D76).
+    "CHECK_REVOKE_TOKEN": True,
 }
 
 # One gunicorn worker, so the in-process cache is shared by every thread and the login

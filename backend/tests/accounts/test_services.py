@@ -3,8 +3,10 @@
 import pytest
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.utils import get_md5_hash_password
 
 from apps.accounts import services
 
@@ -73,3 +75,13 @@ def test_a_string_that_is_no_token_revokes_nothing(hr_user):
         services.refresh_session("not-a-token")
 
     assert live_sessions(hr_user) == 1
+
+
+def test_rotate_carries_the_revoke_claim_to_both_new_tokens(hr_user):
+    """A password change ends an earlier session only if every token carries a hash of the
+    password, the new refresh token and the access token rotation mints included (D76)."""
+    access, rotated = services.rotate(RefreshToken(str(RefreshToken.for_user(hr_user))))
+
+    expected = get_md5_hash_password(hr_user.password)
+    assert rotated.payload[api_settings.REVOKE_TOKEN_CLAIM] == expected
+    assert access.payload[api_settings.REVOKE_TOKEN_CLAIM] == expected

@@ -5,10 +5,9 @@ save) ends no session. A refresh token issued before the change still rotates at
 /api/v1/auth/refresh/ into an access token that opens the API, until the session's 12-hour end.
 
 The test asserts the secure behaviour: after the change, the old refresh token is refused, or
-the access token it mints is refused at /api/v1/auth/me/. An assertion failure (XFAIL under the
-marker) means the weakness is present. XPASS, reported as a strict failure, means it did not
-reproduce or has been fixed. A pytest.fail from a setup or outcome check is a plain failure,
-never read as the weakness.
+the access token it mints is refused at /api/v1/auth/me/. Fixed by SimpleJWT's revoke claim
+(D76), so the test now guards the fix: an assertion failure means the weakness is back. A
+pytest.fail from a setup or outcome check is a plain failure, never read as the weakness.
 """
 
 import pytest
@@ -20,8 +19,6 @@ import rest_framework.throttling  # noqa: F401
 from rest_framework.test import APIClient
 
 pytestmark = pytest.mark.django_db
-
-REVIEW = "docs/reviews/security-audit-2026-10-08.md"
 
 LOGIN = "/api/v1/auth/login/"
 REFRESH = "/api/v1/auth/refresh/"
@@ -38,17 +35,6 @@ def me_status(access: str) -> int:
     return client.get(ME).status_code
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=(
-        "accounts_password_change_keeps_refresh_token_valid: accepted in "
-        f"{REVIEW}: the operator rotates the HR password with changepassword and then "
-        "revoke_sessions (README), so no session outlives the change. XFAIL means the "
-        "behaviour is as accepted; XPASS (a strict failure) means it changed, so revisit the "
-        "review."
-    ),
-)
 def test_a_password_change_ends_the_session_of_an_earlier_refresh_token(anon, hr_user):
     anon.raise_request_exception = False
     credentials = {"email": "hr@acme.example", "password": OLD_PASSWORD}
