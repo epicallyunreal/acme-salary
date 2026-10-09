@@ -8,6 +8,7 @@ function preloadError() {
 
 describe('recoverFromPreloadError', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     sessionStorage.clear();
   });
 
@@ -52,6 +53,5 @@ describe('recoverFromPreloadError', () => {
     recoverFromPreloadError(preloadError(), reload);
 
     expect(reload).not.toHaveBeenCalled();
-    vi.restoreAllMocks();
   });
 });

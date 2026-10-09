@@ -20,11 +20,15 @@ describe('ErrorSummary', () => {
     );
     const field = document.createElement('input');
     document.body.append(field);
-    field.focus();
+    try {
+      field.focus();
+      // The problems go and come back within the same attempt, as while a field is corrected.
+      rerender(<ErrorSummary title="The employee was not saved" fields={[]} attempt={1} />);
+      rerender(<ErrorSummary title="The employee was not saved" fields={PROBLEM} attempt={1} />);
 
-    rerender(<ErrorSummary title="The employee was not saved" fields={PROBLEM} attempt={1} />);
-
-    expect(field).toHaveFocus();
-    field.remove();
+      expect(field).toHaveFocus();
+    } finally {
+      field.remove();
+    }
   });
 });

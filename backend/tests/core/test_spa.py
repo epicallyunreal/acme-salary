@@ -62,14 +62,15 @@ def test_healthz_wins_over_the_catch_all(client, bundle):
     assert response.json() == {"status": "ok"}
 
 
-def test_whitenoise_serves_the_favicon_from_the_spa_root(client, settings, tmp_path):
+def test_whitenoise_serves_the_favicon_from_the_spa_root(client, settings, bundle):
     """The build copies frontend/public to the SPA root, which WhiteNoise serves before the
     catch-all can answer with index.html, under the security policy that lets 'self' images in
     (D80)."""
     from tests.core.test_security_headers import directives
 
-    (tmp_path / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
-    settings.WHITENOISE_ROOT = str(tmp_path)
+    # The catch-all is on, as it is in production, so a miss would answer with index.html.
+    (bundle / "favicon.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+    settings.WHITENOISE_ROOT = str(bundle)
 
     response = client.get("/favicon.svg")
 

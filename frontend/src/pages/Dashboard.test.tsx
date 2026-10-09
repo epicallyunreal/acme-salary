@@ -469,6 +469,8 @@ describe('Dashboard', () => {
       expect(await screen.findByText(UNREADABLE_PERIOD)).toBeInTheDocument();
       await waitFor(() => expect(router.state.location.search).toBe('?country=IN'));
       expect(router.state.historyAction).toBe('REPLACE');
+      // Once the URL reads well, the replacement's state keeps the line.
+      expect(screen.getByText(UNREADABLE_PERIOD)).toBeInTheDocument();
       await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
       for (const name of INSIGHTS)
         expect(dates(seen[name].at(-1))).toEqual(['2025-10-08', '2026-10-07']);
@@ -620,7 +622,7 @@ describe('Dashboard', () => {
     const user = userEvent.setup();
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Unknown country_code: XX');
+    expect(within(alert).getAllByText('Unknown country_code: XX')).toHaveLength(1);
     const bar = screen.getByRole('region', { name: 'Filters' });
     expect(bar.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await waitFor(() => expect([...refused].sort()).toEqual(INSIGHTS));

@@ -88,7 +88,7 @@ describe('Help', () => {
     setSession({ access: 'access-1', refresh: 'refresh-1' });
     renderApp('/help');
     await screen.findByRole('heading', { level: 1, name: 'Help' });
-    const text = document.querySelector('main')?.textContent ?? '';
+    const text = screen.getByRole('main').textContent ?? '';
 
     expect(text).toContain(
       "Every change is recorded in the employee's audit trail, with who made it and when, on the Audit tab of their page.",
