@@ -12,7 +12,14 @@ import {
   type SelectChangeEvent,
   TextField,
 } from '@mui/material';
-import { type ChangeEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type ChangeEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { useCountries, useDepartments } from '../../api/meta';
 import type { DirectoryStatus, ReportingCurrency } from '../../api/types';
@@ -332,6 +339,8 @@ interface DashboardFilterBarProps {
   onChange: (patch: Partial<DashboardFilters>) => void;
   onReset: () => void;
   filtered: boolean;
+  /** Set at the bar's far end, after the filters, such as a link to Help (D75). */
+  aside?: ReactNode;
 }
 
 /** The dashboard's filters (SPEC F5): country, department, reporting currency, whether the people
@@ -341,6 +350,7 @@ export function DashboardFilterBar({
   onChange,
   onReset,
   filtered,
+  aside,
 }: DashboardFilterBarProps) {
   return (
     <Box
@@ -373,6 +383,7 @@ export function DashboardFilterBar({
           Clear filters
         </Button>
       ) : null}
+      {aside ? <Box sx={{ ml: 'auto' }}>{aside}</Box> : null}
     </Box>
   );
 }

@@ -1,5 +1,6 @@
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Link, Stack, Typography } from '@mui/material';
 import { type ReactNode, useId } from 'react';
+import { Link as RouterLink } from 'react-router';
 
 import { exportInsight } from '../api/exports';
 import { useInsight } from '../api/insights';
@@ -86,7 +87,41 @@ export function Dashboard() {
   return (
     <>
       <PageHeader title="Dashboard" />
-      <DashboardFilterBar filters={filters} onChange={set} onReset={reset} filtered={filtered} />
+      {/* The filters decide every card, so they stay in view as the cards scroll (D75): stuck to
+          the top of main, across its padding, on the page background with a hairline under them,
+          above the charts and below the menus they open. */}
+      <Box
+        sx={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 'appBar',
+          mx: -6,
+          px: 6,
+          pt: 3,
+          mb: 4,
+          bgcolor: 'background.default',
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <DashboardFilterBar
+          filters={filters}
+          onChange={set}
+          onReset={reset}
+          filtered={filtered}
+          aside={
+            <Link
+              component={RouterLink}
+              to="/help#hidden-figures"
+              variant="body2"
+              color="text.secondary"
+              underline="hover"
+            >
+              Why are some figures hidden?
+            </Link>
+          }
+        />
+      </Box>
       <Section title="What we spend">
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
           {summary.data ? (

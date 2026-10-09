@@ -107,6 +107,22 @@ describe('Dashboard', () => {
     expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('keeps a quiet link beside the filters that opens the answer on hidden figures', async () => {
+    renderApp('/');
+    const user = userEvent.setup();
+    const filters = await screen.findByRole('region', { name: 'Filters' });
+    const link = within(filters).getByRole('link', { name: 'Why are some figures hidden?' });
+    expect(link).toHaveAttribute('href', '/help#hidden-figures');
+
+    await user.click(link);
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Help' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Why does a figure say/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
   it('a filter change refetches every card with the new filter', async () => {
     const seen = recordRequests();
     const user = userEvent.setup();
