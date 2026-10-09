@@ -54,7 +54,7 @@ cd backend && uv run ruff format --check . && uv run ruff check . && uv run pyte
 cd frontend && npm run lint && npx tsc -b && npm test -- --run && npm run build
 ```
 
-The same commands run in CI on every push, with `pip-audit` and `npm audit` on the locked runtime dependencies, and in the pre-commit gate on every commit. `backend/tests/security/` holds the leads of a static security audit of 8 October, each a guard where its weakness was fixed and an expected failure where it was accepted (`docs/reviews/security-audit-2026-10-08.md`).
+The same commands run in CI on every push, with `pip-audit` and `npm audit` on the locked runtime dependencies, and in the pre-commit gate on every commit. `backend/tests/security/` holds the leads of a static security audit of 8 October, each a guard on its fix, with the leads accepted without a test listed in `docs/reviews/security-audit-2026-10-08.md`.
 
 ## Operator notes
 
