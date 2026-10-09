@@ -30,11 +30,11 @@ export function useUrlFilters() {
   const state = useMemo(() => fromSearchParams(searchParams), [searchParams]);
 
   const set = useCallback(
-    (patch: Partial<GridState>) => {
+    (patch: Partial<GridState>, { replace = false }: { replace?: boolean } = {}) => {
       update(
         (current) => toSearchParams(applyChange(fromSearchParams(current), patch)),
         // Typing in the search box should not leave one history entry per keystroke.
-        { replace: 'search' in patch },
+        { replace: replace || 'search' in patch },
       );
     },
     [update],

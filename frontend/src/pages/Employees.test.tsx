@@ -649,6 +649,23 @@ describe('Employees', () => {
     );
   });
 
+  it('opens a link to a page past the last on the last page, the URL replaced (D77)', async () => {
+    server.use(
+      http.get('/api/v1/employees/', ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        return Number(params.get('page') ?? '1') > 6
+          ? HttpResponse.json({ detail: 'Invalid page.' }, { status: 404 })
+          : HttpResponse.json(sixtyRows(params));
+      }),
+    );
+    const { router } = renderApp('/employees?country=IN&page=5000');
+
+    await waitFor(() => expect(router.state.location.search).toBe('?country=IN&page=6'));
+    expect(router.state.historyAction).toBe('REPLACE');
+    expect(await screen.findByText('ACME-51')).toBeInTheDocument();
+    expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
+  });
+
   it('says what to do when the filters match nothing', async () => {
     server.use(
       http.get('/api/v1/employees/', () =>

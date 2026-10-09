@@ -230,6 +230,23 @@ describe('ImportReview', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?status=error&search=HR-41'));
   });
 
+  it('opens a link to a page past the last on the last page, the URL replaced (D77)', async () => {
+    server.use(
+      http.get('/api/v1/imports/3/rows/', ({ request }) => {
+        const url = new URL(request.url);
+        return Number(url.searchParams.get('page') ?? '1') > 25
+          ? HttpResponse.json({ detail: 'Invalid page.' }, { status: 404 })
+          : HttpResponse.json(rowsPage(url, MANY_ROWS));
+      }),
+    );
+    const { router } = renderApp('/imports/3?page=900');
+
+    await waitFor(() => expect(router.state.location.search).toBe('?page=25'));
+    expect(router.state.historyAction).toBe('REPLACE');
+    expect(await screen.findByText('Person 250')).toBeInTheDocument();
+    expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
+  });
+
   it('says what to do when no row has the status chosen', async () => {
     renderApp('/imports/3?status=warning&search=nobody');
 

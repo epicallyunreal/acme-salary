@@ -1,8 +1,10 @@
 import { Alert, LinearProgress } from '@mui/material';
+import { useCallback } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 
 import { useImportList } from '../api/imports';
-import { BatchList } from '../components/imports/BatchList';
+import { usePastLastPage } from '../components/grid/usePastLastPage';
+import { BatchList, PAGE_SIZE } from '../components/imports/BatchList';
 import { TemplateMenu } from '../components/imports/TemplateMenu';
 import { UploadDropzone } from '../components/imports/UploadDropzone';
 import { EmptyState } from '../components/layout/EmptyState';
@@ -15,6 +17,17 @@ export function Imports() {
   const [searchParams, setSearchParams] = useSearchParams();
   const page = Math.max(1, Math.floor(Number(searchParams.get('page'))) || 1);
   const imports = useImportList(page);
+  const goTo = useCallback(
+    (next: number) => setSearchParams(next > 1 ? { page: String(next) } : {}, { replace: true }),
+    [setSearchParams],
+  );
+  const pastLast = usePastLastPage({
+    error: imports.error,
+    count: imports.data?.count,
+    page,
+    pageSize: PAGE_SIZE,
+    goTo,
+  });
   const navigate = useNavigate();
   // Arrived from the Demo data page's reset (D72): the state says what to do next, while nothing
   // is imported yet. Back or a reload after the base import shows it no more.
@@ -30,9 +43,9 @@ export function Imports() {
         </Alert>
       ) : null}
       <UploadDropzone onUploaded={(batch) => navigate(`/imports/${batch.id}`)} />
-      {imports.isError ? (
+      {imports.isError && !pastLast ? (
         <ErrorState what="the imports" onRetry={() => void imports.refetch()} />
-      ) : imports.isPending ? (
+      ) : imports.isPending || !imports.data ? (
         <LinearProgress aria-label="Loading the imports" />
       ) : imports.data.count === 0 ? (
         <EmptyState message="No imports yet. Download the template, fill it in and drop it here." />

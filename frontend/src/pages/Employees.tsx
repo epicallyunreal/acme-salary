@@ -1,6 +1,6 @@
 import AddIcon from '@mui/icons-material/Add';
 import { Alert, Button, Stack, Typography } from '@mui/material';
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Link } from 'react-router';
 
 import { refusal } from '../api/client';
@@ -12,6 +12,7 @@ import { FilterBar } from '../components/filters/FilterBar';
 import { useUrlFilters } from '../components/filters/useUrlFilters';
 import { DIRECTORY_HIDDEN_COLUMNS, directoryColumns } from '../components/grid/columns';
 import { ServerGrid } from '../components/grid/ServerGrid';
+import { usePastLastPage } from '../components/grid/usePastLastPage';
 import {
   FIELDS_WITH_ERRORS,
   fromSortModel,
@@ -46,6 +47,8 @@ export function Employees() {
   const count = employees.data?.count;
   // A filter the API refuses is said under its field, in the API's words, and never as a lost
   // connection (D76). A field the bar has no place for is said above the grid.
+  const goTo = useCallback((next: number) => set({ page: next }, { replace: true }), [set]);
+  const pastLast = usePastLastPage({ error: employees.error, count, page, pageSize, goTo });
   const refused = refusal(employees.error);
   const elsewhere = Object.entries(refused ?? {})
     .filter(([field]) => !FIELDS_WITH_ERRORS.has(field))
@@ -94,7 +97,7 @@ export function Employees() {
           {elsewhere.join(' ')}
         </Alert>
       ) : null}
-      {employees.isError && !refused ? (
+      {employees.isError && !refused && !pastLast ? (
         <ErrorState what="employees" onRetry={() => void employees.refetch()} />
       ) : (
         <ServerGrid

@@ -18,6 +18,7 @@ import { useImportBatch, useImportRows, useSkipRow } from '../api/imports';
 import type { ImportBatch, ImportRow, ImportRowParams } from '../api/types';
 import { CommitField, SEARCH_DELAY_MS } from '../components/filters/FilterBar';
 import { useLatestSearchParams } from '../components/filters/useLatestSearchParams';
+import { usePastLastPage } from '../components/grid/usePastLastPage';
 import { importRowColumns } from '../components/grid/columns';
 import { ServerGrid } from '../components/grid/ServerGrid';
 import { useBusy } from '../components/busy/busyContext';
@@ -62,18 +63,24 @@ function reviewState(params: URLSearchParams) {
  * (D76). */
 function useReviewParams() {
   const [params, update] = useLatestSearchParams();
-  const set = (changes: Partial<ReturnType<typeof reviewState>>) =>
-    update((current) => {
-      const next = { ...reviewState(current), ...changes };
-      // A new status or search starts again from the first page.
-      if (changes.status !== undefined || changes.search !== undefined) next.page = 1;
-      const query = new URLSearchParams();
-      if (next.page > 1) query.set('page', String(next.page));
-      if (next.pageSize !== DEFAULT_PAGE_SIZE) query.set('page_size', String(next.pageSize));
-      if (next.status) query.set('status', next.status);
-      if (next.search) query.set('search', next.search);
-      return query;
-    });
+  const set = (
+    changes: Partial<ReturnType<typeof reviewState>>,
+    { replace = false }: { replace?: boolean } = {},
+  ) =>
+    update(
+      (current) => {
+        const next = { ...reviewState(current), ...changes };
+        // A new status or search starts again from the first page.
+        if (changes.status !== undefined || changes.search !== undefined) next.page = 1;
+        const query = new URLSearchParams();
+        if (next.page > 1) query.set('page', String(next.page));
+        if (next.pageSize !== DEFAULT_PAGE_SIZE) query.set('page_size', String(next.pageSize));
+        if (next.status) query.set('status', next.status);
+        if (next.search) query.set('search', next.search);
+        return query;
+      },
+      { replace },
+    );
   return { ...reviewState(params), set };
 }
 
@@ -166,6 +173,13 @@ function ReviewPage({ batchId }: { batchId: number }) {
     search: view.search || undefined,
   };
   const rows = useImportRows(batchId, params);
+  const pastLast = usePastLastPage({
+    error: rows.error,
+    count: rows.data?.count,
+    page: view.page,
+    pageSize: view.pageSize,
+    goTo: (page) => view.set({ page }, { replace: true }),
+  });
   const { mutate: toggleSkip } = useSkipRow(batchId);
   const [dialog, setDialog] = useState<'approve' | 'discard' | null>(null);
   const { busy } = useBusy();
@@ -303,7 +317,7 @@ function ReviewPage({ batchId }: { batchId: number }) {
           width={240}
         />
       </Box>
-      {rows.isError ? (
+      {rows.isError && !pastLast ? (
         <ErrorState what="the rows" onRetry={() => void rows.refetch()} />
       ) : (
         <ServerGrid

@@ -690,6 +690,14 @@ Decision: step 13 opens with eight fixes, each with a test that fails before it.
 
 Consequences: the two audit leads move from Accepted to Fixed and their strict xfails become guards. Writing the CSV fix showed that one double quote between the `;` and the formula start gets through too, since that reader takes the doubled quote for an empty quoted start, so the escape covers it and the guard plants it. During the pass the owner shortened the Designation helper to "Commas between titles, Enter applies", so it fits on one line under the field. Every live session ends once, at the deploy that brings the revoke claim. The pass then runs on the rebuilt container, its own findings fixed in the step, and nothing from the paused run is reused.
 
+## D77. The end-to-end pass: a page past the last, and search on accented capitals
+
+Context: the local pass of step 13 opened `/employees?page=5000`, which the API answers with a 404, and the directory said "Could not load employees. Check your connection and try again." It also found that search ignores case only for ASCII letters, since SQLite's case-insensitive matching does: "wiśniewska" and "müller" find their names, "WIŚNIEWSKA" does not.
+
+Decision: on 9 October the owner chose that a page past the last opens the last page with the URL replaced, as Go to page does, with no message, on every list whose page comes from the URL: the directory, the import review grid and the Imports list. The first page's count gives the last. Search on accented capitals goes to P1: a stored case-folded column or a database function is more than a fix in this step, and a capital typed on an accented letter is rare. `docs/TESTING.md` lists the limit.
+
+Consequences: an old link or one to a list that has shrunk never shows a connection message, and the history keeps one entry for it. The P1 list in SPEC section 16 names the search limit with its reason.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.

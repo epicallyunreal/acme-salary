@@ -50,6 +50,30 @@ describe('Imports', () => {
     expect(screen.getByRole('link', { name: 'Imports' })).toHaveAttribute('aria-current', 'page');
   });
 
+  it('opens a link to a page past the last on the last page, the URL replaced (D77)', async () => {
+    const many = Array.from({ length: 60 }, (_, index) => ({
+      ...reviewBatch,
+      id: 100 + index,
+      file_name: `batch-${index + 1}.xlsx`,
+    }));
+    server.use(
+      http.get('/api/v1/imports/', ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') ?? '1');
+        if (page > 3) return HttpResponse.json({ detail: 'Invalid page.' }, { status: 404 });
+        return HttpResponse.json({
+          ...batchPage(many.slice((page - 1) * 25, page * 25)),
+          count: many.length,
+        });
+      }),
+    );
+    const { router } = renderApp('/imports?page=40');
+
+    await waitFor(() => expect(router.state.location.search).toBe('?page=3'));
+    expect(router.state.historyAction).toBe('REPLACE');
+    expect(await screen.findByText('batch-60.xlsx')).toBeInTheDocument();
+    expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
+  });
+
   it('says what to do when there are no imports yet', async () => {
     server.use(http.get('/api/v1/imports/', () => HttpResponse.json(batchPage([]))));
     renderApp('/imports');

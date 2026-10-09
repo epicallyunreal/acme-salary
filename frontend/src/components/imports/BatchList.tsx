@@ -16,7 +16,8 @@ import { formatDateTime } from '../../lib/dates';
 import { StatusChip } from '../layout/StatusChip';
 import { formatCount } from './counts';
 
-const PAGE_SIZE = 25;
+/** The API's own page size, which the Imports list does not change. */
+export const PAGE_SIZE = 25;
 
 interface BatchListProps {
   batches: ImportBatch[];
