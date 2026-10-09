@@ -575,3 +575,11 @@ def test_two_files_from_one_stream_share_no_code_and_no_email(thirty):
     assert [r["email"].split("@")[0].rsplit(".", 1)[1] for r in fixes] == [
         str(n) for n in range(531, 551)
     ]
+
+
+def test_a_csv_cell_takes_the_exports_escape_after_a_semicolon_too():
+    """make_import_file's .csv may be opened in Excel too, so it escapes as the exports do (D76)."""
+    from apps.imports.samples import _csv_text
+
+    assert _csv_text("Ann;=1+1") == "Ann;'=1+1"
+    assert _csv_text("=SUM(A1)") == "'=SUM(A1)"

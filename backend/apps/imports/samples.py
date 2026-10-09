@@ -31,7 +31,7 @@ from openpyxl.cell import WriteOnlyCell
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.core.models import SalaryComponent
 from apps.employees.models import Employee
-from apps.exports.writers import XML_ILLEGAL, escape_cell
+from apps.exports.writers import XML_ILLEGAL, escape_csv_text
 from seed import profiles
 from seed.generator import generate, legacy_codes, ordered_entries
 
@@ -428,8 +428,8 @@ def _text(value):
 
 
 def _csv_text(value):
-    """Text that starts like a formula gets the exports' leading quote; a number stays one."""
-    return escape_cell(value) if isinstance(value, str) else _text(value)
+    """Text takes the exports' CSV escape, a number stays one (D76)."""
+    return escape_csv_text(value) if isinstance(value, str) else _text(value)
 
 
 def generated_rows(
