@@ -1,8 +1,9 @@
 // Puts a failed request's messages onto a react-hook-form form (DESIGN section 6). In order: a
 // key that is a component code of the form's country lands on `lines.<code>`; DRF's per-item
 // `lines` errors land on the line sent at that index, and a plain string among them is
-// form-level; a key that is a form field lands on that field; `detail`, `non_field_errors` and
-// every other key go to one form-level list, each message with its key, so nothing is dropped.
+// form-level; a key that is a form field lands on that field; `detail` and `non_field_errors`
+// go to one form-level list as their message alone, the alert DESIGN section 6 maps them onto,
+// and every other key goes there with its key, so nothing is dropped.
 // DRF 3.18 sends per-item errors as an object keyed by index rather than a list; both are read
 // the same way (D46).
 
@@ -11,7 +12,8 @@ import type { FieldValues, Path, UseFormSetError } from 'react-hook-form';
 import { ApiError } from '../../api/client';
 
 export interface FormMessage {
-  /** The key the server used, or null when the failure had no body to read. */
+  /** The key the server used, or null for a `detail`, a `non_field_errors` or a failure with no
+   * body to read, whose message stands alone. */
   key: string | null;
   message: string;
 }
@@ -48,8 +50,10 @@ export function applyServerErrors<F extends FieldValues>(
   }
 
   const formLevel: FormMessage[] = [];
-  const toForm = (key: string, messages: string[]) =>
-    messages.forEach((message) => formLevel.push({ key, message }));
+  const toForm = (key: string, messages: string[]) => {
+    const shown = key === 'detail' || key === 'non_field_errors' ? null : key;
+    messages.forEach((message) => formLevel.push({ key: shown, message }));
+  };
   const toField = (name: string, messages: string[]) => {
     if (messages.length) setError(name as Path<F>, { type: 'server', message: messages.join(' ') });
   };

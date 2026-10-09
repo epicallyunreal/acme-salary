@@ -233,7 +233,8 @@ describe('EmployeeDetail', () => {
         'scheduled revision on 2027-04-01 must be cancelled before exit',
       ),
     ).toBeInTheDocument();
-    expect(within(dialog).getByText('detail')).toBeInTheDocument();
+    // The 409's detail stands alone, never under its key (DESIGN section 6).
+    expect(within(dialog).queryByText('detail')).not.toBeInTheDocument();
 
     server.use(
       http.post('/api/v1/employees/:id/exit/', () =>

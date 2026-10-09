@@ -65,23 +65,31 @@ describe('applyServerErrors', () => {
     expect(formLevel).toEqual([{ key: 'lines', message: 'BASE appears twice in lines' }]);
   });
 
-  it('lists detail, non_field_errors and unknown keys with their keys, dropping nothing', () => {
+  it('shows a detail alone, as a form-level alert (DESIGN section 6, found in the pass)', () => {
     const { onFields, formLevel } = apply(
-      {
-        detail: 'no revision after the exit on 2026-06-30',
-        non_field_errors: ['first', 'second'],
-        CPF: ['CPF is not a component for IN'],
-      },
+      { detail: 'no revision after the exit on 2026-06-30' },
       409,
     );
 
     expect(onFields).toEqual({});
+    expect(formLevel).toEqual([{ key: null, message: 'no revision after the exit on 2026-06-30' }]);
+  });
+
+  it('shows each non_field_errors message alone', () => {
+    const { onFields, formLevel } = apply({ non_field_errors: ['first', 'second'] });
+
+    expect(onFields).toEqual({});
     expect(formLevel).toEqual([
-      { key: 'detail', message: 'no revision after the exit on 2026-06-30' },
-      { key: 'non_field_errors', message: 'first' },
-      { key: 'non_field_errors', message: 'second' },
-      { key: 'CPF', message: 'CPF is not a component for IN' },
+      { key: null, message: 'first' },
+      { key: null, message: 'second' },
     ]);
+  });
+
+  it('keeps the key of a field the form cannot place, dropping nothing', () => {
+    const { onFields, formLevel } = apply({ CPF: ['CPF is not a component for IN'] });
+
+    expect(onFields).toEqual({});
+    expect(formLevel).toEqual([{ key: 'CPF', message: 'CPF is not a component for IN' }]);
   });
 
   it('says what to do when there is no body to read', () => {
