@@ -368,20 +368,23 @@ Plugin skills and connectors: `/perf-timing`, `/log-decision`, `ui-ux-pro-max` f
 
 Added by the owner on 9 October (D75), before the end-to-end pass, which becomes step 13 with Ship step 14. The pass was paused at the directory, and its findings so far carry into step 13.
 
-Goal: one scroll container and one scrollbar where there were two, the nav, the top bar and the dashboard's filters always in view, full values on hover where a text cell truncates, and a Help page that explains the app in plain words.
+Goal: the nav, the top bar and the dashboard's filters always in view, grids of one fixed height whose rows read apart, the review's alerts in one slot beside its counts, full values on hover where a text cell truncates, and a Help page that explains the app in plain words.
 
-Scope: layout and one static page. No API change, no new dependency, no change to what any page does, to colours, type or the grid's behaviour, and no motion.
+Scope: layout and one static page. No API change, no new dependency and no motion. The grids' height, the rows per page, the rows' shading and the review's message slot change as the owner chose on 9 October after the window checks, in place of grids that filled the window down to a floor of eight rows, which left Import review two scrollbars at 1280×720.
 
-1. App shell: a fixed frame of the window's height (`100dvh`, and `100vh` becomes `100dvh` in Login and SessionGate). The nav and the top bar never scroll, and `main` is the one scroll container. `main` goes back to the top on a route change, as the window did, and takes focus so Page Down and Space scroll it without a click.
-2. Employees and Import review: a flex column inside `main`, the header, filters and alerts at their natural height and the grid in the space left (`flex: 1`, `min-height: 0`, from MUI X's layout docs on a flex parent, checked with Context7). The `calc` height goes. The page does not scroll and the grid is the only vertical scrollbar, with a floor of about eight rows below which the page may scroll, and the report says at which window height that starts. No horizontal page scroll at the sizes below.
-3. Dashboard: the filter bar sticks to the top of `main` as the cards scroll, on the page background with a hairline under it, so the period, filters and currency stay in view. Beside it one quiet link, "Why are some figures hidden?", to the Help answer.
-4. Grid cells that truncate with an ellipsis show the full value on hover: name, email, designation, department, and the review grid's messages if they truncate. Numbers, amounts and dates are never truncated.
-5. Help, a ninth page at `/help`, in the nav under a divider with Demo data. "How it works": six numbered steps, Import, Review, Approve, Maintain, Understand and Share, and a closing line on the Demo data page. "Questions": an accordion of about twelve, each answered in two to four sentences from SPEC and DECISIONS, with the D-number in a code comment and never on the page, and an anchor on each. Static: no API call, no state, PageHeader and the theme as on every page. Plain words, no em dashes, no semicolons. The full text goes in the step report for the owner to approve.
-6. README: the tour gains one line for Help.
+1. App shell: a frame of the window's height (`100dvh`, and `100vh` becomes `100dvh` in Login and SessionGate) and at least 1024 px wide, a narrower window scrolling sideways rather than crushing the nav and the filters, with no minimum height. The nav and the top bar never scroll, and `main` is the one scroll container and the containing block of whatever a page positions. `main` goes back to the top on a route change, as the window did, and takes focus so Page Down and Space scroll it without a click.
+2. Grids: Employees and Import review show their grid at one fixed height of ten compact rows, the toolbar, the header, ten 36 px rows, the pager and the borders, 505 px, never growing with a tall window or shrinking with a short one. `main` scrolls when the page is taller than the window, and the grid scrolls its own rows when a page holds more than ten, two scrollbars accepted. On the review, rows that grow with their messages show fewer than ten at once. No horizontal page scroll from 1024 px wide, and between 1024 and about 1250 px the directory's default columns scroll sideways inside the grid.
+3. Rows per page are 10, 20 and 50, 10 by default so the default page fits the grid exactly (`PAGE_SIZES`, `DEFAULT_PAGE_SIZE` and the pager). A link with any other value, 25 and 100 included, falls back to 10. The API's maximum of 100 is unchanged. SPEC F4 says so.
+4. Rows read apart on both grids: separators a step stronger than the divider, alternate rows shaded with the page background, a hover tint a little stronger, and on the review the severity tints over the shading, through the theme's tokens, with a new one only where contrast needs it.
+5. Import review: the approve blocker and the batch warnings leave their alert rows for one message slot at the end of the summary strip, after No-op, filling the strip's remaining width at the metrics' height and dropping under them only on a window too narrow for both. One message at a time, the blocker first in its warning tone, then each batch warning in info tone. With more than one, "1/3", read out as "Message 1 of 3", between Previous message and Next message buttons, dots beside them as an indicator only, never clickable, and no automatic rotation. With one, the message alone. With none, no slot. A message wraps to two lines at most, with its full text on hover. The blocker carries a Show them link that sets the Status filter to Error. The slot is `aria-live="polite"`, Approve is described by a visually hidden copy of the blocker while it applies, and its tooltip stays. The approved, failed and discarded alerts stay as they are.
+6. Dashboard: the filter bar sticks to the top of `main` as the cards scroll where the window has room, on the page background with a hairline under it, so the period, filters and currency stay in view. Beside it one quiet link, "Why are some figures hidden?", to the Help answer.
+7. Grid cells that truncate with an ellipsis show the full value on hover: name, email, designation, department, and the review grid's messages if they truncate. Numbers, amounts and dates are never truncated.
+8. Help, a ninth page at `/help`, in the nav under a divider with Demo data. "How it works": six numbered steps, Import, Review, Approve, Maintain, Understand and Share, and a closing line on the Demo data page. "Questions": an accordion of about twelve, each answered in two to four sentences from SPEC and DECISIONS, with the D-number in a code comment and never on the page, and an anchor on each. Static: no API call, no state, PageHeader and the theme as on every page. Plain words, no em dashes, no semicolons. The full text goes in the step report for the owner to approve.
+9. README: the tour gains one line for Help.
 
-Files to change: `src/components/layout/AppShell.tsx` and `SessionGate.tsx`, `src/pages/Login.tsx`, `src/components/grid/ServerGrid.tsx` and `columns.tsx`, `src/components/imports/RowCells.tsx`, `src/pages/Employees.tsx`, `ImportReview.tsx` and `Dashboard.tsx`, `src/components/filters/FilterBar.tsx`, `src/pages/Help.tsx` (new), `src/router.tsx`, their tests, `docs/DESIGN.md` (section 6), `docs/SPEC.md` (section 10's ninth page), `docs/DECISIONS.md`, `README.md`.
+Files to change: `src/components/layout/AppShell.tsx`, `SessionGate.tsx` and `PageHeader.tsx`, `src/pages/Login.tsx`, `src/components/grid/ServerGrid.tsx` and `columns.tsx`, `src/components/imports/RowCells.tsx` and `BatchSummaryStrip.tsx`, `src/components/insights/InsightCard.tsx`, `src/lib/constants.ts`, `theme.ts` and `a11y.ts`, `src/pages/Employees.tsx`, `ImportReview.tsx` and `Dashboard.tsx`, `src/components/filters/FilterBar.tsx`, `src/pages/Help.tsx` (new), `src/router.tsx`, their tests, `docs/DESIGN.md` (section 6), `docs/SPEC.md` (F4's rows per page, section 10's ninth page and grids), `docs/DECISIONS.md`, `README.md`.
 
-Tests: jsdom covers what it can see: the shell's structure (the nav and the top bar outside `main`, `main` the focusable scroll container, put back at the top and focused on a route change), the Help nav item and its `aria-current`, the Help headings, steps and anchors, an anchor in the URL opening its answer, the dashboard link's target, and the hover titles. The layout itself is checked in Chrome, signed in by the owner: at 1280×720, 1440×900 and 1920×1080, Employees and Import review (a batch with alerts staged locally) show one vertical scrollbar, the grid's, and no horizontal page scroll, the nav and the top bar stay put on every page, the dashboard's filter bar stays in view to the last card, the dashboard link lands on the Help answer, and at 200% zoom on 1280×720 nothing is cut off and every control is reachable. The window checks go in the step report with their sizes.
+Tests: jsdom covers what it can see: the shell's structure (the nav and the top bar outside `main`, `main` the focusable scroll container and containing block, put back at the top and focused on a route change), the Help nav item and its `aria-current`, the Help headings, steps and anchors, an anchor in the URL opening its answer, the dashboard link's target, the hover titles, the grid's fixed height on both pages, the page sizes and the fallback from 25 and 100, the alternate-row class, and the slot: the blocker first, "1/3" with Next and Previous, one message without controls, no slot without messages, Approve's description present while a warning shows, the hover text, and Show them setting the filter. The layout itself is checked in Chrome, signed in by the owner, at 1280×720, 1440×900, 1920×1080 and 1024 wide: the grid whole at ten rows on both pages, the nav and the top bar fixed, no horizontal page scroll from 1024 up, the dashboard's filter bar in view to the last card, and the dashboard link landing on the Help answer. The window checks go in the step report with their sizes.
 
 Commits:
 
@@ -390,19 +393,25 @@ Commits:
 3. `feat(help): the Help page, how it works and the questions`
 4. `fix(dashboard): the filter bar stays in view, with a link to the hidden figures answer`
 5. `fix(grid): truncated text cells show their full value on hover`
-6. `docs: layout and Help (step 12)` (finish-step by hand as in step 11: the four reviewers, DESIGN, SPEC section 10, DECISIONS, PLAN, the README line, and a report with the Help text and the window checks before the owner deploys)
+6. `fix(layout): nothing a page positions escapes main to scroll the window` (from the window checks)
+7. `fix(layout): the bar sits flush and leaves room for focus, and headers wrap` (from the window checks)
+8. `docs: the owner's grid model, ten rows a page and the review's message slot (D75)`
+9. `fix(grid): ten rows at a fixed height and ten rows a page, in a frame at least 1024 px wide`
+10. `fix(grid): rows read apart`
+11. `feat(import): the review's blocker and warnings in one slot beside its counts`
+12. `docs: layout and Help (step 12)` (finish-step by hand as in step 11: the four reviewers, DECISIONS, PLAN, and a report with the Help text and the window checks before the owner deploys)
 
-Hours: 4.
+Hours: 6, grown from 4 with the owner's model.
 
-Acceptance closed: SPEC section 10's ninth page and the owner's window checks.
+Acceptance closed: SPEC section 10's ninth page and grids, F4's rows per page, and the owner's window checks.
 
-Risks: MUI X sizes a grid from its parent, so a parent without a definite height gives a grid of no rows or one that grows without end, which the flex column and its floor answer. A sticky bar over the cards needs a background and a layer above them, or the charts show through it. Focusing `main` on a route change must not take focus from a field a page focuses itself.
+Risks: a fixed height is the same on every window, so a short window scrolls the page and the grid both, which the owner accepted. A sticky bar over the cards needs a background and a layer above them, or the charts show through it. Focusing `main` on a route change must not take focus from a field a page focuses itself. A link saved with 25 or 100 rows a page opens at 10.
 
-Plugin skills and connectors: `ui-ux-pro-max` for the layout, `frontend-design` for the Help page, `/frontend-page` for the route and the nav item, Context7 for MUI X 9's layout on a flex parent, `/log-decision`.
+Plugin skills and connectors: `ui-ux-pro-max` for the layout, `frontend-design` for the Help page, `/frontend-page` for the route and the nav item, Context7 for MUI X 9's layout and row styling, `/log-decision`.
 
 ## Step 13. End-to-end UI test
 
-Added by the owner before Ship on 9 October (D74), and moved to step 13 when Layout and Help went first (D75), with Ship step 14. Run by claude-opus-5-5, the earlier steps having run on claude-fable-5-1. Paused at the directory on 9 October, its findings so far listed in the step 12 report.
+Added by the owner before Ship on 9 October (D74), and moved to step 13 when Layout and Help went first (D75), with Ship step 14. Run by claude-opus-5-5, the earlier steps having run on claude-fable-5-1. Paused at the directory on 9 October, its findings so far listed in the step 12 report. Since D75 the directory's scenario reads 10, 20 and 50 rows a page, and the review's blocker and warnings sit in the summary strip's message slot.
 
 Goal: the finished app driven through its real UI with the Claude in Chrome tools, in full on the seeded compose container from HEAD at `http://localhost:8000` and read-only on `https://acme.nutanprabhat.dev`, and `docs/TESTING.md` written: what is built, page by page against SPEC F1 to F9 and section 10, what was tested, scenario by scenario with the result, and every error path and edge case produced through the UI. The brief asks for a video and test artifacts, and this is the written one.
 
@@ -472,11 +481,11 @@ Plugin skills and connectors: `/log-decision`. No design or library skill.
 | 9 Realistic seed, a period, numbered pages | 11.0 | 46.5 | added before Hardening (D64) |
 | 10 Demo data | 9.0 | 55.5 | added before Hardening (D72) |
 | 11 Hardening | 8.0 | 63.5 | the audit's leads, the guardrails and the README added on 9 October (D73) |
-| 12 Layout and Help | 4.0 | 67.5 | added before the end-to-end pass (D75) |
-| 13 End-to-end UI test | 6.0 | 73.5 | added before Ship (D74) |
-| 14 Ship | 1.5 | 75.0 | |
+| 12 Layout and Help | 6.0 | 69.5 | added before the end-to-end pass (D75) |
+| 13 End-to-end UI test | 6.0 | 75.5 | added before Ship (D74) |
+| 14 Ship | 1.5 | 77.0 | |
 
-Total: 75 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64), step 10 before it the same day (D72), step 11 grew by the security audit's leads, the guardrails and the README on 9 October (D73), step 13 was added before Ship the same day (D74) and step 12 before it (D75), so the planned close column stops at step 7.
+Total: 77 hours. Step 8 was added after step 7 closed on 8 October (D62), step 9 before Hardening on 8 October (D64), step 10 before it the same day (D72), step 11 grew by the security audit's leads, the guardrails and the README on 9 October (D73), step 13 was added before Ship the same day (D74) and step 12 before it (D75), so the planned close column stops at step 7.
 
 Submission target: the morning of 8 October 2026 IST, full scope, per DECISIONS D19 and D23. The owner decides at the end on any overrun. At these estimates and with no breaks from a 12:30 start, steps 1 to 4 close by 06:00 on 8 October, step 5 by 11:00, step 6 by 15:00 and steps 7 to 9 by 20:30; the planned close column is the number D23 asks for, so each step's slip is visible against it at the time, not after. The table assumes continuous work; the owner's own stop time is not in it.
 
