@@ -11,12 +11,13 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import type { GridSortModel } from '@mui/x-data-grid';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useParams } from 'react-router';
 
 import { ApiError } from '../api/client';
 import { useImportBatch, useImportRows, useSkipRow } from '../api/imports';
 import type { ImportBatch, ImportRow, ImportRowParams } from '../api/types';
 import { CommitField, SEARCH_DELAY_MS } from '../components/filters/FilterBar';
+import { useLatestSearchParams } from '../components/filters/useLatestSearchParams';
 import { importRowColumns } from '../components/grid/columns';
 import { ServerGrid } from '../components/grid/ServerGrid';
 import { useBusy } from '../components/busy/busyContext';
@@ -45,29 +46,35 @@ const STATUSES = [
 ] as const;
 type StatusFilter = (typeof STATUSES)[number][0];
 
-/** The grid's state lives in the URL, so a filtered page is a link that can be shared. */
-function useReviewParams() {
-  const [params, setParams] = useSearchParams();
+function reviewState(params: URLSearchParams) {
   const pageSize = Number(params.get('page_size'));
   const status = params.get('status') ?? '';
-  const state = {
+  return {
     page: Math.max(1, Math.floor(Number(params.get('page'))) || 1),
     pageSize: (PAGE_SIZES as readonly number[]).includes(pageSize) ? pageSize : DEFAULT_PAGE_SIZE,
     status: (STATUSES.some(([value]) => value === status) ? status : '') as StatusFilter,
     search: params.get('search') ?? '',
   };
-  const set = (changes: Partial<typeof state>) => {
-    const next = { ...state, ...changes };
-    // A new status or search starts again from the first page.
-    if (changes.status !== undefined || changes.search !== undefined) next.page = 1;
-    const query: Record<string, string> = {};
-    if (next.page > 1) query.page = String(next.page);
-    if (next.pageSize !== DEFAULT_PAGE_SIZE) query.page_size = String(next.pageSize);
-    if (next.status) query.status = next.status;
-    if (next.search) query.search = next.search;
-    setParams(query);
-  };
-  return { ...state, set };
+}
+
+/** The grid's state lives in the URL, so a filtered page is a link that can be shared. A change
+ * is made to the latest URL, so a search sent after its pause keeps a status chosen during it
+ * (D76). */
+function useReviewParams() {
+  const [params, update] = useLatestSearchParams();
+  const set = (changes: Partial<ReturnType<typeof reviewState>>) =>
+    update((current) => {
+      const next = { ...reviewState(current), ...changes };
+      // A new status or search starts again from the first page.
+      if (changes.status !== undefined || changes.search !== undefined) next.page = 1;
+      const query = new URLSearchParams();
+      if (next.page > 1) query.set('page', String(next.page));
+      if (next.pageSize !== DEFAULT_PAGE_SIZE) query.set('page_size', String(next.pageSize));
+      if (next.status) query.set('status', next.status);
+      if (next.search) query.set('search', next.search);
+      return query;
+    });
+  return { ...reviewState(params), set };
 }
 
 /** Why Approve is off, in the words of DESIGN section 6, or null when it is on. */

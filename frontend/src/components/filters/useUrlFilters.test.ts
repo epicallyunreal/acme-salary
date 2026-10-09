@@ -68,4 +68,22 @@ describe('useUrlFilters', () => {
       ordering: '-gross',
     });
   });
+
+  it('a set captured before a reset and called after it brings nothing back (D76)', () => {
+    const { result } = renderHook(() => useUrlFilters(), {
+      wrapper: wrapperAt('/employees?country=IN&gross_min=500&search=rao&page_size=50'),
+    });
+    const before = result.current.set;
+
+    act(() => result.current.reset());
+    act(() => before({ level: [3] }));
+
+    expect(result.current.state).toMatchObject({
+      country: [],
+      gross_min: '',
+      search: '',
+      level: [3],
+      page_size: 50,
+    });
+  });
 });

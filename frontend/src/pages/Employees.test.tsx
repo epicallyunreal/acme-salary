@@ -484,6 +484,29 @@ describe('Employees', () => {
     expect(router.state.location.search).toBe('?ordering=-employee_code');
   });
 
+  it.each([
+    ['a search in the link', '/employees?search=asha&country=IN', 'ashar'],
+    ['no search before', '/employees?country=IN', 'rao'],
+  ])(
+    'a search typed but not yet sent is dropped by Clear filters, with %s (D76)',
+    async (_, url, typed) => {
+      recordRequests();
+      const { router } = renderApp(url);
+      await rowsShown();
+
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      fireEvent.change(screen.getByLabelText('Search'), { target: { value: typed } });
+      // Clear within the pause, the field never left.
+      fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+      act(() => vi.advanceTimersByTime(SEARCH_DELAY_MS));
+      vi.useRealTimers();
+
+      await rowsShown();
+      expect(router.state.location.search).toBe('');
+      expect(screen.getByLabelText('Search')).toHaveValue('');
+    },
+  );
+
   it('clears the filters and the search but keeps the sort and the page size', async () => {
     recordRequests({ rows: 60 });
     const { router } = renderApp(

@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router';
 
 import type { InsightParams } from '../../api/types';
 import { REPORTING_CURRENCIES } from '../../lib/constants';
@@ -13,6 +12,7 @@ import {
   todayUtc,
 } from '../../lib/period';
 import { csv, oneOf, withCurrencyRule } from '../grid/serverModel';
+import { useLatestSearchParams } from './useLatestSearchParams';
 
 /** The dashboard's filters (SPEC F5), in the URL so a view is a link: who is counted, in which
  * currency, and over which period, a preset's name or `custom` with its dates (D64). */
@@ -120,33 +120,33 @@ export function dashboardToSearchParams(
 }
 
 export function useDashboardFilters() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, update] = useLatestSearchParams();
   const filters = useMemo(() => dashboardFromSearchParams(searchParams), [searchParams]);
   const params = useMemo(() => insightParams(filters), [filters]);
   const controls = useMemo(() => controlsFromSearchParams(searchParams), [searchParams]);
 
   const set = useCallback(
     (patch: Partial<DashboardFilters>) =>
-      setSearchParams((current) =>
+      update((current) =>
         dashboardToSearchParams(
           withCurrencyRule({ ...dashboardFromSearchParams(current), ...patch }),
           controlsFromSearchParams(current),
         ),
       ),
-    [setSearchParams],
+    [update],
   );
   const setControl = useCallback(
     <C extends CardName>(card: C, value: CardControls[C]) =>
-      setSearchParams((current) =>
+      update((current) =>
         dashboardToSearchParams(dashboardFromSearchParams(current), {
           ...controlsFromSearchParams(current),
           [card]: value,
         }),
       ),
-    [setSearchParams],
+    [update],
   );
   // Clear filters resets the card controls and the period with the bar's filters (D62, D64).
-  const reset = useCallback(() => setSearchParams(new URLSearchParams()), [setSearchParams]);
+  const reset = useCallback(() => update(() => new URLSearchParams()), [update]);
   const filtered = dashboardToSearchParams(filters, controls).size > 0;
 
   return { filters, params, controls, set, setControl, reset, filtered };

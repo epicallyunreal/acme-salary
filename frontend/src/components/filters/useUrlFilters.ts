@@ -1,5 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router';
 
 import {
   DEFAULT_STATE,
@@ -8,6 +7,7 @@ import {
   toSearchParams,
   withCurrencyRule,
 } from '../grid/serverModel';
+import { useLatestSearchParams } from './useLatestSearchParams';
 
 const PAGING_KEYS: ReadonlySet<keyof GridState> = new Set(['page', 'page_size', 'ordering']);
 
@@ -26,28 +26,28 @@ export function applyChange(state: GridState, patch: Partial<GridState>): GridSt
 
 /** The directory's filters, page, sort and search, read from and written to the URL. */
 export function useUrlFilters() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, update] = useLatestSearchParams();
   const state = useMemo(() => fromSearchParams(searchParams), [searchParams]);
 
   const set = useCallback(
     (patch: Partial<GridState>) => {
-      setSearchParams(
+      update(
         (current) => toSearchParams(applyChange(fromSearchParams(current), patch)),
         // Typing in the search box should not leave one history entry per keystroke.
         { replace: 'search' in patch },
       );
     },
-    [setSearchParams],
+    [update],
   );
 
   // Clear filters clears the filters and the search alone: the sort and the page size stay, and
   // the page goes back to the first (D63).
   const reset = useCallback(() => {
-    setSearchParams((current) => {
+    update((current) => {
       const { ordering, page_size } = fromSearchParams(current);
       return toSearchParams({ ...DEFAULT_STATE, ordering, page_size });
     });
-  }, [setSearchParams]);
+  }, [update]);
 
   return { state, set, reset };
 }

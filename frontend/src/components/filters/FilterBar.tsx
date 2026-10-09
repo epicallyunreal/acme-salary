@@ -14,6 +14,7 @@ import {
 } from '@mui/material';
 import {
   type ChangeEvent,
+  Fragment,
   type KeyboardEvent,
   type ReactNode,
   useEffect,
@@ -60,15 +61,17 @@ export function CommitField({
   width?: number;
 }) {
   const { width, ...fieldProps } = rest;
-  const [draft, setDraft] = useState<string | null>(null);
+  // A draft belongs to the value it was typed over: when the value changes from outside, the
+  // draft is dropped and so is its pending commit (D76).
+  const [draft, setDraft] = useState<{ text: string; over: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const shown = draft ?? value;
+  const shown = draft !== null && draft.over === value ? draft.text : value;
 
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
     },
-    [],
+    [value],
   );
 
   const commit = (next: string) => {
@@ -79,7 +82,7 @@ export function CommitField({
 
   const onInput = (event: ChangeEvent<HTMLInputElement>) => {
     const next = event.target.value;
-    setDraft(next);
+    setDraft({ text: next, over: value });
     if (delay !== undefined) {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => commit(next), delay);
@@ -212,6 +215,9 @@ const STATUS_LABELS: Record<DirectoryStatus, string> = {
 
 /** The directory's filters (SPEC F4). Every control writes straight to the URL state. */
 export function FilterBar({ filters, onChange, onReset, filtered, errors }: FilterBarProps) {
+  // Clear filters drops every draft in the bar, a value it leaves as it was included, so nothing
+  // typed before it is sent after it (D76).
+  const [clears, setClears] = useState(0);
   const localAllowed = filters.country.length === 1;
   const grossCurrency = filters.currency === 'local' ? 'local' : filters.currency.toUpperCase();
   const errorOn = (field: string) => errors?.[field]?.join(' ');
@@ -222,100 +228,108 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
       aria-label="Filters"
       sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center', mb: 4 }}
     >
-      <CommitField
-        label="Search"
-        placeholder="Name, code or email"
-        value={filters.search}
-        onCommit={(search) => onChange({ search })}
-        delay={SEARCH_DELAY_MS}
-        error={errorOn('search')}
-        width={240}
-      />
-      <CountrySelect value={filters.country} onChange={(country) => onChange({ country })} />
-      <DepartmentSelect
-        value={filters.department}
-        onChange={(department) => onChange({ department })}
-      />
-      <CommitField
-        label="Designation"
-        placeholder="Title, any case"
-        value={filters.designation.join(', ')}
-        onCommit={(text) =>
-          onChange({
-            designation: text
-              .split(',')
-              .map((item) => item.trim())
-              .filter(Boolean),
-          })
-        }
-        error={errorOn('designation')}
-        width={180}
-      />
-      <MultiSelect
-        label="Level"
-        value={filters.level}
-        options={LEVELS.map((level) => ({ value: level, label: `L${level}` }))}
-        onChange={(level) => onChange({ level })}
-        width={110}
-      />
-      <FormControl sx={{ width: 130 }}>
-        {/* Active by default, with Any one click away (D64). The label stays above the value. */}
-        <InputLabel id="filter-status-label" shrink>
-          Status
-        </InputLabel>
-        <Select
-          labelId="filter-status-label"
-          id="filter-status"
-          value={filters.status}
-          label="Status"
-          notched
-          displayEmpty
-          onChange={(event) => onChange({ status: event.target.value as DirectoryStatus })}
-        >
-          {DIRECTORY_STATUSES.map((status) => (
-            <MenuItem key={status} value={status}>
-              {STATUS_LABELS[status]}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
-      <CommitField
-        label={`Gross min (${grossCurrency})`}
-        value={filters.gross_min}
-        onCommit={(gross_min) => onChange({ gross_min })}
-        error={errorOn('gross_min')}
-        type="number"
-        width={150}
-      />
-      <CommitField
-        label={`Gross max (${grossCurrency})`}
-        value={filters.gross_max}
-        onCommit={(gross_max) => onChange({ gross_max })}
-        error={errorOn('gross_max')}
-        type="number"
-        width={150}
-      />
-      <CommitField
-        label="Joined after"
-        value={filters.joined_after}
-        onCommit={(joined_after) => onChange({ joined_after })}
-        error={errorOn('joined_after')}
-        type="date"
-      />
-      <CommitField
-        label="Joined before"
-        value={filters.joined_before}
-        onCommit={(joined_before) => onChange({ joined_before })}
-        error={errorOn('joined_before')}
-        type="date"
-      />
-      <CurrencySelect
-        value={filters.currency}
-        localAllowed={localAllowed}
-        onChange={(currency) => onChange({ currency })}
-      />
+      <Fragment key={clears}>
+        <CommitField
+          label="Search"
+          placeholder="Name, code or email"
+          value={filters.search}
+          onCommit={(search) => onChange({ search })}
+          delay={SEARCH_DELAY_MS}
+          error={errorOn('search')}
+          width={240}
+        />
+        <CountrySelect value={filters.country} onChange={(country) => onChange({ country })} />
+        <DepartmentSelect
+          value={filters.department}
+          onChange={(department) => onChange({ department })}
+        />
+        <CommitField
+          label="Designation"
+          placeholder="Title, any case"
+          value={filters.designation.join(', ')}
+          onCommit={(text) =>
+            onChange({
+              designation: text
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean),
+            })
+          }
+          error={errorOn('designation')}
+          width={180}
+        />
+        <MultiSelect
+          label="Level"
+          value={filters.level}
+          options={LEVELS.map((level) => ({ value: level, label: `L${level}` }))}
+          onChange={(level) => onChange({ level })}
+          width={110}
+        />
+        <FormControl sx={{ width: 130 }}>
+          {/* Active by default, with Any one click away (D64). The label stays above the value. */}
+          <InputLabel id="filter-status-label" shrink>
+            Status
+          </InputLabel>
+          <Select
+            labelId="filter-status-label"
+            id="filter-status"
+            value={filters.status}
+            label="Status"
+            notched
+            displayEmpty
+            onChange={(event) => onChange({ status: event.target.value as DirectoryStatus })}
+          >
+            {DIRECTORY_STATUSES.map((status) => (
+              <MenuItem key={status} value={status}>
+                {STATUS_LABELS[status]}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <CommitField
+          label={`Gross min (${grossCurrency})`}
+          value={filters.gross_min}
+          onCommit={(gross_min) => onChange({ gross_min })}
+          error={errorOn('gross_min')}
+          type="number"
+          width={150}
+        />
+        <CommitField
+          label={`Gross max (${grossCurrency})`}
+          value={filters.gross_max}
+          onCommit={(gross_max) => onChange({ gross_max })}
+          error={errorOn('gross_max')}
+          type="number"
+          width={150}
+        />
+        <CommitField
+          label="Joined after"
+          value={filters.joined_after}
+          onCommit={(joined_after) => onChange({ joined_after })}
+          error={errorOn('joined_after')}
+          type="date"
+        />
+        <CommitField
+          label="Joined before"
+          value={filters.joined_before}
+          onCommit={(joined_before) => onChange({ joined_before })}
+          error={errorOn('joined_before')}
+          type="date"
+        />
+        <CurrencySelect
+          value={filters.currency}
+          localAllowed={localAllowed}
+          onChange={(currency) => onChange({ currency })}
+        />
+      </Fragment>
       {filtered ? (
-        <Button variant="text" onClick={onReset}>
+        <Button
+          variant="text"
+          onClick={() => {
+            setClears((count) => count + 1);
+            onReset();
+          }}
+        >
           Clear filters
         </Button>
       ) : null}

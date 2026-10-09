@@ -211,6 +211,24 @@ describe('ImportReview', () => {
     expect(asked.filter(Boolean)).toEqual(['HR-41']);
   });
 
+  it('a search sent after its pause keeps the status chosen during it (D76)', async () => {
+    server.use(
+      http.get('/api/v1/imports/3/rows/', ({ request }) =>
+        HttpResponse.json(rowsPage(new URL(request.url))),
+      ),
+    );
+    const { router } = renderApp('/imports/3');
+    await screen.findByText('Ravi Iyer');
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'HR-41' } });
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'error' } });
+    act(() => vi.advanceTimersByTime(SEARCH_DELAY_MS));
+    vi.useRealTimers();
+
+    await waitFor(() => expect(router.state.location.search).toBe('?status=error&search=HR-41'));
+  });
+
   it('says what to do when no row has the status chosen', async () => {
     renderApp('/imports/3?status=warning&search=nobody');
 
