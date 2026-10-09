@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatCompact, formatMoney, monthly } from './money';
+import { formatCompact, formatMoney, isAbove, monthly } from './money';
 
 const nbsp = '\u00a0';
 
@@ -46,5 +46,15 @@ describe('monthly', () => {
     expect(monthly('100001.95')).toBe('8333.50');
     expect(monthly('9007199254740993.00')).toBe('750599937895082.75');
     expect(formatMoney(monthly('120000.00'), 'USD')).toBe(`USD${nbsp}10,000`);
+  });
+});
+
+describe('isAbove', () => {
+  it('compares two amounts as decimals, never as floats', () => {
+    expect(isAbove('900000', '100000')).toBe(true);
+    expect(isAbove('100000.01', '100000')).toBe(true);
+    expect(isAbove('100000', '100000.00')).toBe(false);
+    // Past what a float holds exactly, the cent still counts.
+    expect(isAbove('99999999999999999.01', '99999999999999999')).toBe(true);
   });
 });

@@ -28,6 +28,7 @@ import type { FieldErrors } from '../../api/client';
 import { useCountries, useDepartments } from '../../api/meta';
 import type { DirectoryStatus, ReportingCurrency } from '../../api/types';
 import { DIRECTORY_STATUSES, LEVELS } from '../../lib/constants';
+import { isAbove } from '../../lib/money';
 import type { DirectoryFilters } from '../grid/serverModel';
 import { PeriodControl } from './PeriodControl';
 import type { DashboardFilters } from './useDashboardFilters';
@@ -246,7 +247,7 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
   const grossInverted =
     filters.gross_min !== '' &&
     filters.gross_max !== '' &&
-    Number(filters.gross_min) > Number(filters.gross_max);
+    isAbove(filters.gross_min, filters.gross_max);
   const grossProblemId = useId();
 
   return (

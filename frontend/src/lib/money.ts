@@ -81,9 +81,19 @@ export function formatCompact(value: string, currency: string): string {
 /** The annual figure divided by twelve, exact to the cent and rounded half up, as a decimal
  * string for `formatMoney`. Integer arithmetic on cents, so no float touches the money. */
 export function monthly(value: string): string {
-  const [whole, fraction = ''] = value.split('.');
-  const cents = BigInt(whole) * 100n + BigInt((fraction + '00').slice(0, 2));
-  const twelfth = cents / 12n;
-  const rounded = (cents % 12n) * 2n >= 12n ? twelfth + 1n : twelfth;
+  const annual = cents(value);
+  const twelfth = annual / 12n;
+  const rounded = (annual % 12n) * 2n >= 12n ? twelfth + 1n : twelfth;
   return `${rounded / 100n}.${(rounded % 100n).toString().padStart(2, '0')}`;
+}
+
+function cents(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole || '0') * 100n + BigInt((fraction + '00').slice(0, 2));
+}
+
+/** Whether one amount, as the URL or the API writes it, is above another: compared in cents as
+ * integers, so no float ever touches money. */
+export function isAbove(value: string, other: string): boolean {
+  return cents(value) > cents(other);
 }
