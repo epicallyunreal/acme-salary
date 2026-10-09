@@ -1,9 +1,5 @@
-from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from rest_framework.exceptions import AuthenticationFailed
-from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
-from rest_framework_simplejwt.settings import api_settings
 
 from apps.accounts import services
 from apps.accounts.models import User
@@ -24,25 +20,5 @@ class SessionRefreshSerializer(TokenRefreshSerializer):
     again ends every session of its user before the 401."""
 
     def validate(self, attrs):
-        try:
-            refresh = self.token_class(attrs["refresh"])
-        except TokenError:
-            services.revoke_on_reuse(attrs["refresh"])
-            raise
-        user_id = refresh.payload.get(api_settings.USER_ID_CLAIM)
-        user = (
-            get_user_model().objects.filter(**{api_settings.USER_ID_FIELD: user_id}).first()
-            if user_id
-            else None
-        )
-        if user is None or not api_settings.USER_AUTHENTICATION_RULE(user):
-            raise AuthenticationFailed(
-                self.error_messages["no_active_account"], "no_active_account"
-            )
-        try:
-            access, refresh = services.rotate(refresh)
-        except TokenError:
-            # Rotated out by another request a moment ago: a reuse, so every session ends.
-            services.revoke_on_reuse(attrs["refresh"])
-            raise
+        access, refresh = services.refresh_session(attrs["refresh"])
         return {"access": str(access), "refresh": str(refresh)}

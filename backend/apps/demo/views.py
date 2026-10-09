@@ -4,14 +4,14 @@ from django.http import HttpResponse
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.views import LoginRateThrottle
+from apps.accounts.views import ClientAddressThrottle
 from apps.core.exceptions import Invalid
 from apps.demo import services
 from apps.demo.serializers import ResetSerializer
 from apps.imports.parser import XLSX_TYPE
 
 
-class ResetRateThrottle(LoginRateThrottle):
+class ResetRateThrottle(ClientAddressThrottle):
     """Keyed on the client address as the login throttle is, an IPv6 address reduced to its /64.
     DRF keys an authenticated request on the user instead, which here would be one bucket for
     the shared HR login, so one reviewer's five attempts would block every other for an hour."""

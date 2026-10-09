@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -379,16 +379,20 @@ describe('Employees', () => {
   });
 
   it('searches after a pause and sorts by the reporting gross', async () => {
-    // The pause is a fake timer, advanced by hand, so the test never waits on the clock.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     const seen = recordRequests();
     renderApp('/employees');
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const user = userEvent.setup();
     await rowsShown();
 
-    await user.type(screen.getByLabelText('Search'), 'rao');
+    // The pause is a fake timer that only advancing fires, so no edit can race it, and the real
+    // clock is back before the request it releases is awaited.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const search = screen.getByLabelText('Search');
+    fireEvent.change(search, { target: { value: 'ra' } });
+    fireEvent.change(search, { target: { value: 'rao' } });
     expect(seen.map((params) => params.get('search'))).toEqual([null]);
     act(() => vi.advanceTimersByTime(SEARCH_DELAY_MS));
+    vi.useRealTimers();
     await waitFor(() => expect(seen.at(-1)?.get('search')).toBe('rao'));
     // One request for the whole word, not one per keystroke.
     expect(seen.map((params) => params.get('search'))).toEqual([null, 'rao']);

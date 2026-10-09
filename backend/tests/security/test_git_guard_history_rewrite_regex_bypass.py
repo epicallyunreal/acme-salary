@@ -4,8 +4,6 @@ CLAUDE.md says .claude/hooks/git_guard.py blocks any command that rewrites histo
 its spelling, but its regexes hard-code one spelling per operation, so shell-valid equivalents
 of reset --hard, force push, rebase and commit --amend fall through to exit 0. Each test pipes
 the PreToolUse JSON that Claude Code sends into the hook and asserts the hook refuses the call.
-A lead test that fails (XFAIL) means git_guard let that spelling through to Claude Code's
-permission flow. The canonical controls must pass; if they fail, the harness is broken.
 """
 
 import json

@@ -415,8 +415,6 @@ describe('Dashboard', () => {
   });
 
   it('a custom date applies on leaving its field, or on its own after a pause', async () => {
-    // The pause is a fake timer, advanced by hand, so the test never waits on the clock.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     const seen = recordRequests();
     const { router } = renderApp('/?period=custom&from=2026-01-01&to=2026-03-31');
     await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
@@ -427,10 +425,13 @@ describe('Dashboard', () => {
 
     expect(router.state.location.search).toBe('?period=custom&from=2026-02-01&to=2026-03-31');
 
-    // As a date picked from the calendar does, with no Enter and no click elsewhere (D66).
+    // As a date picked from the calendar does, with no Enter and no click elsewhere (D66). The
+    // pause is a fake timer that only advancing fires, so the check before it cannot race it.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-04-30' } });
     expect(router.state.location.search).toBe('?period=custom&from=2026-02-01&to=2026-03-31');
     act(() => vi.advanceTimersByTime(PERIOD_DELAY_MS));
+    vi.useRealTimers();
 
     await waitFor(() =>
       expect(router.state.location.search).toBe('?period=custom&from=2026-02-01&to=2026-04-30'),
@@ -536,10 +537,13 @@ describe('Dashboard', () => {
     server.use(http.get('/api/v1/insights/:name/', () => HttpResponse.json({}, { status: 500 })));
     renderApp('/');
 
-    const retries = await screen.findAllByRole('button', { name: 'Retry' });
-
-    expect(retries.length).toBeGreaterThanOrEqual(6);
-    expect(screen.getAllByText(/Could not load/).length).toBe(retries.length);
+    // One per insight the dashboard draws, each with the state table's sentence.
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Retry' })).toHaveLength(10));
+    const messages = screen.getAllByText(/Could not load/).map((node) => node.textContent);
+    expect(messages).toHaveLength(10);
+    for (const message of messages) {
+      expect(message).toMatch(/^Could not load .+\. Check your connection and try again\.$/);
+    }
   });
 
   it('labels every filter', async () => {

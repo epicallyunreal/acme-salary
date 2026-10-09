@@ -51,12 +51,18 @@ def parse_file(value: str | None) -> str:
     return parse_choice(value, name="file", choices=tuple(CONTENT_TYPES))
 
 
+def clip_values(value: str) -> str:
+    """Each comma-separated value clipped on its own (D68, D73), so a list of codes a reviewer
+    really chose is recorded whole and a single long value still ends in an ellipsis."""
+    return ",".join(clip(part) for part in value.split(","))
+
+
 def applied(params: QueryDict, keys: tuple[str, ...], dates: dict, currency: str) -> dict:
     """The filters the export read, as given, with its dates (`on`, or an insight's `from` and
     `to`) and currency as applied, so a JSON file says what its figures are in when the request
     left them to their defaults (D60, D64). A parameter the export does not read is left out
     rather than shown as applied."""
-    given = {key: clip(params.get(key)) for key in keys if key in params}
+    given = {key: clip_values(params.get(key)) for key in keys if key in params}
     return {**given, **dates, "currency": currency}
 
 

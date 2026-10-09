@@ -14,10 +14,6 @@ every string handed to the ``Decimal`` name the parser uses. A string past the b
 swapped for "0", so the test never performs the long conversion and behaves the same under
 either decimal implementation. It asserts that no over-long string reached ``Decimal`` and
 that the cell is still refused, as a row error on ``level`` or as a 400.
-
-XFAIL means the weakness is present: the over-long level cell reached ``Decimal``/``int``.
-XPASS (reported as a strict failure) means a length bound is in place, so remove the marker
-and keep the test as a regression test.
 """
 
 from decimal import Decimal
@@ -62,9 +58,10 @@ def test_an_overlong_level_cell_never_reaches_decimal_conversion(api, lookups, m
         f"staging handed a {longest:,}-character level cell to Decimal; parse_level must "
         "bound a cell's length before any arbitrary-precision conversion"
     )
-    # What a fix must keep: the cell is refused, as a row error on level or as a 400.
-    assert response.status_code in (201, 400), response.content
-    if response.status_code == 201:
-        row = ImportRow.objects.get(batch_id=response.json()["id"])
-        assert row.status == ImportRow.Status.ERROR, row.messages
-        assert any(message["field"] == "level" for message in row.messages), row.messages
+    # D68's clip: the cell is kept to 256 characters and refused as a level, as a row error.
+    assert response.status_code == 201, response.content
+    row = ImportRow.objects.get(batch_id=response.json()["id"])
+    assert row.status == ImportRow.Status.ERROR, row.messages
+    assert [m["message"] for m in row.messages if m["field"] == "level"] == [
+        "level must be between 1 and 6"
+    ]

@@ -17,9 +17,10 @@ from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairVi
 from apps.accounts.serializers import MeSerializer
 
 
-class LoginRateThrottle(ScopedRateThrottle):
-    """The login bucket is keyed on the client address, with an IPv6 address reduced to its /64:
-    a client controls at least that much and could otherwise mint a fresh bucket per request.
+class ClientAddressThrottle(ScopedRateThrottle):
+    """A bucket keyed on the client address, for login and refresh, with an IPv6 address
+    reduced to its /64: a client controls at least that much and could otherwise mint a fresh
+    bucket per request.
     An IPv4-mapped address (`::ffff:a.b.c.d`) is the IPv4 client it wraps, so it is unmapped
     first: every mapped client would otherwise fold into the one `::/64` bucket (D73)."""
 
@@ -39,14 +40,14 @@ class LoginRateThrottle(ScopedRateThrottle):
 class LoginView(TokenObtainPairView):
     """`{email, password}` to `{access, refresh}`, five attempts a minute per client address."""
 
-    throttle_classes = [LoginRateThrottle]
+    throttle_classes = [ClientAddressThrottle]
     throttle_scope = "login"
 
 
 class RefreshView(TokenRefreshView):
     """`{refresh}` to a new pair, JSON only and thirty a minute per client address (D73)."""
 
-    throttle_classes = [LoginRateThrottle]
+    throttle_classes = [ClientAddressThrottle]
     throttle_scope = "refresh"
     parser_classes = [JSONParser]
 

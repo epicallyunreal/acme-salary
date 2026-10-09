@@ -5,9 +5,7 @@ Lead accounts_rotate_not_atomic.
 Claim: the refresh endpoint checks the blacklist only when it decodes the token, and rotate() then
 blacklists it with SimpleJWT's get_or_create, which does not refuse a token that another request
 rotated out in between, so two requests presenting one refresh token together both get a live
-session and the reuse rule of SPEC F8 and D21 revokes nothing. A failure (XFAIL) means the request
-that rotated second was answered 200 or left the user a live session, instead of a 401 that
-revokes every session of the user.
+session and the reuse rule of SPEC F8 and D21 revokes nothing.
 """
 
 import pytest

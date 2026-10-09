@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import logging
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
@@ -39,6 +41,29 @@ def rotate(refresh: RefreshToken) -> tuple[AccessToken, RefreshToken]:
         refresh.payload["exp"] = session_end
         refresh.outstand()
     return access, refresh
+
+
+def refresh_session(raw_token: str) -> tuple[AccessToken, RefreshToken]:
+    """`{refresh}` to a new pair under the session rules (F8, D21, D73): the token must decode
+    and belong to an active user, and `rotate` must find it unused. A token that fails to decode
+    or that another request rotated meanwhile is a reuse, so every session of its user ends
+    before the error goes back. The one place the rule lives; the serializer only calls it."""
+    try:
+        refresh = RefreshToken(raw_token)
+        user_id = refresh.payload.get(api_settings.USER_ID_CLAIM)
+        user = (
+            get_user_model().objects.filter(**{api_settings.USER_ID_FIELD: user_id}).first()
+            if user_id
+            else None
+        )
+        if user is None or not api_settings.USER_AUTHENTICATION_RULE(user):
+            raise AuthenticationFailed(
+                "No active account found with the given credentials", "no_active_account"
+            )
+        return rotate(refresh)
+    except TokenError:
+        revoke_on_reuse(raw_token)
+        raise
 
 
 def revoke_sessions(user) -> int:

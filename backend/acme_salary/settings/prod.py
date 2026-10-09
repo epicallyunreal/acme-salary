@@ -9,9 +9,10 @@ DEBUG = False
 for _name in ("SECRET_KEY", "ALLOWED_HOSTS", "SEED_ADMIN_PASSWORD"):
     if not globals().get(_name):
         raise ImproperlyConfigured(f"{_name} must be set in the environment")
-# Without it the database would land on the machine's ephemeral root filesystem (D73).
-if not env("DATABASE_PATH"):
-    raise ImproperlyConfigured("DATABASE_PATH must be set in the environment")
+# Without it, or relative, the database would land on the machine's ephemeral root filesystem
+# (D73).
+if not (env("DATABASE_PATH") or "").startswith("/"):
+    raise ImproperlyConfigured("DATABASE_PATH must be set in the environment, as an absolute path")
 
 # A copied-but-unedited .env.example must not boot in production: the key signs every JWT.
 PLACEHOLDERS = {

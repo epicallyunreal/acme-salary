@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -161,9 +161,6 @@ describe('ImportReview', () => {
   });
 
   it('searches the rows by code or name after a pause', async () => {
-    // The pause is a fake timer, advanced by hand, so the test never waits on the clock.
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const asked: (string | null)[] = [];
     server.use(
       http.get('/api/v1/imports/3/rows/', ({ request }) => {
@@ -175,9 +172,15 @@ describe('ImportReview', () => {
     renderApp('/imports/3');
     await screen.findByText('Ravi Iyer');
 
-    await user.type(screen.getByLabelText('Search'), 'HR-41');
+    // The pause is a fake timer that only advancing fires, so no edit can race it, and the real
+    // clock is back before the request it releases is awaited.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const search = screen.getByLabelText('Search');
+    fireEvent.change(search, { target: { value: 'HR-4' } });
+    fireEvent.change(search, { target: { value: 'HR-41' } });
     expect(asked.filter(Boolean)).toEqual([]);
     act(() => vi.advanceTimersByTime(SEARCH_DELAY_MS));
+    vi.useRealTimers();
 
     await waitFor(() => expect(screen.queryByText('Ravi Iyer')).not.toBeInTheDocument());
     expect(screen.getByText('Mohan Khan')).toBeInTheDocument();
@@ -333,7 +336,11 @@ describe('ImportReview', () => {
     POLL.upTo = 2000;
     const user = userEvent.setup();
     let polls = 0;
-    const failed: ImportBatch = { ...READY, status: 'failed', error_summary: 'OSError: disk full' };
+    const failed: ImportBatch = {
+      ...READY,
+      status: 'failed',
+      error_summary: 'the server has logged the cause',
+    };
     server.use(
       http.get('/api/v1/imports/3/', () => {
         polls += 1;
@@ -351,7 +358,9 @@ describe('ImportReview', () => {
       expect(within(failed).getByRole('alert')).toHaveTextContent(
         'approve failed, the batch is marked failed',
       );
-      expect(within(failed).getByRole('alert')).toHaveTextContent('OSError: disk full');
+      expect(within(failed).getByRole('alert')).toHaveTextContent(
+        'the server has logged the cause',
+      );
     } finally {
       Object.assign(POLL, defaults);
     }
@@ -486,7 +495,7 @@ describe('ImportReview', () => {
         HttpResponse.json({
           ...reviewBatch,
           status: 'failed',
-          error_summary: 'OSError: disk full',
+          error_summary: 'the server has logged the cause',
         }),
       ),
     );
@@ -494,7 +503,7 @@ describe('ImportReview', () => {
 
     expect(
       await screen.findByText(
-        'The approve failed and nothing was applied: OSError: disk full. Upload the sheet again to retry.',
+        'The approve failed and nothing was applied: the server has logged the cause. Upload the sheet again to retry.',
       ),
     ).toBeInTheDocument();
   });
@@ -630,7 +639,7 @@ describe('ImportReview', () => {
         HttpResponse.json(
           {
             detail: 'approve failed, the batch is marked failed',
-            error_summary: 'OSError: disk full',
+            error_summary: 'the server has logged the cause',
           },
           { status: 409 },
         ),
@@ -645,7 +654,7 @@ describe('ImportReview', () => {
     const failed = await screen.findByRole('dialog', { name: 'Nothing was applied' });
     const problems = within(failed).getByRole('alert');
     expect(problems).toHaveTextContent('approve failed, the batch is marked failed');
-    expect(problems).toHaveTextContent('OSError: disk full');
+    expect(problems).toHaveTextContent('the server has logged the cause');
   });
 
   it('says why a skip did not take, as an error', async () => {

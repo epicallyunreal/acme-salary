@@ -1,16 +1,14 @@
-"""Guard since step 11 (D73): LoginRateThrottle unmaps an IPv4-mapped address first.
+"""Guard since step 11 (D73): ClientAddressThrottle unmaps an IPv4-mapped address first.
 
 accounts_login_throttle_ipv4_mapped_collapse
 
-Claim: LoginRateThrottle.get_ident folds every IPv6 ident to its /64 without first unwrapping
+Claim: ClientAddressThrottle.get_ident folds every IPv6 ident to its /64 without first unwrapping
 IPv4-mapped addresses, so every "::ffff:a.b.c.d" client is keyed on the one string "::/64" and
 unrelated IPv4 clients share a single 5/min login bucket.
 
 The test asserts the secure behaviour: after one IPv4-mapped client has spent its five attempts,
 an unrelated IPv4-mapped client still gets its own first attempt (401 for a wrong password),
-never 429. A failure (XFAIL) means the collapse is present in the throttle code. A dotted-quad
-control runs first, so a throttle that is not keyed on the X-Forwarded-For hop in this
-environment is reported as an ordinary failure through pytest.fail, never as an XFAIL.
+never 429.
 """
 
 import pytest

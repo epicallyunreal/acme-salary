@@ -14,7 +14,14 @@ GOOD_ENV = {
 
 
 def load_prod(monkeypatch, **overrides):
-    for name in ("SECRET_KEY", "ALLOWED_HOSTS", "SEED_ADMIN_PASSWORD", "DEBUG", "SPA_DIR"):
+    for name in (
+        "SECRET_KEY",
+        "ALLOWED_HOSTS",
+        "SEED_ADMIN_PASSWORD",
+        "DEBUG",
+        "SPA_DIR",
+        "NUM_PROXIES",
+    ):
         monkeypatch.delenv(name, raising=False)
     for name, value in {**GOOD_ENV, **overrides}.items():
         if value is None:
@@ -56,6 +63,18 @@ def test_prod_settings_require_each_secret(monkeypatch, missing):
 def test_prod_settings_reject_placeholder_or_weak_secret_key(monkeypatch, secret_key):
     with pytest.raises(ImproperlyConfigured, match="SECRET_KEY"):
         load_prod(monkeypatch, SECRET_KEY=secret_key)
+
+
+def test_prod_settings_read_the_proxy_hops_from_the_environment(monkeypatch):
+    """D73: 1 unless the environment says otherwise, 0 in compose."""
+    assert load_prod(monkeypatch).REST_FRAMEWORK["NUM_PROXIES"] == 1
+    assert load_prod(monkeypatch, NUM_PROXIES="0").REST_FRAMEWORK["NUM_PROXIES"] == 0
+
+
+def test_prod_settings_reject_a_relative_database_path(monkeypatch):
+    """D73: a relative path would put the database on the ephemeral root filesystem."""
+    with pytest.raises(ImproperlyConfigured, match="DATABASE_PATH"):
+        load_prod(monkeypatch, DATABASE_PATH="db.sqlite3")
 
 
 def test_prod_settings_reject_the_example_admin_password(monkeypatch):

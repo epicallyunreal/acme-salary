@@ -267,7 +267,7 @@ describe('Imports', () => {
     // Another file's batch and an older batch of the same name are never the one made.
     const other = { ...reviewBatch, id: 4, file_name: 'other.csv' };
     const made = { ...reviewBatch, id: 5, file_name: 'october.csv' };
-    const older = { ...reviewBatch, id: 2, file_name: 'october.csv' };
+    const older = { ...reviewBatch, id: 0, file_name: 'october.csv' };
     server.use(
       http.post('/api/v1/imports/', () => HttpResponse.error()),
       http.get('/api/v1/imports/', () => {

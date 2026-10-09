@@ -8,6 +8,8 @@ ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 CORS_ALLOWED_ORIGINS = ["http://localhost:5173"]
 CSRF_TRUSTED_ORIGINS = ["http://localhost:5173"]
 SEED_ADMIN_PASSWORD = "change-me"
+# Fly's value, whatever the environment running the suite says (D73).
+REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": 1}
 
 DATABASES["default"]["NAME"] = ":memory:"
 # WAL is a file-level journal; on an in-memory database the pragma is a no-op, so drop it rather

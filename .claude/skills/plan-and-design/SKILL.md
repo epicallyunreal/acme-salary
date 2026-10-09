@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Plan and design, before any code
 
-Gate: the latest report in `docs/reviews/` (by modification time) must carry an `Owner decision:` line that begins `approved`. If not, stop and say so.
+Gate: the latest `spec-review-*.md` in `docs/reviews/` (by name, which carries its date) must carry an `Owner decision:` line that begins `approved`. If not, stop and say so.
 
 Read `docs/SPEC.md`, `docs/REQUIREMENTS.md`, `docs/DECISIONS.md` and the approved review in full first. Then check your own skill and tool lists against the plugins CLAUDE.md names and use the ones present for design work to set the visual direction. Record in DESIGN.md which were used and what they contributed.
 

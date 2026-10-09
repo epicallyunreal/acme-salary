@@ -397,7 +397,8 @@ def file_bytes(columns: list[str], rows: list[dict], kind: str) -> bytes:
         return stream.getvalue()
     if kind == ".csv":
         text = io.StringIO()
-        writer = csv.writer(text)
+        # Every field quoted, as the exports write a CSV (D73).
+        writer = csv.writer(text, quoting=csv.QUOTE_ALL)
         writer.writerow(columns)
         for row in rows:
             writer.writerow(["" if row.get(c) is None else _csv_text(row.get(c)) for c in columns])

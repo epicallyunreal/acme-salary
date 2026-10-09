@@ -719,15 +719,21 @@ def test_an_entity_declaration_is_refused_as_unreadable(no_openpyxl):
     assert excinfo.value.errors == UNREADABLE
 
 
-def test_a_workbook_with_too_many_parts_is_refused_before_any_is_read():
-    """D73: a thousand parts is far past any workbook; the archive itself would be the cost."""
+def archive_of(parts: int) -> io.BytesIO:
     stream = io.BytesIO()
     with zipfile.ZipFile(stream, "w") as archive:
-        for n in range(parser.MAX_ZIP_PARTS + 1):
+        for n in range(parts):
             archive.writestr(f"xl/part{n}.xml", "<x/>")
     stream.seek(0)
+    return stream
+
+
+def test_a_workbook_with_too_many_parts_is_refused_before_any_is_read():
+    """D73: a thousand parts is far past any workbook; the archive itself would be the cost.
+    Exactly a thousand still passes the count."""
+    assert preflight_xlsx(archive_of(parser.MAX_ZIP_PARTS)) is None
 
     with pytest.raises(Invalid) as refused:
-        preflight_xlsx(stream)
+        preflight_xlsx(archive_of(parser.MAX_ZIP_PARTS + 1))
 
     assert refused.value.errors == {"file": ["file holds more than 1,000 parts"]}

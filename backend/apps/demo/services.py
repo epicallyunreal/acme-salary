@@ -22,9 +22,9 @@ from apps.compensation.messages import msg
 from apps.compensation.models import CompensationLine, CompensationRecord
 from apps.compensation.validators import template_columns
 from apps.core.dates import today_utc
-from apps.core.exceptions import Conflict, Forbidden
+from apps.core.exceptions import Conflict, Forbidden, clip
 from apps.employees.models import Employee
-from apps.imports import samples as files
+from apps.imports import samples
 from apps.imports import services as imports
 from apps.imports.models import ImportBatch, ImportRow
 from seed import profiles
@@ -114,8 +114,8 @@ SAMPLE_FILES = (
             effective=today,
             new=500,
             stream="newhires",
-            joined_after=files.hire_window(today)[0],
-            joined_until=files.hire_window(today)[1],
+            joined_after=samples.hire_window(today)[0],
+            joined_until=samples.hire_window(today)[1],
         ),
     ),
     SampleFile(
@@ -153,7 +153,7 @@ SAMPLE_FILES = (
         "50 rows, 30 raises and 20 new joiners, with 6 planted errors to skip or fix in the sheet.",
         # Its joiners follow newhires' 500 in the one stream, so the two files never collide.
         lambda today: dict(
-            effective=files.next_month_first(today),
+            effective=samples.next_month_first(today),
             raises=30,
             new=20,
             errors=6,
@@ -190,12 +190,12 @@ def sample_file(
     tables for `seed` and the day, so legacy codes always match (F9)."""
     spec = BY_NAME.get(name)
     if spec is None:
-        raise Http404(f"no sample file named {name}")
+        raise Http404(f"no sample file named {clip(name)}")
     if spec.options is None:
         return spec.file_name, (Path(settings.SAMPLE_DATA_DIR) / spec.file_name).read_bytes()
     if not Employee.objects.exists():
         raise Conflict("import the base file first")
     today = today or today_utc()
-    rows = files.generated_rows(today=today, seed=seed, **spec.options(today))
-    columns = template_columns(files.database_codes())
-    return spec.file_name, files.file_bytes(columns, rows, ".xlsx")
+    rows = samples.generated_rows(today=today, seed=seed, **spec.options(today))
+    columns = template_columns(samples.database_codes())
+    return spec.file_name, samples.file_bytes(columns, rows, ".xlsx")

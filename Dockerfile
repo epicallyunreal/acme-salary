@@ -35,7 +35,6 @@ RUN python -m whitenoise.compress /app/spa
 COPY entrypoint.sh /app/entrypoint.sh
 # The app runs as acme. The entrypoint starts as root only to hand it the volume (D73).
 RUN chmod +x /app/entrypoint.sh \
-    && useradd --system --uid 1000 --user-group --home-dir /app --shell /usr/sbin/nologin acme \
-    && chown -R acme:acme /app/sample-data
+    && useradd --system --uid 1000 --user-group --home-dir /app --shell /usr/sbin/nologin acme
 EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]

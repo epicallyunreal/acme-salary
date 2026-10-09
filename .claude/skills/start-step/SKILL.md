@@ -8,7 +8,7 @@ argument-hint: <step number>
 
 Step: `$ARGUMENTS`. If no number was given, run `git log --oneline` and pick the first step in `docs/PLAN.md` whose work is not in the log.
 
-0. Gate. Three things must exist before step 1: the latest report in `docs/reviews/` carrying an `Owner decision:` line that begins `approved`, and `docs/PLAN.md` and `docs/DESIGN.md` each carrying `Owner decision: approved` in their first lines. If any is missing, stop and tell the owner which command to run (`/review-spec` or `/plan-and-design`) or which file to approve. Later steps need the gate again only if a planning document changed since approval.
+0. Gate. Three things must exist before step 1: the latest `spec-review-*.md` in `docs/reviews/` (by name) carrying an `Owner decision:` line that begins `approved`, and `docs/PLAN.md` and `docs/DESIGN.md` each carrying `Owner decision: approved` in their first lines. If any is missing, stop and tell the owner which command to run (`/review-spec` or `/plan-and-design`) or which file to approve. Later steps need the gate again only if a planning document changed since approval.
 
 1. Read the step's section in `docs/PLAN.md` and the matching sections of `docs/DESIGN.md`. Then read the SPEC sections the plan references for this step, in full. Re-read the rules in `CLAUDE.md`.
 2. Turn the plan's section into a task list before touching code: the files, tests and commits it names, in its order. Service and its tests first, API and API tests second, UI and UI tests third. If you would do something the plan does not list, stop and ask first.

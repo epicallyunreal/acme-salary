@@ -5,7 +5,13 @@ from django.db.models import Q
 from django_filters import DateFilter, FilterSet, NumberFilter, OrderingFilter
 
 from apps.core.exceptions import Invalid
-from apps.core.filters import BoundedSearchFilter, CharInFilter, ChoiceInFilter, ClippedChoiceFilter
+from apps.core.filters import (
+    BoundedSearchFilter,
+    CharInFilter,
+    ChoiceInFilter,
+    ClippedChoiceField,
+    ClippedChoiceFilter,
+)
 from apps.employees.models import Employee
 from apps.employees.queries import (
     ANY_STATUS,
@@ -21,7 +27,10 @@ MAX_DESIGNATIONS = 20
 
 
 class StableOrderingFilter(OrderingFilter):
-    """Every ordering ends with `id`, so pages never shuffle between requests."""
+    """Every ordering ends with `id`, so pages never shuffle between requests. An unknown
+    ordering is echoed clipped, as every other choice is (D73)."""
+
+    field_class = ClippedChoiceField
 
     def filter(self, qs, value):
         if not value:

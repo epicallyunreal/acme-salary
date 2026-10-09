@@ -18,7 +18,7 @@ import csv
 from io import StringIO
 
 import pytest
-from django.core.management import CommandError, call_command
+from django.core.management import call_command
 
 from apps.employees.models import Employee
 from tests.imports.sheets import new_row, upload_of
@@ -60,10 +60,7 @@ def test_make_import_file_csv_never_starts_a_cell_like_a_formula(api, lookups, t
 
     # The operator's command, writing every legacy-system employee to a .csv.
     path = tmp_path / "import.csv"
-    try:
-        call_command("make_import_file", out=str(path), all=True, stdout=StringIO())
-    except CommandError:
-        return  # refusing to write such a value is secure as well
+    call_command("make_import_file", out=str(path), all=True, stdout=StringIO())
 
     with path.open(encoding="utf-8", newline="") as handle:
         lines = list(csv.reader(handle))
@@ -78,3 +75,6 @@ def test_make_import_file_csv_never_starts_a_cell_like_a_formula(api, lookups, t
         if column in TEXT_COLUMNS and cell.startswith(FORMULA_STARTS)
     ]
     assert formula_cells == [], formula_cells
+    # The exports' escape: a leading quote, the text itself kept.
+    (theirs,) = [dict(zip(header, cells, strict=True)) for cells in written]
+    assert (theirs["full_name"], theirs["designation"]) == ("'" + NAME, "'" + TITLE)

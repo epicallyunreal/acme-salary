@@ -150,7 +150,12 @@ def session_lines(tmp_path: Path, files: dict) -> str:
         "GIT_CEILING_DIRECTORIES": str(tmp_path),
     }
     result = subprocess.run(
-        [sys.executable, str(SESSION)], cwd=project, env=env, capture_output=True, text=True
+        [sys.executable, str(SESSION)],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     result.check_returncode()
     return result.stdout
@@ -163,10 +168,12 @@ def test_the_latest_review_is_the_latest_by_name_whatever_was_touched_last(tmp_p
         "docs/PLAN.md": "Owner decision: approved\n",
         "docs/DESIGN.md": "Owner decision: approved\n",
     }
-    out = session_lines(tmp_path, files)
-    # The older review, touched after the newer one, is still not the latest.
+    session_lines(tmp_path, files)
+    # The older review, given a newer modification time, is still not the latest.
     older = tmp_path / "project" / "docs/reviews/spec-review-2026-10-06.md"
-    older.touch()
+    newer = tmp_path / "project" / "docs/reviews/spec-review-2026-10-07.md"
+    later = newer.stat().st_mtime + 60
+    os.utime(older, (later, later))
     out = session_lines(tmp_path, {})
 
     assert "Spec review gate: approved (spec-review-2026-10-07.md, latest by name)." in out

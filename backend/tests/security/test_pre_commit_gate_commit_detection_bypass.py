@@ -4,8 +4,7 @@ reads a commit behind any git global option.
 Claim: .claude/hooks/pre_commit_gate.py treats a Bash command as a commit only when nothing
 but `-C <dir>` or `-c <key=value>` stands between `git` and `commit`, so a commit spelled
 with any other git global option (`git --no-pager commit -m x`) exits 0 before ruff, pytest,
-eslint or vitest run. A failing assertion (XFAIL) means the Claude Code commit gate fails
-open for that spelling; a pass means the gate blocks it the way it blocks `git commit`.
+eslint or vitest run.
 
 The hook runs in a throwaway project that holds only an empty backend/pyproject.toml, with
 PATH set to an empty directory. A detected commit therefore reaches the checks, finds neither
@@ -72,3 +71,4 @@ def test_gate_blocks_commits_spelled_with_other_global_options(tmp_path, command
     result = run_gate(tmp_path, command)
 
     assert result.returncode == BLOCKED, (command, result.returncode, result.stderr)
+    assert "tool not found" in result.stderr

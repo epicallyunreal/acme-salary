@@ -223,11 +223,10 @@ def approve(
             # its whole transaction. This one wrote nothing and the batch waits in review (D72).
             raise Conflict(msg("apply_busy")) from exc
         logger.exception("approve of import batch %s failed", batch.pk)
-        summary = FAILED_SUMMARY
         # Only a batch still in review is marked, so an approve that finished meanwhile stands.
         ImportBatch.objects.filter(pk=batch.pk, status=ImportBatch.Status.REVIEW).update(
-            status=ImportBatch.Status.FAILED, error_summary=summary
+            status=ImportBatch.Status.FAILED, error_summary=FAILED_SUMMARY
         )
         batch.refresh_from_db(fields=["status", "error_summary"])
-        raise ApplyFailed(error_summary=summary) from exc
+        raise ApplyFailed(error_summary=FAILED_SUMMARY) from exc
     return batch

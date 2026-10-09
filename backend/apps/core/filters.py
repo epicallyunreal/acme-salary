@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 
+from django import forms
 from django.core.exceptions import ValidationError
 from django_filters import BaseInFilter, CharFilter, ChoiceFilter, NumberFilter
 from django_filters.fields import ChoiceField
@@ -25,6 +26,7 @@ class ClippedChoiceField(ChoiceField):
     every other echo of a client value is (D68, D73)."""
 
     def validate(self, value):
+        forms.Field.validate(self, value)  # the required check, as the field it replaces runs
         if value and not self.valid_value(value):
             raise ValidationError(
                 self.error_messages["invalid_choice"],

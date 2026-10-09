@@ -7,6 +7,11 @@
 set -eu
 cd /app
 
+case "${DATABASE_PATH:-/data/db.sqlite3}" in
+  /*) ;;
+  *) echo "DATABASE_PATH must be an absolute path, got '$DATABASE_PATH'" >&2; exit 1 ;;
+esac
+
 if [ "$(id -u)" = "0" ]; then
   DATA_DIR="$(dirname "${DATABASE_PATH:-/data/db.sqlite3}")"
   mkdir -p "$DATA_DIR"

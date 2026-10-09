@@ -169,15 +169,26 @@ def test_revoke_sessions_command_ends_every_session(anon, hr_user):
         call_command("revoke_sessions", "nobody@acme.example")
 
 
-def test_the_refresh_endpoint_is_throttled_and_takes_json_only(anon, hr_user):
-    """D73: thirty a minute per client address, keyed as the login is, and no multipart body."""
+def test_the_refresh_endpoint_takes_json_only(anon, hr_user):
+    """D73: a multipart body is refused before the token is read."""
     token = str(RefreshToken.for_user(hr_user))
 
-    assert anon.post(REFRESH, {"refresh": token}, format="multipart").status_code == 415
-    for _ in range(29):
+    response = anon.post(REFRESH, {"refresh": token}, format="multipart")
+
+    assert response.status_code == 415
+    assert response.json()["detail"].startswith("Unsupported media type")
+
+
+def test_the_refresh_endpoint_is_throttled_per_client_address(anon, hr_user):
+    """D73: thirty a minute, keyed on the client address as the login is."""
+    for _ in range(30):
         assert refresh(anon, "not-a-token").status_code == 401
 
     assert refresh(anon, "not-a-token").status_code == 429
+    elsewhere = anon.post(
+        REFRESH, {"refresh": "not-a-token"}, format="json", HTTP_X_FORWARDED_FOR="203.0.113.9"
+    )
+    assert elsewhere.status_code == 401
 
 
 def test_an_ipv4_mapped_address_is_the_ipv4_client_it_wraps(anon, hr_user):

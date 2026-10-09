@@ -528,20 +528,21 @@ describe('EmployeeDetail', () => {
     expect(sent).toEqual([]);
   });
   it.each([
-    ['Edit', 'Edit Asha Rao', '/employees/1'],
-    ['Add revision', 'Add a revision for Asha Rao', '/employees/1'],
-    ['Mark exited', 'Mark Asha Rao exited', '/employees/1'],
-    ['Cancel revision v3', 'Cancel revision v3?', '/employees/4'],
+    ['Edit', 'Edit Asha Rao', '/employees/1', true],
+    ['Add revision', 'Add a revision for Asha Rao', '/employees/1', true],
+    ['Mark exited', 'Mark Asha Rao exited', '/employees/1', true],
+    ['Cancel revision v3', 'Cancel revision v3?', '/employees/4', false],
   ])(
     '%s opens a dialog that takes focus and hands it back on Escape, every field labelled',
-    async (trigger, title, route) => {
+    async (trigger, title, route, hasFields) => {
       const user = userEvent.setup();
       renderApp(route);
       const button = await screen.findByRole('button', { name: trigger });
 
-      const dialog = await expectFocusCycle(user, button, title);
-
-      if (within(dialog).queryAllByRole('textbox').length) expectEveryFieldLabelled(dialog);
+      // The labels are checked while the dialog is open: closed, its fields are gone.
+      await expectFocusCycle(user, button, title, (dialog) => {
+        if (hasFields) expectEveryFieldLabelled(dialog);
+      });
     },
   );
 });
