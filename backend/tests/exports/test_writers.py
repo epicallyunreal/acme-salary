@@ -50,11 +50,40 @@ def test_csv_escapes_formulas_quotes_every_field_and_writes_numbers_and_dates_pl
     )
 
 
-def test_csv_quotes_a_semicolon_so_no_cell_can_start_after_it():
-    """Excel set to split on semicolons would read `=1+1` as a cell of its own."""
-    (_, line) = csv_text(("Full name",), [("Ann;=1+1;x",)]).splitlines()
+@pytest.mark.parametrize("start", ["=", "+", "-", "@", "\t", "\r"])
+def test_csv_puts_a_single_quote_after_a_semicolon_a_formula_start_follows(start):
+    """Excel set to split on semicolons would read `=1+1` as a cell of its own (D76)."""
+    text = csv_text(("Full name",), [(f"Ann;{start}1+1;x",)])
 
-    assert line == '"Ann;=1+1;x"'
+    assert text.split("\r\n")[1] == f'"Ann;\'{start}1+1;x"'
+
+
+def test_csv_puts_a_single_quote_after_a_semicolon_and_one_double_quote_a_formula_start_follows():
+    """That reader takes the doubled quote after the semicolon as an empty quoted start and reads
+    the formula as the rest of the cell. After two quotes the cell starts with a quote, as text."""
+    text = csv_text(("Full name",), [('Ann;"=1+1',), ('Ann;""=1+1',)])
+
+    assert text.splitlines()[1:] == ['"Ann;\'""=1+1"', '"Ann;""""=1+1"']
+
+
+@pytest.mark.parametrize(
+    ("written", "read"),
+    [
+        ("Ann;=1+1;x", "Ann;'=1+1;x"),
+        ("=1;+2;-3", "'=1;'+2;'-3"),
+        ('Ann;"@x', "Ann;'\"@x"),
+        ("R&D;Sales", "R&D;Sales"),
+        ("a; =1", "a; =1"),
+        ("a;'=1", "a;'=1"),
+        ("Ann;Rao;", "Ann;Rao;"),
+    ],
+)
+def test_csv_text_reads_back_as_written_apart_from_the_added_quote_mark(written, read):
+    rows = list(csv.reader(io.StringIO(csv_text(("x",), [(written,)]).removeprefix(writers.BOM))))
+
+    (cell,) = rows[1]
+    assert cell == read
+    assert cell.replace("'", "") == written.replace("'", "")
 
 
 def test_csv_streams_a_hundred_rows_at_a_time():
@@ -126,3 +155,16 @@ def test_json_holds_the_stamp_the_filters_and_one_object_per_row():
             }
         ],
     }
+
+
+def test_only_the_csv_escapes_after_a_semicolon():
+    (cell,) = sheet_of(writers.xlsx_bytes(("Full name",), [("Ann;=1+1;x",)], sheet="x"))[2]
+    content = writers.json_bytes(
+        ("full_name",),
+        [("Ann;=1+1;x",)],
+        generated_at=datetime(2026, 10, 9, 9, 0, tzinfo=UTC),
+        filters={},
+    )
+
+    assert cell.value == "Ann;=1+1;x"
+    assert json.loads(content)["rows"] == [{"full_name": "Ann;=1+1;x"}]

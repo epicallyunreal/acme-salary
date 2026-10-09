@@ -6,10 +6,13 @@ A reader that splits each comma-separated line on ';', honouring a double quote 
 of a cell, then finds a cell of its own that starts with '='.
 
 The reader is modelled with Python's csv module and delimiter=';', applied to every line, with no
-`sep=` hint honoured. A failure (XFAIL while the marker is in place) means that reader finds a
-cell starting like a formula in the exported file. A row the import refuses for the planted column
-also holds the invariant. Whether Excel, opening the file in a locale whose list separator is ';',
-reads the line the same way is the manual check in the lead's validation plan.
+`sep=` hint honoured. A failure means that reader finds a cell starting like a formula in the
+exported file. A row the import refuses for the planted column also holds the invariant. Whether
+Excel, opening the file in a locale whose list separator is ';', reads the line the same way is
+the manual check in the lead's validation plan.
+
+Fixed on 9 October (D76): the CSV writer puts a single quote after a semicolon that a formula
+start follows, directly or after one double quote, so this test guards the fix.
 """
 
 import csv
@@ -24,13 +27,6 @@ pytestmark = pytest.mark.django_db
 
 IMPORTS = "/api/v1/imports/"
 EMPLOYEES = "/api/v1/exports/employees/"
-REASON = (
-    "exports_csv_semicolon_split_formula: accepted in docs/reviews/security-audit-2026-10-08.md, "
-    "since the writer escapes the standard formula triggers and quotes every field, and the "
-    "split needs a reader whose list separator is ';' and that reopens a quote mid-field, a "
-    "specific Excel locale. XFAIL means the behaviour is as accepted; XPASS (a strict failure) "
-    "means it changed, so revisit the review."
-)
 
 
 def semicolon_cells(text: str) -> list[str]:
@@ -41,15 +37,15 @@ def semicolon_cells(text: str) -> list[str]:
     return cells
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=REASON)
 @pytest.mark.parametrize(
     ("column", "planted"),
     [
         ("legacy_code", "HR;=1+1;20001"),
         ("full_name", "Ann;=1+1;Rao"),
         ("designation", "Engineer;=1+1;Lead"),
+        ("full_name", 'Ann;"=1+1;Rao'),
     ],
-    ids=["legacy_code", "full_name", "designation"],
+    ids=["legacy_code", "full_name", "designation", "full_name_after_a_quote"],
 )
 def test_imported_text_cannot_start_a_formula_cell_when_the_csv_is_split_on_semicolons(
     api, rates, column, planted
