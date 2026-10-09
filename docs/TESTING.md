@@ -1,6 +1,8 @@
 # End-to-end UI test
 
-Step 13 (D74, D76) drove the app through its real UI in Chrome, the way the HR Manager uses it: a full pass on a local container of the release, every write included, and a read-only pass on the live site. Every defect found was fixed in the step with a test that fails without the fix, one commit each through the pre-commit gate. This page is the record. The tests that run on every commit are listed in the README.
+Step 13 (D74, D76) drove the app through its real UI in Chrome, the way the HR Manager uses it: a full pass on a local container of the release, every write included, and a read-only pass on the live site. Every defect found in the app was fixed in the step with a test that fails without the fix, through the pre-commit gate, and the README's tour, the one defect outside the app, was a docs fix. This page is the record. The tests that run on every commit are listed in the README.
+
+In short: 66 scenarios passed, 40 in the local pass, 9 in the local check of the icon and the credit and 17 on the live site, with 104 error paths and edge cases. 28 defects were found and fixed in the step: the 10 the paused run found, the 2 leads the security audit had accepted, 10 more in the pass and 6 the step's reviewers found at the close. Every defect in the app was fixed with a test that fails without the fix, and the README's tour was a docs fix. One item went to P1, search on accented capitals (D77). The live pass ran on v20, built from `2674b94`, and the close's fixes reach the live site with the deploy that opens Ship. The step closes on the commit that adds this summary.
 
 The run was paused once, on 9 October, so that the layout and Help (step 12, D75) could be built first. Nothing from the paused run was reused: the pass below ran again on the final screens. The paused run's findings are kept under Found and fixed, marked as found before the layout change.
 
@@ -8,14 +10,15 @@ The run was paused once, on 9 October, so that the layout and Help (step 12, D75
 
 | Item | Value |
 | --- | --- |
-| Date | 9 October 2026, from about 13:00 to 16:30 IST |
+| Date | 9 October 2026: the local pass from about 13:00 to 19:30 IST, the local check of the icon and the credit at about 20:25, the live pass from 20:44 to 20:50 IST |
 | Driver | Claude Code (claude-opus-5-5) through the Claude in Chrome tools, extension 1.0.99, site access for localhost:8000 and acme.nutanprabhat.dev only |
 | Browser | Chrome 154 on macOS, a 1512 by 982 screen at device pixel ratio 2 |
 | Local target | `docker compose` on http://localhost:8000, the seeded database of 10,000 on staff and 5,000 leavers from seed 42, `NUM_PROXIES` 0 |
-| Commits | the pass began on `e6db3bc` (part A and the owner's helper text), and each defect it found was fixed and rebuilt into the container as it went, `c6f36c9` and then `0d22453` (image `6a2389080921`) for the first reset and base import. The error paths below ran on `5f2106e` (image `165ef1a459dc`), which holds the four changes made after the first report, and the second reset closed them. `5e95a51`, found in that round, was rebuilt (image `62304b2d1713`) and checked last, on the seed the container rebuilt on start once the database was empty. That re-seed behind a deliberate reset was itself a defect, fixed in the commit that changed this note (D79): an emptied database now stays empty across restarts. The reload after a deploy (`58fc79a`) is covered by its test alone, see Not covered |
+| Commits | the pass began on `e6db3bc` (part A and the owner's helper text), and each defect it found was fixed and rebuilt into the container as it went, `c6f36c9` and then `0d22453` (image `6a2389080921`) for the first reset and base import. The error paths below ran on `5f2106e` (image `165ef1a459dc`), which holds the four changes made after the first report, and the second reset closed them. `5e95a51`, found in that round, was rebuilt (image `62304b2d1713`) and checked last, on the seed the container rebuilt on start once the database was empty. That re-seed behind a deliberate reset was itself a defect, fixed in `57734ec` (D79): an emptied database now stays empty across restarts, which its tests cover and no restart in the browser has re-run. The reload after a deploy (`58fc79a`) is covered by its tests alone, see Not covered. The close's fixes, `bfb386f` to `70df14b`, came after release v20 and are covered by their tests, see Not covered. The icon and the credit (`dffa429`, `2674b94`) were checked on a local container of `2674b94`, see Local check of the icon and the credit |
 | Window sizes | 1280 by 720 CSS pixels for the pass, 1280 by 680 for the first scenarios while the screen was shorter, 1024 by 768, and 1280 by 720 at 200% zoom, which is 640 by 360 |
-| Sign-in | the HR Manager, signed in by the owner in the tab whenever a session was needed. No password was typed, read or kept by Claude Code. Deliberately wrong passwords were typed on localhost alone, for the login and reset refusals |
+| Sign-in | the HR Manager, signed in by the owner in the tab whenever a session was needed. No password was typed, read or kept by Claude Code. Deliberately wrong passwords were typed on localhost alone, with the owner's leave, for the login and reset refusals |
 | Live target | https://acme.nutanprabhat.dev, read-only, see Live pass |
+| Live release | v20, deployed by the owner on 9 October from `2674b94`, image `registry.fly.io/acme-salary:deployment-01M4GK3ER2Y50HP48NXG8TAKK1` |
 
 ## What is built
 
@@ -23,8 +26,8 @@ Page by page against SPEC section 10, as the pass found it.
 
 | Page | What it does | SPEC |
 | --- | --- | --- |
-| Login | Email and password, the way back to the page asked for, the refusals and the throttle message, its own tab title | F8 |
-| Dashboard | Ten cards under three headings over a period, country, department, currency and Include exited, each card's own control, every card exported as CSV, Excel or JSON, figures withheld for groups under five or twenty with the reason, the filter bar kept in view, a link to the Help answer on hidden figures | F5, F6, section 9 |
+| Login | Email and password, the way back to the page asked for, the refusals and the throttle message, its own tab title, the builder's credit under the card | F8 (D80) |
+| Dashboard | The key figures and nine cards under three headings over a period, country, department, currency and Include exited, each card's own control, every card exported as CSV, Excel or JSON, figures withheld for groups under five or twenty with the reason, the filter bar kept in view, a link to the Help answer on hidden figures | F5, F6, section 9 |
 | Employees | The server-side directory of ten rows a page (10, 20 or 50), filters, search, sort, Go to page, the export, a pencil to open each employee, everything in the URL | F4, F6 |
 | Employee page | The current record with its lines and totals, the pay history with scheduled and cancelled revisions, the audit trail on the Audit tab, Edit, Add revision, Mark exited | F3, F7 |
 | New employee | Identity and the country's pay components, the error summary and the server's refusals | F3 |
@@ -32,6 +35,7 @@ Page by page against SPEC section 10, as the pass found it.
 | Import review | Counts, the message slot, Skip, the status filter, search, Approve and Discard behind their dialogs and the busy dialog | F1, F2 |
 | Demo data | Seven sample files built from the live data and the reset that empties the database behind the password and RESET | F9 |
 | Help | How the app works in six steps and twelve questions | section 10 (D75) |
+| Every page | ACME's tab icon, and at the nav's foot the builder's credit opening nutanprabhat.dev in a new tab | D80 |
 
 A global audit page, every change across employees in one list, is P1 (SPEC F7). Today each employee's changes are on the Audit tab of their page.
 
@@ -71,14 +75,14 @@ All on localhost unless the row says otherwise. Result is Pass where the app did
 | 28 | Imports | exits.xlsx with one row skipped | 99 applied | 99 updated, 1 skipped | Pass |
 | 29 | Imports | A sheet lowering one gross and holding a level 9 row | A warning on the first, an error blocking Approve, Show them, Skip, Approve | "gross falls from 211,902.00 to 162,000.00 EUR", then as expected | Pass |
 | 30 | Imports | Approve and Discard | Their dialogs, the busy dialog while the server works | As expected | Pass |
-| 31 | Worst case | Import `docs/testing/worst-case.xlsx` | Five creates, one warning | As expected | Pass |
+| 31 | Worst case | Import `docs/testing/worst-case.xlsx`, made by `docs/testing/make_worst_case.py` | Five creates, one warning | As expected | Pass |
 | 32 | Worst case | The five employees in the directory, on their pages and on the dashboard at 1280 by 720, 1024 by 768 and 200% | Nothing cut that has no hover, no sideways scroll above 1024 px | The Code column cut ACME-15502 to "ACME-155…" | Fixed, `2304bb2` |
 | 33 | Keyboard | Tab through the directory and the dashboard, open a menu with Enter | A sensible order and every control reachable | As expected. Focus starts on the page, so the nav is behind it with Shift+Tab (D75) | Pass |
 | 34 | Help | Open Help, then `/help#%` | Six steps, twelve questions, no crash | As expected | Pass |
 | 35 | Windows | 1280 by 720 | No window scroll, grids at ten rows | Directory 505 px, main scrolls 75 px, review 520 px | Pass |
 | 36 | Windows | 1024 by 768 | No window scroll | Directory and review 520 px with their sideways bars, the filter bar on three lines | Pass |
 | 37 | Windows | 200% zoom | Sideways scroll alone below 1024 px (D75) | The window scrolls 384 px sideways, nothing else overflows, the filter bar no longer sticks | Pass |
-| 38 | Container | Stop the container with the app open, then start it | The connection message with Retry, the session kept, then recovery | As expected. A page whose code had not loaded showed the error page until a full reload, which its Reload gave | Pass. The same failure after a deploy is handled by `58fc79a`, covered by its test |
+| 38 | Container | Stop the container with the app open, then start it | The connection message with Retry, the session kept, then recovery | As expected. A page whose code had not loaded showed the error page until a full reload, which its Reload gave | Pass. The same failure after a deploy is handled by `58fc79a`, covered by its tests |
 | 39 | Demo data | Empty the database with the owner's password and RESET | Everything emptied, the Imports page says what to do next | As expected | Pass |
 | 40 | Demo data | Download base-15000.xlsx and import it | 15,000 creates, the seed's figures back | Staged in 7 s, applied in about 10 s, 10,000 on staff, USD 969M, mean 87,095 and median 62,329 as on the seed | Pass |
 
@@ -113,7 +117,7 @@ All on localhost unless the row says otherwise. Result is Pass where the app did
 | 25 | `reset` typed in lower case | Empty the database stays off | Reset dialog | Pass |
 | 26 | A wrong password with RESET | "password did not match", nothing deleted | Reset dialog | Pass |
 | 27 | The container stopped | "Could not load employees. Check your connection and try again." with Retry, the same on every dashboard card and on Imports, the session kept | Every page | Pass |
-| 28 | A page's code missing, as after a deploy | The page reloads once onto the new build, and the error page with Reload if that fails too | Any page | Fixed, `58fc79a`, covered by its test alone (see Not covered) |
+| 28 | A page's code missing, as after a deploy | The page reloads once onto the new build, and the error page with Reload if that fails too | Any page | Fixed, `58fc79a`, covered by its tests alone (see Not covered) |
 | 29 | A batch left in review when the database is emptied | "This import does not exist. Go back to the imports." | Import review | Pass |
 | 30 | The database empty | "The database is empty. Import base-15000.xlsx to start.", the generated sample files off with "Import the base file first." | Imports, Demo data | Pass |
 
@@ -214,7 +218,7 @@ One sheet of 39 rows, staged as 32 errors, 5 warnings, one No-op and one valid r
 | A custom range in 2027 | accepted (D70), the state on 31 December 2027 | Pass |
 | Singapore and Legal, Pay gap | "fewer than 5 women" | Pass |
 | Legal, By level | "fewer than 5 men" on United States L1 and L4, "fewer than 5 women and fewer than 5 men" on Singapore's levels | Pass |
-| Singapore and Legal over April to December 2020 | Spent in period "USD—", "shown when each day has 5 people or more" | Pass |
+| Singapore and Legal over April to December 2020 | Spent in period withheld, a dash in place of the figure, "shown when each day has 5 people or more" | Pass |
 | The salary distribution exported there as CSV | one row, its headcount of 5, "fewer than 20 people" | Pass |
 | A search that finds no one | "0 employees match", "No employees match these filters. Clear a filter or change the search." | Pass |
 
@@ -268,26 +272,39 @@ Found in this pass and fixed:
 | After Sign out the login tab kept the last page's title | `c6f36c9` |
 | A page past the last showed the connection message | `0d22453` (D77) |
 | A 409's message read "detail scheduled revision on 2027-04-01 must be cancelled before exit", the response's key on screen | `5e95a51` |
-| A restart after Empty the database seeded the demo again behind the reviewer | D79, the commit that records it here |
+| A restart after Empty the database seeded the demo again behind the reviewer | `57734ec` (D79), covered by its tests, no restart re-run in the browser |
 | An empty dashboard with no filter said to clear a filter | `52efca1` (D78) |
 | A page whose code was gone, as after a deploy, stayed on the error page | `58fc79a` (D78) |
+| The app shipped no favicon, so the tab showed a cached icon or a blank globe, found by the owner | `dffa429` (D80) |
+
+Found by the step's four reviewers at the close and fixed, each with a test that fails without the fix:
+
+| Finding | Fix |
+| --- | --- |
+| A formula after a separator inside a CSV cell, a line break, comma or tab, as in "Ann" then "X,=1+1" on the next line, began a cell for a reader that ignores quotes, found by the security reviewer in two rounds | `bfb386f` and `4ed3004`, the owner's choices: the writer quotes a formula after a comma, semicolon, tab or line break, and all of them stay allowed in names (D76) |
+| A link past the last page of a list that had shrunk was sent first to a page that was gone too, by page 1's cached count, found by the code reviewer | `d2318ff`, page 1's own fresh count only |
+| A refresh token from before a password change still rotated, its access tokens each refused, found by the security reviewer | `97819e6`, the refresh answers 401 |
+| `make_import_file`'s CSV files escaped a formula only at a cell's start, found by the code reviewer | `e33663a`, the exports' whole escape |
+| A refused country, as with `currency=local` and several countries, showed under the bar, not on its field, found by the spec checker | `3288916`, Department wired the same way |
+| After Empty the database and a fresh import, the boot seed said the database was emptied, found by the spec checker | `46dfd9c` (D79) |
+| Outside the count, a regression the close itself made: `46dfd9c` had `seed_data` import the demo services, which import from `seed_data`, so `seed_data` and `reset_demo` failed to load and the boot would have stopped. The gate passed it, since the tests import the demo services first. Found by the spec checker before any push | `0142ab1`, with a test that loads each command in a fresh process, as the boot does |
 
 ## Not covered
 
 | What | Why | Covered by |
 | --- | --- | --- |
-| A session running out after 12 hours, and a refresh token reused | Too long to wait for in a pass | `backend/tests/accounts/test_api.py` (`test_refresh_keeps_the_session_end_and_caps_the_access_token`), `frontend/src/api/client.test.ts` |
-| A password change ending live sessions | Changing the HR Manager's password is the operator's step | `test_a_password_change_ends_every_earlier_session_and_a_fresh_login_works`, `backend/tests/security/test_accounts_password_change_keeps_refresh_token_valid.py` |
+| The reviewers' fixes at the close (`bfb386f`, `4ed3004`, `d2318ff`, `97819e6`, `e33663a`, `3288916`, `46dfd9c`, `0142ab1`) | Found after the live pass, so no browser run, local or live, has seen them | `backend/tests/exports/test_writers.py` (`test_csv_puts_a_single_quote_after_a_separator_a_formula_start_follows`), `backend/tests/security/test_exports_csv_line_break_split_formula.py` (`test_imported_text_cannot_start_a_formula_cell_when_the_csv_is_split_without_quotes`), `backend/tests/seed/test_commands_load.py` (`test_the_command_loads_in_a_fresh_process`), `frontend/src/pages/Employees.test.tsx` (`counts the last page from a fresh page 1 when the list shrank, not the cached one (D77)`), `frontend/src/components/grid/usePastLastPage.test.ts` (`waits for a count page 1 fetched itself, so a cached count of a list that shrank never sends it back (D77)`), `backend/tests/accounts/test_services.py` (`test_refresh_session_refuses_a_token_from_before_a_password_change`), `backend/tests/imports/test_make_import_file.py` (`test_a_csv_cell_takes_the_exports_escape_after_a_semicolon_too`), `frontend/src/pages/Employees.test.tsx` (`shows a refused %s under its field, in the API's words (D76)`), `backend/tests/seed/test_seed.py` (`test_if_empty_says_employees_exist_once_the_emptied_database_is_filled_again`) |
+| A session running out after 12 hours, and a refresh token reused | Too long to wait for in a pass | `backend/tests/accounts/test_api.py` (`test_refresh_keeps_the_session_end_and_caps_the_access_token`, `test_a_reused_refresh_token_ends_every_session`), `frontend/src/api/client.test.ts` (`refreshes once for two concurrent 401s and retries both requests`, `ends the session and calls the handler when the refresh is refused`) |
+| A password change ending live sessions | Changing the HR Manager's password is the operator's step | `backend/tests/accounts/test_api.py` (`test_a_password_change_ends_every_earlier_session_and_a_fresh_login_works`), `backend/tests/security/test_accounts_password_change_keeps_refresh_token_valid.py` (`test_a_password_change_ends_the_session_of_an_earlier_refresh_token`) |
 | The reset's throttle of five an hour | It would lock the reset for an hour | `backend/tests/demo/test_api.py` (`test_the_reset_is_throttled_on_its_own_scope_five_an_hour`) |
-| An approve cut by the proxy, a failed approve, an approve refused by the re-check | They need a failing server | `frontend/src/pages/ImportReview.test.tsx` |
-| A file over 10 MB, over 15,000 rows, or of another type | Covered without a browser | `frontend/src/pages/Imports.test.tsx`, `backend/tests/imports/` |
-| A CSV opened in Excel set to split on semicolons | No Excel on the machine | `backend/tests/exports/test_writers.py`, `backend/tests/security/test_exports_csv_semicolon_split_formula.py` |
-| A screen reader | Not run | Every field labelled, checked in each page's test with `expectEveryFieldLabelled` |
-| The reload once onto a new build after a deploy (`58fc79a`) | Only a tab already running a build with the handler meets it, and the live site has none until this deploy | `frontend/src/lib/preloadRecovery.test.ts` |
+| An approve cut by the proxy, a failed approve, an approve refused by the re-check | They need a failing server | `frontend/src/pages/ImportReview.test.tsx` (`keeps waiting through a cut approve until the batch leaves review`, `shows what made a failed approve fail`, `shows why an approve was refused, with the rows the re-check marked`) |
+| A CSV opened in Excel set to split on semicolons | No Excel on the machine | `backend/tests/exports/test_writers.py` (`test_csv_puts_a_single_quote_after_a_semicolon_a_formula_start_follows`), `backend/tests/security/test_exports_csv_semicolon_split_formula.py` (`test_imported_text_cannot_start_a_formula_cell_when_the_csv_is_split_on_semicolons`) |
+| A screen reader | Not run | Every field labelled, checked in each page's test with `expectEveryFieldLabelled`, such as `frontend/src/pages/Employees.test.tsx` (`labels every filter and the search`) |
+| The reload once onto a new build after a deploy (`58fc79a`) | Only a tab already running a build with the handler meets it, and the live site has none until this deploy | `frontend/src/lib/preloadRecovery.test.ts` (`never reloads twice, leaving the error page with its Reload`, `may reload again once a page has loaded since, for the next deploy`, `leaves the error to the page when storage is refused, so it cannot loop`) and `frontend/src/App.test.tsx` (`reloads once onto the new build when a chunk fails to load (D78)`, `clears the reload guard once a navigation settles, so a later deploy reloads again`) |
 | The busy dialog's line after 20 seconds | A local approve takes about 10 s | `frontend/src/components/busy/BusyProvider.test.tsx` (`counts the seconds, says why it may be slow after 20 s, warns before the page is left, and closes on the result`) |
 | A cell kept as a 256 character prefix and echoed as 64 (D56, D68) | The cut sits in a column off screen in the review grid | `backend/tests/imports/test_staging.py` (`test_a_long_cell_is_kept_as_a_256_character_prefix_and_echoed_as_64`) |
 | A last day before the current record, by import | Seen through the exit dialog instead | `backend/tests/compensation/test_validators.py` (`test_last_date_before_the_current_record`) |
-| An upload over 10 MB | A browser upload of 10 MB was not built | `backend/tests/imports/test_api.py` (`test_an_upload_over_ten_megabytes_is_a_413_before_it_is_read`), `frontend/src/pages/Imports.test.tsx` |
+| An upload over 10 MB | A browser upload of 10 MB was not built | `backend/tests/imports/test_api.py` (`test_an_upload_over_ten_megabytes_is_a_413_before_it_is_read`), `frontend/src/pages/Imports.test.tsx` (`refuses a file over 10 MB without sending it`) |
 | More than 15,000 data rows | As above | `backend/tests/imports/test_parser.py` (`test_more_than_fifteen_thousand_data_rows_are_refused_with_the_true_count`) |
 | An `.xlsx` unpacking past 50 MB, of more than 1,000 parts, too many XML elements, a row past 1,048,576 or wider than 200 cells | Crafted files, not built for the browser | `backend/tests/imports/test_parser.py` (`test_an_xlsx_that_unpacks_past_50_mb_is_refused_before_openpyxl_opens_it`, `test_a_workbook_with_too_many_parts_is_refused_before_any_is_read`, `test_the_element_budget_is_for_the_whole_file`, `test_a_row_past_excels_last_or_wider_than_200_cells_is_refused`) |
 | A second upload while one is being read | Needs two uploads at once | `backend/tests/imports/test_api.py` (`test_a_second_upload_while_one_is_being_read_is_a_409`) |
@@ -299,8 +316,49 @@ Found in this pass and fixed:
 | A malformed amount, a component twice, more lines than a country has, `employee_code` or `legacy_code` sent to the API | The forms never send them | `backend/tests/compensation/test_api.py` (`test_a_malformed_amount_is_keyed_by_its_index_in_lines`, `test_a_component_listed_twice_is_a_400`, `test_a_body_with_more_lines_than_any_country_has_is_refused`), `backend/tests/compensation/test_validators.py` (`test_the_api_never_sets_either_code`) |
 | Cancelling a record that is not scheduled, and a second exit | The page offers neither | `backend/tests/compensation/test_services.py` (`test_cancel_the_current_record_is_a_409`, `test_cancel_twice_is_a_409`), `backend/tests/compensation/test_validators.py` (`test_a_different_last_date_on_an_exited_employee_is_a_conflict`) |
 | A refresh that is not JSON, and the refresh throttle of 30 a minute | Sent by the client alone | `backend/tests/accounts/test_api.py` (`test_the_refresh_endpoint_takes_json_only`, `test_the_refresh_endpoint_is_throttled_per_client_address`) |
+| A restart after Empty the database leaving it empty (D79) | A restart was not re-run in the browser | `backend/tests/seed/test_seed.py` (`test_if_empty_leaves_a_database_emptied_on_the_demo_data_page_empty`, `test_if_empty_seeds_a_fresh_database`, `test_if_empty_seeds_again_after_a_seed_cut_short`) |
 | Safari, Firefox and phones | Chrome alone was driven, and the frame is at least 1024 px wide (D75) | none |
+
+## Local check of the icon and the credit
+
+On a local container of `2674b94`, rebuilt by Claude Code with the owner's approval, at the three sizes the owner named. The window was 1280 by 720, then the shortest Chrome allows (1280 by 198), then 200% zoom (640 by 360).
+
+| # | Area | Steps | Expected | Observed | Result |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Nav | The credit at 1280 by 720 | At the nav's foot, below Help, nothing else scrolling | Help's bottom 305 px, the credit's top 687 px, 18 px from the foot, main alone scrolling (75 px) | Pass |
+| 2 | Nav | The credit at the shortest window | Below Help, the nav alone scrolling | 21 px below Help, the nav scrolling 161 px, html, body, #root and the frame without a scrollbar | Pass |
+| 3 | Nav | The credit at 200% | Below Help, never covering an item | 21 px below Help, the nav scrolling 6 px, no vertical scrollbar on html, body or #root, which scroll 384 px sideways below 1024 px as D75 sets | Pass |
+| 4 | Nav | Tab from Help, then Enter | The focus ring and the underline, then nutanprabhat.dev in a new tab, the app where it was | A 2 px #2F4A7A ring and the underline, the new tab at https://nutanprabhat.dev/ confirmed from the tab list and closed, the app still on its page | Pass |
+| 5 | Nav | Contrast | 4.5:1 or more | 7.12:1, 12 px rgb(79, 89, 101) on white | Pass |
+| 6 | Login | The card and the credit at 1280 by 720, the shortest window and 200% | Both whole or reachable by scrolling, never overlapping | Centred 12 px under the card at every size: no page scroll at 1280 by 720 or at 200%, a 156 px page scroll at 198 px with the credit whole at the bottom, and a 34 px scroll at 200% once the empty fields show their errors | Pass |
+| 7 | Login | Tab order, focus and Enter | Email, Password, Sign in, then the credit, which opens nutanprabhat.dev in a new tab | In that order, with the ring and the underline, the new tab confirmed and closed, Sign in never pressed | Pass |
+| 8 | Login | Contrast | 4.5:1 or more | 6.50:1 on the page's background | Pass |
+| 9 | Icons | /favicon.svg, /favicon.ico, /apple-touch-icon.png and the head's links, then a hard reload | 200 with an image type each, three links, no console error | 200 with image/svg+xml, image/x-icon and image/png, the three links in document.head, no console error. The extension cannot capture an SVG document, so the icon was drawn in an image at 256, 32 and 16 px and looked at there | Pass |
+
+The owner checked by eye on the live site that the tab shows ACME's icon and that the credit sits under the login card.
 
 ## Live pass
 
-To follow after the deploy.
+On release v20 (`2674b94`), read-only, at 1280 by 720, on 9 October from 20:44 to 20:50 IST. Nothing was uploaded, approved, revised, exited, created or reset.
+
+| # | Area | Steps | Expected | Observed | Result |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Session | Open the site after the deploy | The login, every earlier session ended (D76) | The login, "Sign in · ACME Salary", the three icons linked. The owner signed in in the tab | Pass |
+| 2 | Dashboard | The default view | Last 12 months, the seed's figures, no error | 10,000 on staff, USD 969M, Spent in period USD 892.7M, October 2026 rates, nine cards under three headings | Pass |
+| 3 | Dashboard | Last FY | The state on 31 March 2026 | 9,155 on 31 Mar 2026 | Pass |
+| 4 | Dashboard | India | India alone | 4,504, one country | Pass |
+| 5 | Dashboard | Export payroll by country as CSV | One row for India with the filters | India, 4,504, USD at October 2026 rates | Pass |
+| 6 | Employees | Page 2 | Ten rows from ACME-45 | As expected, 10,000 employees | Pass |
+| 7 | Employees | Search harini | The matches | "7 employees match", ACME-1 first | Pass |
+| 8 | Employee page | ACME-1, the Audit tab | The audit trail | The revisions with who and when | Pass |
+| 9 | Imports | Open it | The drop zone and the list | "No imports yet." on the live site | Pass |
+| 10 | Demo data | Open it | The seven files and the note on the base file | All seven offered, the note naming the trend, the bridge and Spent in period | Pass |
+| 11 | Help | Open it | The Audit tab and the rates sentences | Both | Pass |
+| 12 | Demo data | Download exits.xlsx | A sheet of 100 rows | 100 rows in the template's shape | Pass |
+| 13 | Employee page | /employees/999999 | Not found | "This employee does not exist. Go back to the directory." | Pass |
+| 14 | Any | /nowhere/at/all | Page not found in the frame | As expected, the nav kept | Pass |
+| 15 | Nav | The credit, then Enter | nutanprabhat.dev in a new tab | https://nutanprabhat.dev/ in a new tab, confirmed from the tab list and closed, `rel="noopener noreferrer"` | Pass |
+| 16 | Tab and login | The tab icon and the credit under the login card | ACME's icon, the credit under the card | Checked by the owner by eye | Pass |
+| 17 | Session | Sign out | The login with its credit and its own title | "Sign in · ACME Salary", the credit under the card | Pass |
+
+No defect was found on the live site.

@@ -460,9 +460,11 @@ Commits:
 3. One `fix(<area>): ...` per bug the pass finds, each with its test.
 4. `docs: the end-to-end pass recorded (step 13)` (finish-step by hand as in step 11: the four reviewers, DECISIONS and PLAN, the README's Test line, the worst-case sheet, after the live pass)
 
+Closed with 45 commits from `e794189` to the close. A's eight fixes are `0fa13e0`, `e679b0d`, `3c6e2a5`, `e513960`, `764e216`, `0e44569`, `5afa327` and `832b3b0`, with `df8334e` for the audit's rows and `e6db3bc` for the owner's shorter helper. The pass's own fixes are `414c044`, `2304bb2`, `f0b589e`, `c6f36c9`, `0d22453` (D77), `5e95a51` and `57734ec` (D79). Before the deploy the owner added `a006e96`, `52efca1`, `58fc79a` and `1a30625` (D78), and the icon and the credit, `dffa429` and `2674b94` (D80), went live as release v20. The four reviewers at the close found six more defects, each fixed with a test that fails without it: `bfb386f` and `4ed3004` (the escape after every separator, the owner's choices, D76), `d2318ff`, `97819e6`, `e33663a`, `3288916` and `46dfd9c`. Their second round caught `0142ab1`, an import cycle `46dfd9c` had made in the boot's seed command, before any push. `035e510`, `2919443`, `41e0e29`, `33424bc`, `e2d7cff`, `7a78c73`, `5e4e818` and `70df14b` take their other points. `ed5e0c7` and `b3f7dce` hold the worst-case sheet and the error sheets, and `5f2106e` and this step's last commit hold `docs/TESTING.md`.
+
 Hours: 10, grown from 6 with the carried fixes and the worst-case data.
 
-Acceptance closed: SPEC F8's criterion that a password change ends earlier sessions and F6's escape after a semicolon. The step evidences F1 to F9 and section 10 through the UI, and `docs/TESTING.md` is the brief's written test artifact beside the Ship step's video.
+Acceptance closed: SPEC F8's criterion that a password change ends earlier sessions, the refresh included, and F6's escape after a semicolon or a line break. The step evidences F1 to F9 and section 10 through the UI, and `docs/TESTING.md` is the brief's written test artifact beside the Ship step's video.
 
 Risks: a native dialog stops the extension, so nothing is left by navigating away while the busy dialog runs. The login and reset throttles are keyed on the client address, so hitting them locks the owner out of that host for a minute or an hour. Every live session ends once at the deploy that brings the revoke claim. The live pass reads shared demo data a reviewer may be changing at the time.
 

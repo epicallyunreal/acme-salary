@@ -12,6 +12,7 @@ REFERENCE_DATE = date(2026, 10, 6)
 REFERENCE_DATETIME = datetime(2026, 10, 6, tzinfo=UTC)
 
 HR_MANAGER_EMAIL = "hr@acme.example"
+# Reserved for examples by RFC 2606: no address can reach a real person, and the app sends none.
 EMAIL_DOMAIN = "acme.example"
 # The code the legacy HR system gave each seeded employee, unlike an ACME code on purpose:
 # HR- and five digits, drawn without repeats (D48).

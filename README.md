@@ -8,6 +8,8 @@ Live: **https://acme.nutanprabhat.dev**. The demo video is linked here at the Sh
 
 The demo login is in the submission email, not in this public repository: anyone holding it can change the demo data, and the Demo data page can empty the database. There is one account, the HR Manager. Nothing is readable without it.
 
+Every address in the demo, the HR Manager's hr@acme.example included, is on acme.example, a domain reserved for examples by RFC 2606, so none can belong to a real person, and the app never sends email.
+
 ## A three-minute tour
 
 1. **Dashboard.** What ACME spends, how pay is structured and whether it is fair, on the seeded organisation. Change the period (last 3 months to the whole history since 1 April 2020), filter by country or department, switch the reporting currency, and export any card as CSV, Excel or JSON.
@@ -54,7 +56,9 @@ cd backend && uv run ruff format --check . && uv run ruff check . && uv run pyte
 cd frontend && npm run lint && npx tsc -b && npm test -- --run && npm run build
 ```
 
-The same commands run in CI on every push, with `pip-audit` and `npm audit` on the locked runtime dependencies, and in the pre-commit gate on every commit. `backend/tests/security/` holds the leads of a static security audit of 8 October, each a guard on its fix, with the leads accepted without a test listed in `docs/reviews/security-audit-2026-10-08.md`.
+The same commands run in CI on every push, with `pip-audit` and `npm audit` on the locked runtime dependencies, and in the pre-commit gate on every commit. `backend/tests/security/` holds the leads of a static security audit of 8 October, and the CSV separator lead the step 13 reviewers raised (D76), each a guard on its fix, with the leads accepted without a test listed in `docs/reviews/security-audit-2026-10-08.md`.
+
+The end-to-end UI test of step 13, the app driven through Chrome locally and on the live site, is recorded in `docs/TESTING.md`.
 
 ## Operator notes
 
