@@ -19,6 +19,10 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 
+// jsdom has no scrolling either. The Help page brings a linked answer into view, and a test that
+// cares spies on this stand-in.
+Element.prototype.scrollIntoView ??= function scrollIntoView() {};
+
 // Every API call in a test is answered by MSW; an unhandled request fails the test that made it.
 export const server = setupServer(...handlers);
 const unhandled: string[] = [];

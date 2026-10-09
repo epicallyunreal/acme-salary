@@ -1,10 +1,12 @@
 import DatasetOutlinedIcon from '@mui/icons-material/DatasetOutlined';
+import HelpOutlineOutlinedIcon from '@mui/icons-material/HelpOutlineOutlined';
 import InsertChartOutlinedIcon from '@mui/icons-material/InsertChartOutlined';
 import PeopleOutlinedIcon from '@mui/icons-material/PeopleOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import {
   Box,
   Button,
+  Divider,
   List,
   ListItemButton,
   ListItemIcon,
@@ -18,14 +20,26 @@ import { useLogout, useMe } from '../../api/auth';
 
 const NAV_WIDTH = 208;
 
-const NAV_ITEMS = [
+interface NavEntry {
+  label: string;
+  to: string;
+  pattern: string;
+  Icon: typeof InsertChartOutlinedIcon;
+}
+
+const NAV_ITEMS: NavEntry[] = [
   { label: 'Dashboard', to: '/', pattern: '/', Icon: InsertChartOutlinedIcon },
   { label: 'Employees', to: '/employees', pattern: '/employees/*', Icon: PeopleOutlinedIcon },
   { label: 'Imports', to: '/imports', pattern: '/imports/*', Icon: UploadFileOutlinedIcon },
-  { label: 'Demo data', to: '/demo', pattern: '/demo', Icon: DatasetOutlinedIcon },
 ];
 
-function NavItem({ label, to, pattern, Icon }: (typeof NAV_ITEMS)[number]) {
+// The demo's own page and Help sit apart from the work, under a divider (D75).
+const AID_ITEMS: NavEntry[] = [
+  { label: 'Demo data', to: '/demo', pattern: '/demo', Icon: DatasetOutlinedIcon },
+  { label: 'Help', to: '/help', pattern: '/help', Icon: HelpOutlineOutlinedIcon },
+];
+
+function NavItem({ label, to, pattern, Icon }: NavEntry) {
   const selected = useMatch(pattern) !== null;
   return (
     <ListItemButton
@@ -95,6 +109,12 @@ export function AppShell() {
         </Typography>
         <List disablePadding>
           {NAV_ITEMS.map((item) => (
+            <NavItem key={item.to} {...item} />
+          ))}
+        </List>
+        <Divider sx={{ my: 2, mx: 4 }} />
+        <List disablePadding>
+          {AID_ITEMS.map((item) => (
             <NavItem key={item.to} {...item} />
           ))}
         </List>

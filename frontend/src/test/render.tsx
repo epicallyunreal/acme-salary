@@ -16,6 +16,7 @@ import '../pages/Dashboard';
 import '../pages/DemoData';
 import '../pages/EmployeeDetail';
 import '../pages/Employees';
+import '../pages/Help';
 import '../pages/ImportReview';
 import '../pages/Imports';
 import '../pages/NewEmployee';
