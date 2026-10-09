@@ -154,7 +154,8 @@ def test_if_empty_leaves_a_database_emptied_on_the_demo_data_page_empty():
 
 
 def test_if_empty_says_employees_exist_once_the_emptied_database_is_filled_again():
-    """After a reset and a base import, the message is about the employees, not the reset."""
+    """After a reset and the database filled again, the message is about the employees, not the
+    reset."""
     seed(20, 10)
     hr = get_user_model().objects.get(email=profiles.HR_MANAGER_EMAIL)
     hr.set_password("e2e-reset-only")  # a dummy for this test, never a real credential

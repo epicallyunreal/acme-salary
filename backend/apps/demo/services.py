@@ -91,12 +91,6 @@ class SampleFile:
     options: Callable[[date], dict] | None
 
 
-def emptied_on_the_demo_data_page() -> bool:
-    """True while the reset's one demo_reset entry stands, the mark the boot seed reads so an
-    emptied database stays empty across restarts (D79). The reset above writes it."""
-    return AuditLog.objects.filter(action=AuditLog.Action.DEMO_RESET).exists()
-
-
 def next_april_first(day: date) -> date:
     year = day.year if (day.month, day.day) < (4, 1) else day.year + 1
     return date(year, 4, 1)

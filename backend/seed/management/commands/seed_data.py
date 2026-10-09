@@ -18,9 +18,9 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
+from apps.audit.models import AuditLog
 from apps.compensation import validators
 from apps.compensation.services import bulk_apply
-from apps.demo import services as demo
 from apps.employees.models import Employee
 from seed import profiles
 from seed.generator import ordered_entries
@@ -123,7 +123,10 @@ class Command(BaseCommand):
         # The boot seed fills a fresh volume, or one a first boot left empty part way. A database
         # emptied on the Demo data page carries its one demo_reset entry and stays empty across
         # restarts, until the base file is imported or the operator runs reset_demo (D79).
-        elif options["if_empty"] and demo.emptied_on_the_demo_data_page():
+        elif (
+            options["if_empty"]
+            and AuditLog.objects.filter(action=AuditLog.Action.DEMO_RESET).exists()
+        ):
             self.stdout.write("the database was emptied on the Demo data page, nothing to do")
             return
         active, exited = options["active"], options["exited"]
