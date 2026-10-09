@@ -112,6 +112,14 @@ describe('Employees', () => {
     expect(document.querySelector('.MuiDataGrid-root')).toHaveStyle({ height: '505px' });
   });
 
+  it('shades every second row so rows read apart (D75)', async () => {
+    renderApp('/employees');
+
+    const rows = await rowsShown();
+
+    expect(rows.map((row) => row.classList.contains('odd'))).toEqual([false, true, false, true]);
+  });
+
   it('shows by default the columns a 1280 px window has room for, the rest in the chooser', async () => {
     renderApp('/employees');
     await rowsShown();

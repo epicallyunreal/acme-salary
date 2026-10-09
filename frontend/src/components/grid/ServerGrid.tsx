@@ -1,6 +1,7 @@
 import SwapVertIcon from '@mui/icons-material/SwapVert';
 import ViewColumnOutlinedIcon from '@mui/icons-material/ViewColumnOutlined';
 import { type SvgIconProps, Tooltip } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   ColumnsPanelTrigger,
   DataGrid,
@@ -82,6 +83,11 @@ const SLOTS: DataGridProps['slots'] = {
   columnUnsortedIcon: UnsortedIcon,
 };
 
+/** Every second row is shaded so rows read apart (D75). */
+function rowClassName({ indexRelativeToCurrentPage }: { indexRelativeToCurrentPage: number }) {
+  return indexRelativeToCurrentPage % 2 === 1 ? 'odd' : '';
+}
+
 /** The column chooser lists only the columns it can hide, so an action column stays out of it. */
 function togglable(columns: GridColDef[]): string[] {
   return columns.filter((column) => column.hideable !== false).map((column) => column.field);
@@ -134,10 +140,17 @@ export function ServerGrid<Row extends GridValidRowModel>({
       }}
       disableVirtualization={inTests}
       getRowHeight={getRowHeight}
-      sx={{
+      getRowClassName={rowClassName}
+      sx={(theme) => ({
         height: GRID_HEIGHT,
         bgcolor: 'background.paper',
         borderColor: 'divider',
+        // Rows read apart (D75): separators a step stronger than the divider, every second row on
+        // the page background, and a hover a little firmer than MUI's. The review's severity
+        // tints sit on their cells, above the shading.
+        '--DataGrid-rowBorderColor': theme.tokens.ruleStrong,
+        '& .MuiDataGrid-row.odd': { bgcolor: 'background.default' },
+        '& .MuiDataGrid-row:hover': { bgcolor: alpha(theme.tokens.ink, 0.07) },
         '& .MuiDataGrid-columnHeaderTitle': { fontWeight: 600 },
         // MUI hides a column's sort icon until hover. Every sortable column keeps it at rest
         // instead, faint until sorted, and the sorted one shows its arrow in full ink (D63).
@@ -149,7 +162,7 @@ export function ServerGrid<Row extends GridValidRowModel>({
           opacity: 1,
         },
         '& .MuiDataGrid-columnHeader--sorted .MuiDataGrid-sortIcon': { color: 'text.primary' },
-      }}
+      })}
     />
   );
 }

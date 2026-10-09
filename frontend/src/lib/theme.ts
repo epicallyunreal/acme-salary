@@ -9,6 +9,9 @@ export const tokens = {
   inkSecondary: '#4F5965',
   inkMuted: '#646C78',
   rule: '#DCE0D8',
+  /** The grids' row separators, a step stronger than `rule` so rows read apart: 1.6:1 on white
+   * against `rule`'s 1.3:1 (D75). */
+  ruleStrong: '#C9CEC4',
   primary: '#2F4A7A',
   primaryDark: '#223760',
   status: {
