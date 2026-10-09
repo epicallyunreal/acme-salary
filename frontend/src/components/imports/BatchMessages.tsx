@@ -18,8 +18,15 @@ export interface BatchMessage {
  * there is nothing to say. */
 export function BatchMessages({ messages }: { messages: BatchMessage[] }) {
   const [index, setIndex] = useState(0);
+  // When the messages change, a skip clearing the blocker or an unskip bringing it back, the slot
+  // starts again from the first, so the blocker is always the one shown first.
+  const signature = messages.map((message) => message.text).join('\n');
+  const [shownFor, setShownFor] = useState(signature);
+  if (shownFor !== signature) {
+    setShownFor(signature);
+    setIndex(0);
+  }
   if (!messages.length) return null;
-  // A message can go, a skip clearing the blocker for one, so the place is kept within the list.
   const shown = Math.min(index, messages.length - 1);
   const message = messages[shown];
   const many = messages.length > 1;
@@ -27,11 +34,8 @@ export function BatchMessages({ messages }: { messages: BatchMessage[] }) {
 
   return (
     <Box
-      // A named group read out whole as it changes, beside the page's own status notices.
       role="group"
       aria-label="Batch messages"
-      aria-live="polite"
-      aria-atomic="true"
       data-tone={message.tone}
       sx={(theme) => ({
         // The strip's remaining width at the figures' height, under them only when both cannot fit.
@@ -47,23 +51,29 @@ export function BatchMessages({ messages }: { messages: BatchMessage[] }) {
         color: theme.tokens.status[message.tone].text,
       })}
     >
-      <Typography
-        variant="body2"
-        // Two lines at most, the whole message on hover.
-        title={message.text}
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          display: '-webkit-box',
-          WebkitLineClamp: 2,
-          WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-          color: 'inherit',
-          fontWeight: 500,
-        }}
-      >
-        {message.text}
-      </Typography>
+      {/* Read out as it changes: the message and where it sits, not the buttons around it. */}
+      <Box aria-live="polite" aria-atomic="true" sx={{ flex: 1, minWidth: 0 }}>
+        <Typography
+          variant="body2"
+          // Two lines at most, the whole message on hover.
+          title={message.text}
+          sx={{
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            color: 'inherit',
+            fontWeight: 500,
+          }}
+        >
+          {message.text}
+        </Typography>
+        {many ? (
+          <Box component="span" sx={visuallyHidden}>
+            Message {shown + 1} of {messages.length}
+          </Box>
+        ) : null}
+      </Box>
       {message.action ? <Box sx={{ flexShrink: 0 }}>{message.action}</Box> : null}
       {many ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
@@ -75,13 +85,8 @@ export function BatchMessages({ messages }: { messages: BatchMessage[] }) {
           >
             <ChevronLeftIcon fontSize="small" />
           </IconButton>
-          <Typography variant="body2" className="num" sx={{ color: 'inherit' }}>
-            <span aria-hidden>
-              {shown + 1}/{messages.length}
-            </span>
-            <Box component="span" sx={visuallyHidden}>
-              Message {shown + 1} of {messages.length}
-            </Box>
+          <Typography aria-hidden variant="body2" className="num" sx={{ color: 'inherit' }}>
+            {shown + 1}/{messages.length}
           </Typography>
           <IconButton
             size="small"
@@ -91,12 +96,12 @@ export function BatchMessages({ messages }: { messages: BatchMessage[] }) {
           >
             <ChevronRightIcon fontSize="small" />
           </IconButton>
-          {/* Where the shown message sits among them, for the eye alone. */}
+          {/* Where the shown message sits among them, for the eye alone. Two warnings can read
+              alike, so each dot is known by its place. */}
           <Box aria-hidden sx={{ display: 'flex', gap: 1 }}>
-            {messages.map((each, position) => (
+            {messages.map((_, position) => (
               <Box
-                key={each.text}
-                data-current={position === shown || undefined}
+                key={position}
                 sx={{
                   width: 6,
                   height: 6,

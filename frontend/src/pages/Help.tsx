@@ -42,7 +42,7 @@ const STEPS: Step[] = [
   },
   {
     title: 'Share',
-    text: 'Every table and card can be exported as CSV, Excel or JSON. An export holds everything your filters match, not only the page on screen.',
+    text: 'The directory and every dashboard card can be exported as CSV, Excel or JSON. An export holds everything your filters match, not only the page on screen.',
   },
 ];
 
@@ -83,7 +83,7 @@ const QUESTIONS: Question[] = [
     id: 'reporting-start',
     question: 'Why do the dates start on 1 April 2020?',
     answer:
-      "Reporting starts on 1 April 2020, the first day of ACME's financial year 2020-21. Every pay record from that day on is kept, so any period from then to today is exact. A record that began earlier still counts for the days it covers inside the period.",
+      "Reporting starts on 1 April 2020, the first day of ACME's financial year 2020-21, so no period can start earlier. Every pay record is kept, so any period from then to today is exact. A record that began before 1 April 2020 counts for the days it covers inside the period.",
   },
   // SPEC F3 and section 4 rule 3, D43: cancelled, not deleted, and the date is free again.
   {
@@ -104,7 +104,7 @@ const QUESTIONS: Question[] = [
     id: 'approve-refused',
     question: 'Why is Approve refused, and how do I fix it?',
     answer:
-      "Approve stays off while any row has an error. Skip those rows, or fix them in the sheet and upload it again. Approve is also refused when the data changed after the upload, for example someone in the sheet was edited or another batch took a new employee's legacy code, or when the new employees would take ACME past 25,000. Upload the sheet again so every row is checked against the data as it is now.",
+      "Approve stays off while any row has an error. Skip those rows, or fix them in the sheet and upload it again. Approve is also refused when a row would now do something other than what you reviewed, because the employee changed after the upload or another batch took a new employee's legacy code: those rows are marked as errors, to skip or upload again. It is refused too when the batch's new employees would take ACME past 25,000 employees.",
   },
   // D72: the warning on a revision that lowers gross.
   {
@@ -139,19 +139,24 @@ const QUESTIONS: Question[] = [
     id: 'session',
     question: 'How long does a session last?',
     answer:
-      'You stay signed in for up to 12 hours from when you sign in, however active you are. The page renews its access in the background, and when the 12 hours are up it asks you to sign in again. Sign out ends the session at once.',
+      'You stay signed in for up to 12 hours from when you sign in, however active you are. The page renews its access in the background, and when the 12 hours are up it asks you to sign in again. Sign out ends the session in this browser at once, and it cannot be renewed.',
   },
 ];
 
 /** Help (D75): how the app works, and the questions it raises, answered. Static: no API call. */
 export function Help() {
   const { hash } = useLocation();
-  const target = decodeURIComponent(hash.slice(1));
+  // Every anchor is a plain slug, so the hash is read as it stands: decoding it would throw on a
+  // stray % in a link.
+  const target = hash.slice(1);
 
-  // A link to an answer opens it (defaultExpanded below) and brings it into view. This runs after
-  // the shell has put main back at the top for the new page.
+  // A link to an answer opens it (defaultExpanded below), brings it into view and gives its
+  // question the focus, so the keyboard goes on from there. This runs after the shell has put main
+  // back at the top and focused it.
   useEffect(() => {
-    if (target) document.getElementById(target)?.scrollIntoView({ block: 'start' });
+    if (!target) return;
+    document.getElementById(target)?.scrollIntoView({ block: 'start' });
+    document.getElementById(`${target}-question`)?.focus({ preventScroll: true });
   }, [target]);
 
   return (
@@ -165,7 +170,8 @@ export function Help() {
         <Typography id="how-it-works" variant="h2" sx={{ mb: 3 }}>
           How it works
         </Typography>
-        <Paper component="ol" sx={{ m: 0, p: 0, listStyle: 'none' }}>
+        {/* Safari drops a list's role once its markers are off, so the role is said outright. */}
+        <Paper component="ol" role="list" sx={{ m: 0, p: 0, listStyle: 'none' }}>
           {STEPS.map((step, index) => (
             <Box
               component="li"
@@ -209,7 +215,8 @@ export function Help() {
         <Typography id="questions" variant="h2" sx={{ mb: 3 }}>
           Questions
         </Typography>
-        <Paper>
+        {/* Keyed on the anchor, so a link to another answer while this page is open opens it. */}
+        <Paper key={target}>
           {QUESTIONS.map((item) => (
             <Accordion
               key={item.id}
@@ -236,7 +243,8 @@ export function Help() {
                   {item.question}
                 </Typography>
               </AccordionSummary>
-              <AccordionDetails id={`${item.id}-answer`} sx={{ px: 5, pt: 0, pb: 4 }}>
+              {/* The accordion gives this region the summary's aria-controls as its id. */}
+              <AccordionDetails sx={{ px: 5, pt: 0, pb: 4 }}>
                 <Typography>{item.answer}</Typography>
               </AccordionDetails>
             </Accordion>

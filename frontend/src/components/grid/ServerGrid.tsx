@@ -63,8 +63,9 @@ const inTests = import.meta.env.MODE === 'test';
 // The grid stands at one height whatever the window, ten compact rows (the owner's choice, D75):
 // the 52 px toolbar, the 39 px header, ten 36 px rows, the 52 px pager and the two borders, so a
 // default page fits exactly. main scrolls when the page is taller than the window, and the grid
-// scrolls its own rows past ten.
-export const GRID_HEIGHT = 52 + 39 + DEFAULT_PAGE_SIZE * 36 + 52 + 2;
+// scrolls its own rows past ten. While its columns scroll sideways, its own scrollbar is added, so
+// the tenth row is never under it (MUI X sets both variables on the grid).
+const GRID_HEIGHT = `calc(${52 + 39 + DEFAULT_PAGE_SIZE * 36 + 52 + 2}px + var(--DataGrid-hasScrollX) * var(--DataGrid-scrollbarSize))`;
 
 /** The faint up-down icon a sortable column shows at rest, about 3.4:1 on white (D63). */
 function UnsortedIcon({ className, fontSize }: Pick<SvgIconProps, 'className' | 'fontSize'>) {

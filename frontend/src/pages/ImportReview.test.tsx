@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ImportBatch, ImportRow } from '../api/types';
 import { setSession } from '../lib/auth';
+import { tokens } from '../lib/theme';
 import { POLL } from '../lib/poll';
 import { expectClosed, expectFailed, expectPending, held } from '../test/busy';
-import { reviewBatch, reviewRows, rowsPage } from '../test/fixtures/imports';
+import { approvedBatch, reviewBatch, reviewRows, rowsPage } from '../test/fixtures/imports';
 import { renderApp } from '../test/render';
 import { server } from '../test/setup';
 import { expectEveryFieldLabelled, expectFocusCycle } from '../test/a11y';
@@ -96,7 +97,10 @@ describe('ImportReview', () => {
     renderApp('/imports/3');
     await screen.findByText('Ravi Iyer');
 
-    expect(document.querySelector('.MuiDataGrid-root')).toHaveStyle({ height: '505px' });
+    // Ten rows, plus the grid's own sideways scrollbar while its columns scroll (D75).
+    expect(getComputedStyle(document.querySelector('.MuiDataGrid-root') as Element).height).toBe(
+      'calc(505px + var(--DataGrid-hasScrollX) * var(--DataGrid-scrollbarSize))',
+    );
   });
 
   it('numbers its pages and jumps to the one typed, or the nearest there is, in the URL', async () => {
@@ -235,35 +239,105 @@ describe('ImportReview', () => {
     );
     const user = userEvent.setup();
     renderApp('/imports/3');
-    await screen.findByText(BLOCKER, { selector: '[title]' });
-    const slot = messages();
+    const slot = await screen.findByRole('group', { name: 'Batch messages' });
     const approve = screen.getByRole('button', { name: 'Approve' });
 
-    expect(slot).toHaveAttribute('aria-live', 'polite');
-    expect(slot).toHaveAttribute('data-tone', 'warning');
+    // The message and its place are read out as they change, not the buttons around them.
+    expect(within(slot).getByText(BLOCKER).closest('[aria-live]')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
+    expect(within(slot).getByText(BLOCKER)).toBeInTheDocument();
+    expect(slot).toHaveStyle({ backgroundColor: tokens.status.warning.fill });
     expect(within(slot).getByText('1/3')).toBeInTheDocument();
     expect(within(slot).getByText('Message 1 of 3')).toBeInTheDocument();
 
     await user.click(within(slot).getByRole('button', { name: 'Next message' }));
 
+    // One at a time: the next message takes the place of the last.
     expect(within(slot).getByText('Ignored unknown column: Remarks')).toBeInTheDocument();
+    expect(within(slot).queryByText(BLOCKER)).not.toBeInTheDocument();
     expect(within(slot).getByText('Message 2 of 3')).toBeInTheDocument();
-    expect(slot).toHaveAttribute('data-tone', 'info');
+    expect(slot).toHaveStyle({ backgroundColor: tokens.status.info.fill });
     // Approve still says why it is off while a warning shows.
     expect(approve).toHaveAccessibleDescription(BLOCKER);
 
     await user.click(within(slot).getByRole('button', { name: 'Next message' }));
+
+    expect(within(slot).getByText('Ignored unknown column: Notes')).toBeInTheDocument();
+    expect(within(slot).queryByText('Ignored unknown column: Remarks')).not.toBeInTheDocument();
+
     await user.click(within(slot).getByRole('button', { name: 'Next message' }));
 
     expect(within(slot).getByText(BLOCKER)).toBeInTheDocument();
+    expect(within(slot).queryByText('Ignored unknown column: Notes')).not.toBeInTheDocument();
 
     await user.click(within(slot).getByRole('button', { name: 'Previous message' }));
 
     expect(within(slot).getByText('Ignored unknown column: Notes')).toBeInTheDocument();
+    expect(within(slot).queryByText(BLOCKER)).not.toBeInTheDocument();
     expect(within(slot).getByText('3/3')).toBeInTheDocument();
   });
 
-  it('gives a message two lines with the whole of it on hover', async () => {
+  it('starts again from the first message when the blocker goes, so none is skipped over', async () => {
+    let skipped = false;
+    const warnings = ['Ignored unknown column: Remarks', 'Ignored unknown column: Notes'];
+    server.use(
+      http.post('/api/v1/imports/3/rows/33/skip/', () => {
+        skipped = true;
+        return HttpResponse.json({ ...reviewRows[2], status: 'skipped' });
+      }),
+      http.get('/api/v1/imports/3/', () =>
+        HttpResponse.json(skipped ? { ...READY, warnings } : { ...reviewBatch, warnings }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderApp('/imports/3');
+    await screen.findByText('Ravi Iyer');
+    await user.click(within(messages()).getByRole('button', { name: 'Next message' }));
+    expect(within(messages()).getByText('Message 2 of 3')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Skip row 4' }));
+
+    await waitFor(() => expect(within(messages()).getByText('Message 1 of 2')).toBeInTheDocument());
+    expect(within(messages()).getByText('Ignored unknown column: Remarks')).toBeInTheDocument();
+  });
+
+  it('opens a link with 25 or 100 rows a page at 10, the size the grid stands (D75)', async () => {
+    for (const size of ['25', '100']) {
+      const asked: (string | null)[] = [];
+      server.use(
+        http.get('/api/v1/imports/3/rows/', ({ request }) => {
+          const url = new URL(request.url);
+          asked.push(url.searchParams.get('page_size'));
+          return HttpResponse.json(rowsPage(url, MANY_ROWS));
+        }),
+      );
+      const { unmount } = renderApp(`/imports/3?page_size=${size}`);
+
+      await screen.findByText('1–10 of 250');
+      expect(asked[0]).toBe('10');
+      unmount();
+    }
+  });
+
+  it('keeps the blocker and Show them out of the slot once the batch has left review', async () => {
+    server.use(
+      http.get('/api/v1/imports/2/', () =>
+        HttpResponse.json({ ...approvedBatch, warnings: ['Ignored unknown column: Remarks'] }),
+      ),
+    );
+    renderApp('/imports/2');
+
+    const slot = await screen.findByRole('group', { name: 'Batch messages' });
+
+    expect(within(slot).getByText('Ignored unknown column: Remarks')).toBeInTheDocument();
+    expect(within(slot).queryByText(/This batch is/)).not.toBeInTheDocument();
+    expect(within(slot).queryByRole('button', { name: 'Show them' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('gives a message its whole text on hover', async () => {
     renderApp('/imports/3');
 
     const text = await within(

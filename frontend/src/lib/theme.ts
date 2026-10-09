@@ -81,6 +81,10 @@ export const theme = createTheme({
   components: {
     MuiCssBaseline: {
       styleOverrides: {
+        // The app's frame is as tall as the root, the window less any scrollbar of its own, where
+        // 100dvh counts the sideways scrollbar a window narrower than the frame shows and so adds
+        // a vertical one (D75).
+        'html, body, #root': { height: '100%' },
         body: { fontVariantNumeric: 'lining-nums' },
         '.num, .MuiDataGrid-cell--textRight, .MuiDataGrid-columnHeader--numeric': {
           fontVariantNumeric: 'tabular-nums',

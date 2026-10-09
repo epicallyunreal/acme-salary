@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
@@ -21,8 +21,14 @@ describe('AppShell', () => {
     expect(main).toHaveAttribute('tabindex', '-1');
     // The containing block of whatever a page positions, so nothing scrolls the window.
     expect(main).toHaveStyle({ position: 'relative', overflowY: 'auto' });
-    // Never narrower than 1024 px: a narrower window scrolls sideways (D75).
-    expect(main.parentElement?.parentElement).toHaveStyle({ minWidth: '1024px' });
+    // As tall as the root and never narrower than 1024 px: a narrower window scrolls sideways,
+    // and only sideways (D75).
+    expect(main.parentElement?.parentElement).toHaveStyle({
+      height: '100%',
+      minWidth: '1024px',
+      overflow: 'hidden',
+    });
+    expect(document.body).toHaveStyle({ height: '100%' });
   });
 
   it('puts main back at the top and focuses it when the page changes', async () => {
@@ -48,7 +54,8 @@ describe('AppShell', () => {
     const main = screen.getByRole('main');
     main.scrollTop = 300;
 
-    await router.navigate('/employees?status=any');
+    // Inside act, so React renders the new address and runs its effects before the check.
+    await act(() => router.navigate('/employees?status=any'));
 
     expect(router.state.location.search).toBe('?status=any');
     expect(main.scrollTop).toBe(300);

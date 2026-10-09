@@ -35,7 +35,7 @@ const NAV_ITEMS: NavEntry[] = [
 ];
 
 // The demo's own page and Help sit apart from the work, under a divider (D75).
-const AID_ITEMS: NavEntry[] = [
+const SUPPORT_ITEMS: NavEntry[] = [
   { label: 'Demo data', to: '/demo', pattern: '/demo', Icon: DatasetOutlinedIcon },
   { label: 'Help', to: '/help', pattern: '/help', Icon: HelpOutlineOutlinedIcon },
 ];
@@ -77,8 +77,7 @@ export function AppShell() {
   const { pathname } = useLocation();
   const mainRef = useRef<HTMLElement>(null);
 
-  // A new page starts at its top, as the window did. main takes focus unless the page focused a
-  // control of its own, so Page Down and Space scroll the new page without a click first. A
+  // A new page starts at its top. main takes focus unless the page focused a control of its own, so Page Down and Space scroll the new page without a click first. A
   // change of filters keeps the path, and with it the place on the page.
   useLayoutEffect(() => {
     const main = mainRef.current;
@@ -92,7 +91,8 @@ export function AppShell() {
   };
 
   return (
-    <Box sx={{ display: 'flex', height: '100dvh', minWidth: FRAME_MIN_WIDTH, overflow: 'hidden' }}>
+    // As tall as the root, which leaves out a sideways scrollbar where 100dvh would not (D75).
+    <Box sx={{ display: 'flex', height: '100%', minWidth: FRAME_MIN_WIDTH, overflow: 'hidden' }}>
       <Box
         component="nav"
         aria-label="Main"
@@ -116,7 +116,7 @@ export function AppShell() {
         </List>
         <Divider sx={{ my: 2, mx: 4 }} />
         <List disablePadding>
-          {AID_ITEMS.map((item) => (
+          {SUPPORT_ITEMS.map((item) => (
             <NavItem key={item.to} {...item} />
           ))}
         </List>

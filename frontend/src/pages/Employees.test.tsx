@@ -109,7 +109,10 @@ describe('Employees', () => {
     renderApp('/employees');
     await rowsShown();
 
-    expect(document.querySelector('.MuiDataGrid-root')).toHaveStyle({ height: '505px' });
+    // Ten rows, plus the grid's own sideways scrollbar while its columns scroll (D75).
+    expect(getComputedStyle(document.querySelector('.MuiDataGrid-root') as Element).height).toBe(
+      'calc(505px + var(--DataGrid-hasScrollX) * var(--DataGrid-scrollbarSize))',
+    );
   });
 
   it('shades every second row so rows read apart (D75)', async () => {
@@ -118,6 +121,10 @@ describe('Employees', () => {
     const rows = await rowsShown();
 
     expect(rows.map((row) => row.classList.contains('odd'))).toEqual([false, true, false, true]);
+    // On the page background, the theme's variable, so a lost rule fails here and not only a lost
+    // class.
+    expect(getComputedStyle(rows[1]).backgroundColor).toBe('var(--mui-palette-background-default)');
+    expect(getComputedStyle(rows[0]).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   });
 
   it('shows by default the columns a 1280 px window has room for, the rest in the chooser', async () => {
