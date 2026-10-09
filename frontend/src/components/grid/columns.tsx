@@ -55,7 +55,8 @@ export function directoryColumns(
       ),
       renderCell: ({ row, tabIndex }) => <EditLink row={row} tabIndex={tabIndex} />,
     },
-    { field: 'employee_code', headerName: 'Code', width: 104 },
+    // Six digits whole: ACME-250000 takes 93 px at 14 px, with 20 px of padding.
+    { field: 'employee_code', headerName: 'Code', width: 116 },
     {
       field: 'legacy_code',
       headerName: 'Legacy code',
@@ -63,7 +64,7 @@ export function directoryColumns(
       sortable: false,
       valueGetter: (_value, row) => row.legacy_code ?? '',
     },
-    { field: 'full_name', headerName: 'Name', flex: 1, minWidth: 150, renderCell: titledText },
+    { field: 'full_name', headerName: 'Name', flex: 1, minWidth: 138, renderCell: titledText },
     {
       field: 'email',
       headerName: 'Email',

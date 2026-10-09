@@ -36,6 +36,15 @@ describe('directoryColumns', () => {
     expect(width).toBeLessThanOrEqual(WIDTH_AT_1280);
   });
 
+  it('holds a six-digit employee code, ACME-250000, without cutting it', () => {
+    // Measured in Chrome on 9 October at the grid's 14 px: ACME-15502 takes 84.6 px and
+    // ACME-250000 93 px, and a cell keeps 10 px of padding each side. At 104 px a five-digit code
+    // was cut by its last pixel.
+    const code = directoryColumns('usd').find((column) => column.field === 'employee_code');
+
+    expect(code?.width).toBeGreaterThanOrEqual(93 + 2 * 10);
+  });
+
   it('gives each text cell that can be cut short its full value on hover, and no number', () => {
     const columns = directoryColumns('usd');
     const titled = columns.filter((column) => column.renderCell === titledText);
