@@ -5,7 +5,7 @@ import { RouterProvider } from 'react-router/dom';
 import { BusyProvider } from './components/busy/BusyProvider';
 
 import { SessionGate } from './components/layout/SessionGate';
-import { pageLoaded, recoverFromPreloadError } from './lib/preloadRecovery';
+import { navigationSettled, pageLoaded, recoverFromPreloadError } from './lib/preloadRecovery';
 import { createQueryClient } from './lib/queryClient';
 import { redirectToLoginOnSecond401 } from './lib/session';
 import { theme } from './lib/theme';
@@ -19,7 +19,7 @@ redirectToLoginOnSecond401(router, queryClient);
 window.addEventListener('vite:preloadError', (event) => recoverFromPreloadError(event));
 // A navigation that settles without an error means the build's code loads (D78).
 router.subscribe((state) => {
-  if (state.navigation.state === 'idle' && state.errors === null) pageLoaded();
+  if (navigationSettled(state)) pageLoaded();
 });
 
 export default function App() {

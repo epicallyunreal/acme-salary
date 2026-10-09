@@ -48,5 +48,10 @@ describe('App', () => {
     });
 
     await waitFor(() => expect(sessionStorage.getItem(PRELOAD_GUARD)).toBeNull());
+
+    const next = new Event('vite:preloadError', { cancelable: true });
+    window.dispatchEvent(next);
+    expect(next.defaultPrevented).toBe(true);
+    expect(reloadPage).toHaveBeenCalledTimes(1);
   });
 });

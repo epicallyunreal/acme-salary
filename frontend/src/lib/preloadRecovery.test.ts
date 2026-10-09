@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { PRELOAD_GUARD, pageLoaded, recoverFromPreloadError } from './preloadRecovery';
+import {
+  PRELOAD_GUARD,
+  navigationSettled,
+  pageLoaded,
+  recoverFromPreloadError,
+} from './preloadRecovery';
 
 function preloadError() {
   return new Event('vite:preloadError', { cancelable: true });
@@ -53,5 +58,15 @@ describe('recoverFromPreloadError', () => {
     recoverFromPreloadError(preloadError(), reload);
 
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe('navigationSettled', () => {
+  it('clears the guard only for a navigation that is idle and has no errors (D78)', () => {
+    expect(navigationSettled({ navigation: { state: 'idle' }, errors: null })).toBe(true);
+    expect(navigationSettled({ navigation: { state: 'loading' }, errors: null })).toBe(false);
+    expect(
+      navigationSettled({ navigation: { state: 'idle' }, errors: { root: new Error('chunk') } }),
+    ).toBe(false);
   });
 });

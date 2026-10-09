@@ -25,3 +25,13 @@ export function pageLoaded() {
     // nothing to clear
   }
 }
+
+/** A navigation that settled without an error, which says the build's code loads. One still
+ * loading, or one that failed, as a chunk the reload was asked for does, keeps the guard, so a
+ * failure that is not a deploy never reloads twice (D78). */
+export function navigationSettled(state: {
+  navigation: { state: string };
+  errors: unknown;
+}): boolean {
+  return state.navigation.state === 'idle' && state.errors === null;
+}
