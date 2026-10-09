@@ -340,6 +340,26 @@ describe('ImportReview', () => {
     }
   });
 
+  it('writes every count of an applied batch with its thousands separated', async () => {
+    const big = {
+      ...approvedBatch,
+      total_rows: 2500,
+      valid_rows: 2500,
+      applied_rows: 2500,
+      created_rows: 1250,
+      updated_rows: 0,
+      revised_rows: 1250,
+    };
+    server.use(http.get('/api/v1/imports/2/', () => HttpResponse.json(big)));
+    renderApp('/imports/2');
+
+    expect(
+      await screen.findByText(
+        /Applied 2,500 rows on .*: 1,250 created, 0 updated, 1,250 revised\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('keeps the blocker and Show them out of the slot once the batch has left review', async () => {
     server.use(
       http.get('/api/v1/imports/2/', () =>

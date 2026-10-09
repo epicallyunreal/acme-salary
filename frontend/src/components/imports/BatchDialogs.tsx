@@ -19,7 +19,7 @@ import {
 import type { ImportBatch } from '../../api/types';
 import type { FormMessage } from '../forms/applyServerErrors';
 import { useBusy } from '../busy/busyContext';
-import { rowsWord } from './counts';
+import { appliedCounts, rowsWord } from './counts';
 
 /** Why an approve or a discard was refused: the error count, the rows the re-check re-marked,
  * the failure that left the batch failed (SPEC F2), or the batch no longer in review. */
@@ -49,10 +49,7 @@ interface DialogProps {
 }
 
 function applied(done: ImportBatch): string {
-  return (
-    `Applied ${rowsWord(done.applied_rows)}: ${done.created_rows} created, ` +
-    `${done.updated_rows} updated, ${done.revised_rows} revised.`
-  );
+  return `Applied ${rowsWord(done.applied_rows)}: ${appliedCounts(done)}`;
 }
 
 const GAVE_UP =

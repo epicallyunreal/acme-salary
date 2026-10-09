@@ -24,7 +24,7 @@ import { useBusy } from '../components/busy/busyContext';
 import { ApproveDialog, DiscardDialog } from '../components/imports/BatchDialogs';
 import type { BatchMessage } from '../components/imports/BatchMessages';
 import { BatchSummaryStrip } from '../components/imports/BatchSummaryStrip';
-import { rowsWord } from '../components/imports/counts';
+import { appliedCounts, rowsWord } from '../components/imports/counts';
 import { TemplateMenu } from '../components/imports/TemplateMenu';
 import { EmptyState } from '../components/layout/EmptyState';
 import { ErrorState } from '../components/layout/ErrorState';
@@ -118,7 +118,7 @@ function BatchState({ batch }: { batch: ImportBatch }) {
     return (
       <Alert severity="success" sx={{ mb: 4 }}>
         Applied {rowsWord(batch.applied_rows)} on {formatDate(batch.approved_at)}:{' '}
-        {batch.created_rows} created, {batch.updated_rows} updated, {batch.revised_rows} revised.
+        {appliedCounts(batch)}
       </Alert>
     );
   }
