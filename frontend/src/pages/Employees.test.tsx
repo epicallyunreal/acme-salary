@@ -618,6 +618,37 @@ describe('Employees', () => {
     expect(await screen.findByText(text)).toBeInTheDocument();
   });
 
+  it('says Gross min is above Gross max under the two fields, the grid as the API answers (D76)', async () => {
+    recordRequests();
+    renderApp('/employees?gross_min=900000&gross_max=100000');
+
+    await screen.findByText('Gross min is above Gross max');
+    for (const label of ['Gross min (USD)', 'Gross max (USD)']) {
+      const field = screen.getByLabelText(label);
+      expect(field).toBeInvalid();
+      expect(field).toHaveAccessibleDescription('Gross min is above Gross max');
+    }
+    expect(screen.getByRole('grid')).toBeInTheDocument();
+  });
+
+  it('says nothing about a gross range whose min is at or below its max', async () => {
+    recordRequests();
+    renderApp('/employees?gross_min=100000&gross_max=100000');
+
+    await rowsShown();
+    expect(screen.queryByText('Gross min is above Gross max')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Gross min (USD)')).toBeValid();
+  });
+
+  it('tells how to give several titles under the Designation field (D76)', async () => {
+    recordRequests();
+    renderApp('/employees');
+
+    expect(await screen.findByRole('textbox', { name: 'Designation' })).toHaveAccessibleDescription(
+      'Separate titles with commas, press Enter to apply',
+    );
+  });
+
   it('says what to do when the filters match nothing', async () => {
     server.use(
       http.get('/api/v1/employees/', () =>

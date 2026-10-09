@@ -25,6 +25,10 @@ const TONES: Record<string, StatusTone> = {
   discarded: 'neutral',
 };
 
+/** A status whose name is not its label: a row that changes nothing reads as the strip counts
+ * it (D76). */
+const LABELS: Partial<Record<string, string>> = { noop: 'No-op' };
+
 interface StatusChipProps {
   status: string;
   label?: string;
@@ -36,7 +40,7 @@ export function StatusChip({ status, label }: StatusChipProps) {
   return (
     <Chip
       size="small"
-      label={label ?? status}
+      label={label ?? LABELS[status] ?? status}
       sx={(theme) => ({
         color: theme.tokens.status[tone].text,
         bgcolor: theme.tokens.status[tone].fill,

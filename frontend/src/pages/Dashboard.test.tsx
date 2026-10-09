@@ -22,6 +22,8 @@ const QUESTIONS = [
   'What is pay made of?',
 ];
 const SECTIONS = ['What we spend', 'How pay is structured', 'Is pay fair'];
+const UNREADABLE_PERIOD =
+  "This link's period could not be read, so the dashboard shows the last 12 months.";
 const INSIGHTS = [
   'by-country',
   'by-department',
@@ -454,13 +456,43 @@ describe('Dashboard', () => {
     );
   });
 
-  it('a custom range from before the cut-off in a link falls back to the last 12 months', async () => {
-    const seen = recordRequests();
-    renderApp('/?period=custom&from=2020-03-31&to=2026-01-01');
+  it.each([
+    ['an unknown preset', '/?country=IN&period=last_99_years'],
+    ['an impossible date', '/?country=IN&period=custom&from=2026-02-31&to=2026-03-31'],
+    ['a date before the cut-off', '/?country=IN&period=custom&from=2020-03-31&to=2026-01-01'],
+  ])(
+    'a link whose period cannot be read, with %s, opens on the last 12 months and says so (D76)',
+    async (_, url) => {
+      const seen = recordRequests();
+      const { router } = renderApp(url);
 
-    await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
-    for (const name of INSIGHTS) expect(dates(seen[name][0])).toEqual(['2025-10-08', '2026-10-07']);
-    expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
+      expect(await screen.findByText(UNREADABLE_PERIOD)).toBeInTheDocument();
+      await waitFor(() => expect(router.state.location.search).toBe('?country=IN'));
+      expect(router.state.historyAction).toBe('REPLACE');
+      await waitFor(() => expect(Object.keys(seen).sort()).toEqual(INSIGHTS));
+      for (const name of INSIGHTS)
+        expect(dates(seen[name].at(-1))).toEqual(['2025-10-08', '2026-10-07']);
+      expect(screen.getByLabelText('Period')).toHaveTextContent('Last 12 months');
+    },
+  );
+
+  it('drops the line about an unreadable period at the next change', async () => {
+    recordRequests();
+    const user = userEvent.setup();
+    renderApp('/?period=last_99_years');
+    const line = await screen.findByText(UNREADABLE_PERIOD);
+
+    await user.click(screen.getByRole('checkbox', { name: 'Include exited' }));
+
+    await waitFor(() => expect(line).not.toBeInTheDocument());
+  });
+
+  it('says nothing about a period it can read', async () => {
+    recordRequests();
+    renderApp('/?period=last_fy');
+
+    await keyFigures();
+    expect(screen.queryByText(UNREADABLE_PERIOD)).not.toBeInTheDocument();
   });
 
   it('Clear filters takes the period back to the last 12 months with the rest', async () => {

@@ -1,4 +1,5 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router';
 
 import type { InsightParams } from '../../api/types';
 import { REPORTING_CURRENCIES } from '../../lib/constants';
@@ -97,6 +98,15 @@ export function dashboardFromSearchParams(
   });
 }
 
+/** A period a link names but the dashboard cannot read: an unknown preset, or Custom without two
+ * dates it accepts, each from 2020-04-01 to 2100-12-31 with `from` on or before `to` (D76). */
+export function periodUnreadable(params: URLSearchParams): boolean {
+  const named = params.get('period');
+  if (named === null) return false;
+  if (!(PERIODS as readonly string[]).includes(named)) return true;
+  return named === 'custom' && customPeriod(params.get('from'), params.get('to')) === null;
+}
+
 /** Writes the URL, leaving out the defaults so links stay short. */
 export function dashboardToSearchParams(
   filters: DashboardFilters,
@@ -121,7 +131,26 @@ export function dashboardToSearchParams(
 
 export function useDashboardFilters() {
   const [searchParams, update] = useLatestSearchParams();
+  const location = useLocation();
   const filters = useMemo(() => dashboardFromSearchParams(searchParams), [searchParams]);
+  // A link whose period cannot be read opens on the last 12 months with the URL replaced in place,
+  // and the replacement's navigation state keeps the fact for the line that says so (D76). The
+  // next change navigates without it, so the line goes.
+  const unreadable = periodUnreadable(searchParams);
+  useEffect(() => {
+    if (!unreadable) return;
+    update(
+      (current) =>
+        dashboardToSearchParams(
+          dashboardFromSearchParams(current),
+          controlsFromSearchParams(current),
+        ),
+      { replace: true, state: { periodUnreadable: true } },
+    );
+  }, [unreadable, update]);
+  const periodFellBack =
+    unreadable ||
+    (location.state as { periodUnreadable?: boolean } | null)?.periodUnreadable === true;
   const params = useMemo(() => insightParams(filters), [filters]);
   const controls = useMemo(() => controlsFromSearchParams(searchParams), [searchParams]);
 
@@ -149,5 +178,5 @@ export function useDashboardFilters() {
   const reset = useCallback(() => update(() => new URLSearchParams()), [update]);
   const filtered = dashboardToSearchParams(filters, controls).size > 0;
 
-  return { filters, params, controls, set, setControl, reset, filtered };
+  return { filters, params, controls, set, setControl, reset, filtered, periodFellBack };
 }

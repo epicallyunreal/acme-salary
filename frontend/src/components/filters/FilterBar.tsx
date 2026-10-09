@@ -4,6 +4,7 @@ import {
   Checkbox,
   FormControl,
   FormControlLabel,
+  FormHelperText,
   InputLabel,
   ListItemText,
   MenuItem,
@@ -18,6 +19,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from 'react';
@@ -48,14 +50,22 @@ export function CommitField({
   onCommit,
   delay,
   error,
+  helperText,
+  invalid,
+  describedBy,
   ...rest
 }: {
   label: string;
   value: string;
   onCommit: (value: string) => void;
   delay?: number;
-  /** Why the API refused this value, in its own words, shown under the field. */
+  /** Why the API refused this value, in its own words, shown under the field in place of the
+   * helper text. */
   error?: string;
+  helperText?: string;
+  /** Marked wrong by a message shown elsewhere, the one with the id `describedBy`. */
+  invalid?: boolean;
+  describedBy?: string;
   type?: string;
   placeholder?: string;
   width?: number;
@@ -103,9 +113,12 @@ export function CommitField({
       onChange={onInput}
       onBlur={() => commit(shown)}
       onKeyDown={onKeyDown}
-      error={Boolean(error)}
-      helperText={error}
-      slotProps={{ inputLabel: fieldProps.type === 'date' ? { shrink: true } : undefined }}
+      error={Boolean(error) || invalid}
+      helperText={error ?? helperText}
+      slotProps={{
+        inputLabel: fieldProps.type === 'date' ? { shrink: true } : undefined,
+        htmlInput: describedBy ? { 'aria-describedby': describedBy } : undefined,
+      }}
       sx={{ width: width ?? 160 }}
       {...fieldProps}
     />
@@ -221,12 +234,19 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
   const localAllowed = filters.country.length === 1;
   const grossCurrency = filters.currency === 'local' ? 'local' : filters.currency.toUpperCase();
   const errorOn = (field: string) => errors?.[field]?.join(' ');
+  // Said under the two fields, the grid left to show what the API answers (D76).
+  const grossInverted =
+    filters.gross_min !== '' &&
+    filters.gross_max !== '' &&
+    Number(filters.gross_min) > Number(filters.gross_max);
+  const grossProblemId = useId();
 
   return (
     <Box
       component="section"
       aria-label="Filters"
-      sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'center', mb: 4 }}
+      // A field with a line under it grows downwards, so the bar lines its fields up at the top.
+      sx={{ display: 'flex', flexWrap: 'wrap', gap: 3, alignItems: 'flex-start', mb: 4 }}
     >
       <Fragment key={clears}>
         <CommitField
@@ -256,7 +276,8 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
             })
           }
           error={errorOn('designation')}
-          width={180}
+          helperText="Separate titles with commas, press Enter to apply"
+          width={240}
         />
         <MultiSelect
           label="Level"
@@ -286,22 +307,35 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
             ))}
           </Select>
         </FormControl>
-        <CommitField
-          label={`Gross min (${grossCurrency})`}
-          value={filters.gross_min}
-          onCommit={(gross_min) => onChange({ gross_min })}
-          error={errorOn('gross_min')}
-          type="number"
-          width={150}
-        />
-        <CommitField
-          label={`Gross max (${grossCurrency})`}
-          value={filters.gross_max}
-          onCommit={(gross_max) => onChange({ gross_max })}
-          error={errorOn('gross_max')}
-          type="number"
-          width={150}
-        />
+        <Box>
+          <Box sx={{ display: 'flex', gap: 3 }}>
+            <CommitField
+              label={`Gross min (${grossCurrency})`}
+              value={filters.gross_min}
+              onCommit={(gross_min) => onChange({ gross_min })}
+              error={errorOn('gross_min')}
+              invalid={grossInverted}
+              describedBy={grossInverted ? grossProblemId : undefined}
+              type="number"
+              width={150}
+            />
+            <CommitField
+              label={`Gross max (${grossCurrency})`}
+              value={filters.gross_max}
+              onCommit={(gross_max) => onChange({ gross_max })}
+              error={errorOn('gross_max')}
+              invalid={grossInverted}
+              describedBy={grossInverted ? grossProblemId : undefined}
+              type="number"
+              width={150}
+            />
+          </Box>
+          {grossInverted ? (
+            <FormHelperText id={grossProblemId} error role="alert" sx={{ mx: '14px' }}>
+              Gross min is above Gross max
+            </FormHelperText>
+          ) : null}
+        </Box>
         <CommitField
           label="Joined after"
           value={filters.joined_after}
@@ -325,6 +359,8 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
       {filtered ? (
         <Button
           variant="text"
+          // As tall as the small fields, so it lines up with them at the top.
+          sx={{ minHeight: 40 }}
           onClick={() => {
             setClears((count) => count + 1);
             onReset();

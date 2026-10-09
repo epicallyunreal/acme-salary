@@ -83,7 +83,8 @@ function useRoomUnderStickyBar(bar: RefObject<HTMLDivElement | null>) {
  * (D62), over the bar's period (D64). Each card is its own query, so a filter change refetches
  * every card, and a card's own control refetches that card alone. */
 export function Dashboard() {
-  const { filters, params, controls, set, setControl, reset, filtered } = useDashboardFilters();
+  const { filters, params, controls, set, setControl, reset, filtered, periodFellBack } =
+    useDashboardFilters();
   const barRef = useRef<HTMLDivElement>(null);
   useRoomUnderStickyBar(barRef);
   const trendControl = controlQuery('trend', controls);
@@ -172,6 +173,11 @@ export function Dashboard() {
           }
         />
       </Box>
+      {periodFellBack ? (
+        <Typography variant="body2" role="status" sx={{ color: 'text.secondary', mb: 3 }}>
+          This link's period could not be read, so the dashboard shows the last 12 months.
+        </Typography>
+      ) : null}
       {refused ? (
         <Alert
           severity="error"
