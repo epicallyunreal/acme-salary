@@ -586,6 +586,22 @@ describe('Employees', () => {
     expect(screen.getByRole('grid')).toBeInTheDocument();
   });
 
+  it("shows a refused country under the Country field, in the API's words (D76)", async () => {
+    server.use(
+      http.get('/api/v1/employees/', () =>
+        HttpResponse.json({ country: ['Unknown country_code: XX'] }, { status: 400 }),
+      ),
+    );
+    renderApp('/employees?country=XX');
+
+    const country = await screen.findByRole('combobox', { name: 'Country' });
+    const field = country.closest('.MuiFormControl-root') as HTMLElement;
+    expect(await within(field).findByText('Unknown country_code: XX')).toBeInTheDocument();
+    expect(country).toHaveAccessibleDescription('Unknown country_code: XX');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Could not load employees/)).not.toBeInTheDocument();
+  });
+
   it('says a refusal the bar has no field for above the grid, never as a lost connection', async () => {
     server.use(
       http.get('/api/v1/employees/', () =>

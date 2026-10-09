@@ -131,6 +131,8 @@ interface MultiSelectProps<T extends string | number> {
   options: { value: T; label: string }[];
   onChange: (value: T[]) => void;
   width?: number;
+  /** Why the API refused this value, in its own words, shown under the field (D76). */
+  error?: string;
 }
 
 function sameItems<T>(a: T[], b: T[]): boolean {
@@ -146,17 +148,19 @@ function MultiSelect<T extends string | number>({
   options,
   onChange,
   width = 170,
+  error,
 }: MultiSelectProps<T>) {
   const id = `filter-${label.toLowerCase().replace(/\s+/g, '-')}`;
   const names = new Map(options.map((option) => [option.value, option.label]));
   const [draft, setDraft] = useState<T[] | null>(null);
   const shown = draft ?? value;
   return (
-    <FormControl sx={{ width }}>
+    <FormControl sx={{ width }} error={Boolean(error)}>
       <InputLabel id={`${id}-label`}>{label}</InputLabel>
       <Select<T[]>
         labelId={`${id}-label`}
         id={id}
+        aria-describedby={error ? `${id}-error` : undefined}
         multiple
         value={shown}
         onOpen={() => setDraft(value)}
@@ -180,6 +184,7 @@ function MultiSelect<T extends string | number>({
           </MenuItem>
         ))}
       </Select>
+      {error ? <FormHelperText id={`${id}-error`}>{error}</FormHelperText> : null}
     </FormControl>
   );
 }
@@ -187,9 +192,10 @@ function MultiSelect<T extends string | number>({
 interface CodeSelectProps {
   value: string[];
   onChange: (value: string[]) => void;
+  error?: string;
 }
 
-export function CountrySelect({ value, onChange }: CodeSelectProps) {
+export function CountrySelect({ value, onChange, error }: CodeSelectProps) {
   const countries = useCountries();
   return (
     <MultiSelect
@@ -200,11 +206,12 @@ export function CountrySelect({ value, onChange }: CodeSelectProps) {
         label: country.name,
       }))}
       onChange={onChange}
+      error={error}
     />
   );
 }
 
-export function DepartmentSelect({ value, onChange }: CodeSelectProps) {
+export function DepartmentSelect({ value, onChange, error }: CodeSelectProps) {
   const departments = useDepartments();
   return (
     <MultiSelect
@@ -215,6 +222,7 @@ export function DepartmentSelect({ value, onChange }: CodeSelectProps) {
         label: department.name,
       }))}
       onChange={onChange}
+      error={error}
     />
   );
 }
@@ -258,10 +266,15 @@ export function FilterBar({ filters, onChange, onReset, filtered, errors }: Filt
           error={errorOn('search')}
           width={240}
         />
-        <CountrySelect value={filters.country} onChange={(country) => onChange({ country })} />
+        <CountrySelect
+          value={filters.country}
+          onChange={(country) => onChange({ country })}
+          error={errorOn('country')}
+        />
         <DepartmentSelect
           value={filters.department}
           onChange={(department) => onChange({ department })}
+          error={errorOn('department')}
         />
         <CommitField
           label="Designation"

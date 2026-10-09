@@ -51,6 +51,8 @@ export const FILTER_KEYS = [
  * read from the URL only as values the API accepts. */
 export const FIELDS_WITH_ERRORS: ReadonlySet<string> = new Set([
   'search',
+  'country',
+  'department',
   'designation',
   'gross_min',
   'gross_max',
