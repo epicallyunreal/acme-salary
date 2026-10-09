@@ -666,6 +666,22 @@ describe('Employees', () => {
     expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
   });
 
+  it('opens a link past the only page on page 1, the page left out of the URL (D77)', async () => {
+    server.use(
+      http.get('/api/v1/employees/', ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        return Number(params.get('page') ?? '1') > 1
+          ? HttpResponse.json({ detail: 'Invalid page.' }, { status: 404 })
+          : HttpResponse.json(employeePage);
+      }),
+    );
+    const { router } = renderApp('/employees?page=3');
+
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    expect(await screen.findByText('Asha Rao')).toBeInTheDocument();
+    expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
+  });
+
   it('says what to do when the filters match nothing', async () => {
     server.use(
       http.get('/api/v1/employees/', () =>

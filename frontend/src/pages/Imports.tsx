@@ -24,6 +24,7 @@ export function Imports() {
   const pastLast = usePastLastPage({
     error: imports.error,
     count: imports.data?.count,
+    fresh: !imports.isPlaceholderData && !imports.isFetching,
     page,
     pageSize: PAGE_SIZE,
     goTo,

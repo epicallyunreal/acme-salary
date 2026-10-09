@@ -45,10 +45,18 @@ export function Employees() {
   const employees = useEmployeeList(params);
   const filtered = isFiltered(state);
   const count = employees.data?.count;
+  // A link to a page past the last opens the last page (D77).
+  const goTo = useCallback((next: number) => set({ page: next }, { replace: true }), [set]);
+  const pastLast = usePastLastPage({
+    error: employees.error,
+    count,
+    fresh: !employees.isPlaceholderData && !employees.isFetching,
+    page,
+    pageSize,
+    goTo,
+  });
   // A filter the API refuses is said under its field, in the API's words, and never as a lost
   // connection (D76). A field the bar has no place for is said above the grid.
-  const goTo = useCallback((next: number) => set({ page: next }, { replace: true }), [set]);
-  const pastLast = usePastLastPage({ error: employees.error, count, page, pageSize, goTo });
   const refused = refusal(employees.error);
   const elsewhere = Object.entries(refused ?? {})
     .filter(([field]) => !FIELDS_WITH_ERRORS.has(field))

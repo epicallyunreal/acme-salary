@@ -9,7 +9,7 @@ import {
   TextField,
   Tooltip,
 } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { GridSortModel } from '@mui/x-data-grid';
 import { Link, useParams } from 'react-router';
 
@@ -63,24 +63,27 @@ function reviewState(params: URLSearchParams) {
  * (D76). */
 function useReviewParams() {
   const [params, update] = useLatestSearchParams();
-  const set = (
-    changes: Partial<ReturnType<typeof reviewState>>,
-    { replace = false }: { replace?: boolean } = {},
-  ) =>
-    update(
-      (current) => {
-        const next = { ...reviewState(current), ...changes };
-        // A new status or search starts again from the first page.
-        if (changes.status !== undefined || changes.search !== undefined) next.page = 1;
-        const query = new URLSearchParams();
-        if (next.page > 1) query.set('page', String(next.page));
-        if (next.pageSize !== DEFAULT_PAGE_SIZE) query.set('page_size', String(next.pageSize));
-        if (next.status) query.set('status', next.status);
-        if (next.search) query.set('search', next.search);
-        return query;
-      },
-      { replace },
-    );
+  const set = useCallback(
+    (
+      changes: Partial<ReturnType<typeof reviewState>>,
+      { replace = false }: { replace?: boolean } = {},
+    ) =>
+      update(
+        (current) => {
+          const next = { ...reviewState(current), ...changes };
+          // A new status or search starts again from the first page.
+          if (changes.status !== undefined || changes.search !== undefined) next.page = 1;
+          const query = new URLSearchParams();
+          if (next.page > 1) query.set('page', String(next.page));
+          if (next.pageSize !== DEFAULT_PAGE_SIZE) query.set('page_size', String(next.pageSize));
+          if (next.status) query.set('status', next.status);
+          if (next.search) query.set('search', next.search);
+          return query;
+        },
+        { replace },
+      ),
+    [update],
+  );
   return { ...reviewState(params), set };
 }
 
@@ -173,12 +176,15 @@ function ReviewPage({ batchId }: { batchId: number }) {
     search: view.search || undefined,
   };
   const rows = useImportRows(batchId, params);
+  const setView = view.set;
+  const goTo = useCallback((page: number) => setView({ page }, { replace: true }), [setView]);
   const pastLast = usePastLastPage({
     error: rows.error,
     count: rows.data?.count,
+    fresh: !rows.isPlaceholderData && !rows.isFetching,
     page: view.page,
     pageSize: view.pageSize,
-    goTo: (page) => view.set({ page }, { replace: true }),
+    goTo,
   });
   const { mutate: toggleSkip } = useSkipRow(batchId);
   const [dialog, setDialog] = useState<'approve' | 'discard' | null>(null);
