@@ -1,5 +1,5 @@
 import { Box, Link, Stack, Typography } from '@mui/material';
-import { type ReactNode, useId } from 'react';
+import { type ReactNode, type RefObject, useId, useLayoutEffect, useRef } from 'react';
 import { Link as RouterLink } from 'react-router';
 
 import { exportInsight } from '../api/exports';
@@ -49,11 +49,41 @@ const LEVELS = [
   { value: '6', label: 'L6' },
 ] as const;
 
+// The filter bar sticks only where the window has room for it and the cards below (D75). On a
+// small or zoomed-in window it wraps to several lines and would cover most of the view, so there it
+// scrolls away with the page.
+const STICKY_ROOM = '@media (min-width: 1000px) and (min-height: 600px)';
+
+/** While the bar sticks, main keeps that much room at its top when it scrolls a control into
+ * view, so a control reached with the keyboard is never hidden under the bar (WCAG 2.4.11). */
+function useRoomUnderStickyBar(bar: RefObject<HTMLDivElement | null>) {
+  useLayoutEffect(() => {
+    const element = bar.current;
+    const main = element?.closest('main');
+    if (!element || !main) return;
+    const fit = () => {
+      const sticky = getComputedStyle(element).position === 'sticky';
+      main.style.scrollPaddingTop = sticky ? `${element.offsetHeight}px` : '';
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(element);
+    window.addEventListener('resize', fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+      main.style.scrollPaddingTop = '';
+    };
+  }, [bar]);
+}
+
 /** The questions of SPEC section 9 for the filters in the URL (SPEC F5), under three headings
  * (D62), over the bar's period (D64). Each card is its own query, so a filter change refetches
  * every card, and a card's own control refetches that card alone. */
 export function Dashboard() {
   const { filters, params, controls, set, setControl, reset, filtered } = useDashboardFilters();
+  const barRef = useRef<HTMLDivElement>(null);
+  useRoomUnderStickyBar(barRef);
   const trendControl = controlQuery('trend', controls);
   const tenureControl = controlQuery('tenure', controls);
   const mixControl = controlQuery('mix', controls);
@@ -91,9 +121,11 @@ export function Dashboard() {
           the top of main, across its padding, on the page background with a hairline under them,
           above the charts and below the menus they open. */}
       <Box
+        ref={barRef}
         sx={{
-          position: 'sticky',
-          top: 0,
+          // A sticky box stops at main's padding, so it is held up by that much to sit flush with
+          // main's top edge.
+          [STICKY_ROOM]: { position: 'sticky', top: (theme) => theme.spacing(-6) },
           zIndex: 'appBar',
           mx: -6,
           px: 6,

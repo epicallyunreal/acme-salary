@@ -17,13 +17,16 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
     <Box
       sx={{
         display: 'flex',
+        // On a narrow window, or zoomed in, the actions go under the title rather than off the
+        // side of the page (D75).
+        flexWrap: 'wrap',
         alignItems: 'flex-start',
         justifyContent: 'space-between',
         gap: 4,
         mb: 5,
       }}
     >
-      <Box>
+      <Box sx={{ minWidth: 0 }}>
         <Typography variant="h1">{title}</Typography>
         {subtitle ? (
           <Typography component="div" variant="body2" color="text.secondary" sx={{ mt: 1 }}>
