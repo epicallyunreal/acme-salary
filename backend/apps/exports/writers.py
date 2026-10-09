@@ -2,9 +2,10 @@
 plain values: text, int, Decimal, date or None.
 
 A CSV or XLSX cell whose text starts like a formula gets a leading single quote, so a spreadsheet
-shows it instead of running it. In a CSV a formula start after a semicolon inside the text takes
-one too, after the semicolon (D76). Numbers are written as numbers and never escaped, so a
-negative amount stays a number. JSON holds values, not cells, and is written as it is (D60).
+shows it instead of running it. In a CSV a formula start after a separator inside the text, a
+comma, a semicolon, a tab or a line break, takes one too, after the separator (D76). Numbers are
+written as numbers and never escaped, so a negative amount stays a number. JSON holds values, not
+cells, and is written as it is (D60).
 """
 
 import csv
@@ -29,11 +30,12 @@ BATCH = 100
 # What XML 1.0 cannot hold: the C0 controls but tab, newline and carriage return, and U+FFFE and
 # U+FFFF. openpyxl refuses the first and writes the last two into a file that will not open.
 XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
-# A semicolon or a line break that a formula start follows, directly or after one double quote. A
-# reader whose list separator is ';', as Excel's is in Germany and the Netherlands, starts a cell
-# there and reads the doubled quote as an empty quoted start, and a reader that ignores quotes
-# starts a record at a line break as readily, so the formula would begin that cell (D76).
-SPLIT_FORMULA = re.compile(r'([;\r\n])(?="?[=+\-@\t\r])')
+# A separator that a formula start follows, directly or after one double quote. A reader whose
+# list separator is ';', as Excel's is in Germany and the Netherlands, starts a cell there and
+# reads the doubled quote as an empty quoted start. A reader that ignores quotes starts a record at
+# a line break, and is then outside the quotes for the rest of the value, so its own separator,
+# a comma, a semicolon or a tab, starts a cell there too, and the formula would begin it (D76).
+SPLIT_FORMULA = re.compile(r'([\t,;\r\n])(?="?[=+\-@\t\r])')
 
 
 def escape_cell(value: Any) -> Any:
@@ -52,8 +54,8 @@ class _Echo:
 
 def escape_csv_text(value: str) -> str:
     """Text for a CSV cell: a leading quote where it starts like a formula, and one after a
-    semicolon or a line break a formula start follows (D76). The exports and make_import_file both
-    use it."""
+    comma, semicolon, tab or line break a formula start follows (D76). The exports and
+    make_import_file both use it."""
     return SPLIT_FORMULA.sub(r"\1'", escape_cell(value))
 
 
@@ -66,8 +68,8 @@ def _csv_cell(value: Any) -> Any:
 def csv_stream(header: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterator[bytes]:
     """The header, then the rows a hundred at a time, so a whole directory never sits in memory.
     Dates are ISO text and an empty value an empty cell. Every field is quoted, and a formula
-    start after a semicolon or a line break takes a single quote, so a spreadsheet that splits on
-    semicolons or line breaks finds no cell that starts a formula."""
+    start after a comma, semicolon, tab or line break takes a single quote, so a spreadsheet that
+    splits on any of them, quotes or not, finds no cell that starts a formula."""
     writer = csv.writer(_Echo(), quoting=csv.QUOTE_ALL)
     yield (BOM + writer.writerow(header)).encode()
     for batch in batched(rows, BATCH, strict=False):  # the last batch may be short

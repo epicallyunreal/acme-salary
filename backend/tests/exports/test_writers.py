@@ -74,12 +74,27 @@ def test_csv_puts_a_single_quote_after_a_semicolon_and_one_double_quote_a_formul
         ("Ann\r=1+1", "Ann\r'=1+1"),
         ('Ann\n"@x', "Ann\n'\"@x"),
         ("Ann\nRao", "Ann\nRao"),
+        ("Ann\nX,=1+1,", "Ann\nX,'=1+1,"),
+        ("Ann\nX\t=1+1\tx", "Ann\nX\t'=1+1\tx"),
+        ("Ann\t=1+1\tx", "Ann\t'=1+1\tx"),
+        ("Rao, Ann", "Rao, Ann"),
     ],
-    ids=["newline", "crlf", "lone_cr", "after_a_quote", "no_formula"],
+    ids=[
+        "newline",
+        "crlf",
+        "lone_cr",
+        "after_a_quote",
+        "no_formula",
+        "comma_after_a_break",
+        "tab_after_a_break",
+        "tab",
+        "comma_and_space",
+    ],
 )
-def test_csv_puts_a_single_quote_after_a_line_break_a_formula_start_follows(written, read):
-    """A reader that ignores quotes starts a record at a line break as readily as a cell at a
-    semicolon, so the formula after it would begin a cell (D76)."""
+def test_csv_puts_a_single_quote_after_a_separator_a_formula_start_follows(written, read):
+    """A reader that ignores quotes starts a record at a line break and is then outside the quotes,
+    so its own comma, semicolon or tab starts a cell too, and pasting into a sheet splits on tabs.
+    The formula after any of them would begin a cell (D76)."""
     rows = list(csv.reader(io.StringIO(csv_text(("x",), [(written,)]).removeprefix(writers.BOM))))
 
     (cell,) = rows[1]
