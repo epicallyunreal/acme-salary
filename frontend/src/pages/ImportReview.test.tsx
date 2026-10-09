@@ -74,6 +74,8 @@ describe('ImportReview', () => {
       'BASE must be a non-negative number, got -5000',
     );
     expect(within(rowOf('Mohan Khan')).getByText('warning')).toBeInTheDocument();
+    // A cell with nothing to say shows its full value on hover, as the sheet had it (D75).
+    expect(within(ravi).getByText('Ravi Iyer')).toHaveAttribute('title', 'Ravi Iyer');
     expect(within(rowOf('Lata Rao')).getByText('noop')).toBeInTheDocument();
     expect(
       within(rowOf('No Code')).getByRole('button', { name: 'Unskip row 5' }),

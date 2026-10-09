@@ -1,4 +1,4 @@
-import type { GridColDef, GridColumnVisibilityModel } from '@mui/x-data-grid';
+import type { GridColDef, GridColumnVisibilityModel, GridRenderCellParams } from '@mui/x-data-grid';
 
 import { Box, Button } from '@mui/material';
 
@@ -17,6 +17,15 @@ export function recordLabel(row: EmployeeRow): string {
   if (!row.shown.label) return 'current';
   if (row.status === 'exited' && row.last_date) return `exited ${formatDate(row.last_date)}`;
   return `from ${formatDate(row.shown.effective_from)}`;
+}
+
+/** A text cell its column may cut short with an ellipsis, with the full value as a native title on
+ * hover, which adds no motion (D75). The cell keeps its own ellipsis. Numbers, amounts and dates
+ * have room for their longest value and are never cut, so they carry none. */
+export function titledText({ formattedValue }: Pick<GridRenderCellParams, 'formattedValue'>) {
+  const text =
+    formattedValue === null || formattedValue === undefined ? '' : String(formattedValue);
+  return <span title={text}>{text}</span>;
 }
 
 /** Columns of the directory grid (DESIGN section 6). The money columns show whole units. With a
@@ -54,13 +63,21 @@ export function directoryColumns(
       sortable: false,
       valueGetter: (_value, row) => row.legacy_code ?? '',
     },
-    { field: 'full_name', headerName: 'Name', flex: 1, minWidth: 150 },
-    { field: 'email', headerName: 'Email', flex: 1, minWidth: 200, sortable: false },
+    { field: 'full_name', headerName: 'Name', flex: 1, minWidth: 150, renderCell: titledText },
+    {
+      field: 'email',
+      headerName: 'Email',
+      flex: 1,
+      minWidth: 200,
+      sortable: false,
+      renderCell: titledText,
+    },
     {
       field: 'department',
       headerName: 'Department',
       width: 136,
       valueGetter: (_value, row) => row.department.name,
+      renderCell: titledText,
     },
     {
       field: 'country',
@@ -68,7 +85,7 @@ export function directoryColumns(
       width: 124,
       valueGetter: (_value, row) => row.country.name,
     },
-    { field: 'designation', headerName: 'Designation', width: 180 },
+    { field: 'designation', headerName: 'Designation', width: 180, renderCell: titledText },
     { field: 'level', headerName: 'Level', type: 'number', width: 84 },
     {
       field: 'status',

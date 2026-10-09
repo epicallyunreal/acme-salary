@@ -100,6 +100,9 @@ describe('Employees', () => {
     const chloe = rows[2];
     expect(within(chloe).getByText('exited')).toBeInTheDocument();
     expect(within(chloe).getByText('USD 107,600')).toBeInTheDocument();
+    // A name or a department the column cuts short shows in full on hover (D75).
+    expect(within(asha).getByText('Asha Rao')).toHaveAttribute('title', 'Asha Rao');
+    expect(within(asha).getByText('Engineering')).toHaveAttribute('title', 'Engineering');
   });
 
   it('shows by default the columns a 1280 px window has room for, the rest in the chooser', async () => {

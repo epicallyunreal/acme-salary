@@ -8,14 +8,15 @@ function toneOf(messages: RowMessage[]): StatusTone {
 }
 
 /** A cell as the sheet had it. A cell a message is about is tinted by its worst severity and
- * names the problem on hover; the Messages column says the same in text. */
+ * names the problem on hover; the Messages column says the same in text. Any other cell shows its
+ * full value on hover, since the column may cut it short (D75). */
 export function SheetCell({ row, field }: { row: ImportRow; field: string }) {
   const value = row.raw[field];
   const text = value === null || value === undefined ? '' : String(value);
   const problems = row.messages.filter(
     (message) => message.field === field && message.severity !== 'info',
   );
-  if (!problems.length) return <>{text}</>;
+  if (!problems.length) return <span title={text}>{text}</span>;
   const tone = toneOf(problems);
   return (
     // describeChild: the value stays the cell's name, the message describes it.
