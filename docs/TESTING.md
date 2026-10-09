@@ -12,7 +12,7 @@ The run was paused once, on 9 October, so that the layout and Help (step 12, D75
 | Driver | Claude Code (claude-opus-5-5) through the Claude in Chrome tools, extension 1.0.99, site access for localhost:8000 and acme.nutanprabhat.dev only |
 | Browser | Chrome 154 on macOS, a 1512 by 982 screen at device pixel ratio 2 |
 | Local target | `docker compose` on http://localhost:8000, the seeded database of 10,000 on staff and 5,000 leavers from seed 42, `NUM_PROXIES` 0 |
-| Commits | the pass began on `e6db3bc` (part A and the owner's helper text) and each defect it found was fixed and rebuilt into the container as it went: `c6f36c9`, then `0d22453`, image `6a2389080921`, which the reset and the base import ran on. The four changes after the pass (`a006e96` to `1a30625`) are covered by their tests and by the live pass |
+| Commits | the pass began on `e6db3bc` (part A and the owner's helper text), and each defect it found was fixed and rebuilt into the container as it went, `c6f36c9` and then `0d22453` (image `6a2389080921`) for the first reset and base import. The error paths below ran on `5f2106e` (image `165ef1a459dc`), which holds the four changes made after the first report, and the second reset closed them. `5e95a51`, found in that round, was rebuilt (image `62304b2d1713`) and checked last, on the seed the container rebuilt on start once the database was empty. The reload after a deploy (`58fc79a`) is covered by its test alone, see Not covered |
 | Window sizes | 1280 by 720 CSS pixels for the pass, 1280 by 680 for the first scenarios while the screen was shorter, 1024 by 768, and 1280 by 720 at 200% zoom, which is 640 by 360 |
 | Sign-in | the HR Manager, signed in by the owner in the tab whenever a session was needed. No password was typed, read or kept by Claude Code. Deliberately wrong passwords were typed on localhost alone, for the login and reset refusals |
 | Live target | https://acme.nutanprabhat.dev, read-only, see Live pass |
@@ -78,7 +78,7 @@ All on localhost unless the row says otherwise. Result is Pass where the app did
 | 35 | Windows | 1280 by 720 | No window scroll, grids at ten rows | Directory 505 px, main scrolls 75 px, review 520 px | Pass |
 | 36 | Windows | 1024 by 768 | No window scroll | Directory and review 520 px with their sideways bars, the filter bar on three lines | Pass |
 | 37 | Windows | 200% zoom | Sideways scroll alone below 1024 px (D75) | The window scrolls 384 px sideways, nothing else overflows, the filter bar no longer sticks | Pass |
-| 38 | Container | Stop the container with the app open, then start it | The connection message with Retry, the session kept, then recovery | As expected. A page whose code had not loaded showed the error page until a full reload | Fixed, `58fc79a` |
+| 38 | Container | Stop the container with the app open, then start it | The connection message with Retry, the session kept, then recovery | As expected. A page whose code had not loaded showed the error page until a full reload, which its Reload gave | Pass. The same failure after a deploy is handled by `58fc79a`, covered by its test |
 | 39 | Demo data | Empty the database with the owner's password and RESET | Everything emptied, the Imports page says what to do next | As expected | Pass |
 | 40 | Demo data | Download base-15000.xlsx and import it | 15,000 creates, the seed's figures back | Staged in 7 s, applied in about 10 s, 10,000 on staff, USD 969M, mean 87,095 and median 62,329 as on the seed | Pass |
 
@@ -93,7 +93,7 @@ All on localhost unless the row says otherwise. Result is Pass where the app did
 | 5 | `?country=XX` | "Unknown country_code: XX" once, under the bar, with Clear filters, in place of the cards | Dashboard | Pass (A1) |
 | 6 | `?period=custom&from=2026-02-31` | Last 12 months, the URL replaced, "This link's period could not be read, so the dashboard shows the last 12 months." | Dashboard | Pass (A5) |
 | 7 | A custom From of 1 January 2019 | "From must be on or after 1 Apr 2020.", the last valid period kept | Dashboard | Pass |
-| 8 | Nobody on file and no filter set | "No employees yet. Import a spreadsheet on the Imports page, or use the sample files on Demo data." with both pages linked | Dashboard | Fixed, `52efca1` |
+| 8 | Nobody on file and no filter set | "No employees yet. Import a spreadsheet on the Imports page, or use the sample files on Demo data." with both pages linked, a filtered view keeping "No one matches these filters today. Clear a filter." | Dashboard | Fixed, `52efca1`, seen after the second reset |
 | 9 | 21 titles in Designation | "designation accepts at most 20 titles" under the field, the grid kept | Employees | Pass (A1) |
 | 10 | Gross min 900,000 above Gross max 100,000 | "Gross min is above Gross max" under the two fields | Employees | Pass (A5) |
 | 11 | `?page=5000` | The last page, the URL replaced, no message | Employees, the import review, Imports | Fixed, `0d22453` (D77) |
@@ -113,9 +113,117 @@ All on localhost unless the row says otherwise. Result is Pass where the app did
 | 25 | `reset` typed in lower case | Empty the database stays off | Reset dialog | Pass |
 | 26 | A wrong password with RESET | "password did not match", nothing deleted | Reset dialog | Pass |
 | 27 | The container stopped | "Could not load employees. Check your connection and try again." with Retry, the same on every dashboard card and on Imports, the session kept | Every page | Pass |
-| 28 | A page's code missing, as after a deploy | The page reloads once onto the new build, and the error page with Reload if that fails too | Any page | Fixed, `58fc79a` |
+| 28 | A page's code missing, as after a deploy | The page reloads once onto the new build, and the error page with Reload if that fails too | Any page | Fixed, `58fc79a`, covered by its test alone (see Not covered) |
 | 29 | A batch left in review when the database is emptied | "This import does not exist. Go back to the imports." | Import review | Pass |
 | 30 | The database empty | "The database is empty. Import base-15000.xlsx to start.", the generated sample files off with "Import the base file first." | Imports, Demo data | Pass |
+
+The second round walked SPEC section 7's rule table and section 8's refusals row by row, on localhost through the UI. The sheets it used are in `docs/testing/errors/`, made by `cd backend && uv run python ../docs/testing/make_error_sheets.py` from `sample-data/base-15000.xlsx`, so they fit a database emptied on Demo data and given the base import. What could not be produced through the UI is under Not covered with the test that covers it.
+
+### Uploads refused before any row is read
+
+| File | Shown in the busy dialog, with Close | Result |
+| --- | --- | --- |
+| `not-a-sheet.txt` | "file must end in .xlsx or .csv, got not-a-sheet.txt" | Pass |
+| `text-renamed.xlsx`, text named `.xlsx` | "file is not a readable .xlsx workbook; save it again from Excel and upload it" | Pass |
+| `empty.xlsx`, a workbook with no rows | "file has no header row" | Pass |
+| `missing-column.xlsx` | "Missing required column: country_code" | Pass |
+| `column-twice.xlsx` | "email appears twice in the header; remove one" (D54) | Pass |
+| `two-code-columns.xlsx`, EmployeeID and Emp ID | "EmployeeID and Emp ID could both be the legacy code; rename the right one to legacy_code" (D54) | Pass |
+| `latin1.csv` | "file is not UTF-8" | Pass |
+
+### Section 7's row rules, from `row-rules.xlsx`
+
+One sheet of 39 rows, staged as 32 errors, 5 warnings, one No-op and one valid row, each row drawing out one rule. The batch's message slot gave the blocker and "Ignored unknown column: Remarks".
+
+| Rule | Message on the row | Result |
+| --- | --- | --- |
+| A blank legacy_code | "legacy_code is required" | Pass |
+| A blank required cell (D56) | "designation is required" | Pass |
+| A legacy_code of 33 characters | "legacy_code is longer than 32 characters" | Pass |
+| A cell one character over its column (D55) | "full_name is longer than 120 characters" | Pass |
+| A cell of 300 characters (D68) | "designation is longer than 80 characters", the cell kept to 256 characters (see Not covered) | Pass |
+| A legacy_code twice | "Duplicate legacy_code in rows 7 and 8" on both | Pass |
+| An email twice | "Duplicate email in rows 9 and 10" on both | Pass |
+| A malformed email | "email is not a valid address" | Pass |
+| An email on file | "email already belongs to ACME-1" | Pass |
+| An unknown country | "Unknown country_code: XX" | Pass |
+| A matched employee in another country | "country change is not supported by import", with each component that country lacks | Pass |
+| An unknown department | "Unknown department: Growth" | Pass |
+| Level 9 | "level must be between 1 and 6" | Pass |
+| An unknown gender | "gender must be one of female, male, other, undisclosed" | Pass |
+| A bad date | "joining_date is not a valid date: 31/02/2024" | Pass |
+| A date past 2100 (D53) | "last_date must be on or before 2100-12-31, got 9999-12-31" | Pass |
+| A last day before joining | "last_date precedes joining_date" | Pass |
+| A joining date moved past the first record (D45) | "joining_date is after the first record (effective 2015-01-18)" | Pass |
+| A last day cleared for a leaver | "clearing last_date is not supported by import" | Pass |
+| An effective date before joining | "effective_from precedes joining_date" | Pass |
+| An effective date not after the latest record | "effective_from must be after 2015-02-02 (latest record)" | Pass |
+| Amounts changed with no effective date | "effective_from is required when amounts change" | Pass |
+| A component the country lacks | "HRA is not a component for US" | Pass |
+| A negative amount | "BASE must be a non-negative number, got -5000" | Pass |
+| A comma as the decimal separator | "use a dot as the decimal separator, got 1.200.000,50" | Pass |
+| Three decimals | "BASE has more than 2 decimal places" | Pass |
+| A blank BASE | "BASE is required" | Pass |
+| BASE below 10 | "BASE must be at least 10.00, got 5.00" | Pass |
+| A line over its bound | "HRA must be at most 9,999,999,999.99, got 12,000,000,000.00" | Pass |
+| A negative bonus | "bonus_annual must be a non-negative number, got -1" | Pass |
+| Deductions over gross, a deduction over BASE | warnings "deductions exceed gross", "TAX 1,500,000.00 is above BASE 600,000.00" | Pass |
+| A bonus over BASE | warning "bonus_annual 1,500,000.00 is above BASE 1,000,000.00" | Pass |
+| Gross under the country minimum | warning "gross 300,000 INR is below the India minimum 400,000" | Pass |
+| Gross over ten times the median | warning "gross 60,560,000 INR is above ten times the India median 2,222,441.50" | Pass |
+| A revision that lowers gross (D72) | warning "gross falls from 150,329.00 to 130,329.00 EUR" | Pass |
+| A row identical to the record | No-op, "No changes, row will be skipped on apply" | Pass |
+| A new employee with no effective date | "effective_from defaulted to joining_date 2024-03-01" | Pass |
+
+### At approve, and around it
+
+| Trigger | Shown | Result |
+| --- | --- | --- |
+| A revision for a leaver, alone in `exited-revision.xlsx` | "no revision after the exit on 2025-09-19" on the row | Pass |
+| `legacy-taken-a.xlsx` and `legacy-taken-b.xlsx` staged, the first approved, then the second (D24) | "Nothing was applied", the row re-marked "legacy_code E2E-TAKEN now belongs to ACME-15001; upload the sheet again" | Pass |
+| `changed-since-upload.xlsx` staged as an update, then the employee's pay revised in the UI effective today (D57) | "Nothing was applied", the row re-marked "ACME-16 changed since this sheet was uploaded; upload the sheet again" | Pass |
+| `exit-with-scheduled.xlsx` after a revision for 1 April 2027 was scheduled in the UI | "scheduled revision on 2027-04-01 must be cancelled before exit" on the row | Pass |
+| A discarded batch's URL opened again | "This batch was discarded. Nothing in it was applied.", Approve, Discard and Skip off | Pass |
+
+### Employee page and new employee
+
+| Trigger | Shown | Result |
+| --- | --- | --- |
+| A revision with BASE 0 | "BASE must be at least 10.00, got 0.00" | Pass |
+| A line and a bonus over their bounds | "HRA must be at most 9,999,999,999.99, got 12,000,000,000.00", "bonus_annual must be at most 9,999,999,999.99, got 12,000,000,000.00" | Pass |
+| An amount with three decimals | "Enter an amount like 1450000 or 1450000.50", before anything is sent | Pass |
+| A revision on the latest record's date | "effective_from must be after 2015-01-02 (latest record)" | Pass |
+| A revision before joining | "effective_from precedes joining_date" | Pass |
+| A revision past 2100 | "effective_from must be on or before 2100-12-31, got 2101-01-01" | Pass |
+| A note of 1,001 characters | "Use 1,000 characters or fewer", before anything is sent | Pass |
+| A bonus and a tax above BASE | saved, "Check it: bonus_annual 7,000,000.00 is above BASE 6,500,000.00; TAX 7,000,000.00 is above BASE 6,500,000.00." | Pass |
+| A revision for a leaver | "no revision after the exit on 2025-09-19", shown with the key "detail" in front | Fixed, `5e95a51` |
+| An exit while a revision is scheduled | "scheduled revision on 2027-04-01 must be cancelled before exit", shown with the key "detail" in front | Fixed, `5e95a51` |
+| An exit before the current record | "last_date precedes the current record (effective 2026-10-09)" | Pass |
+| An exit before pay starts (D50) | the exit saved, version 1 cancelled | Pass |
+| The joining date moved past the first record (D45) | "joining_date is after the first record (effective 2026-11-01)" | Pass |
+| An exit dated today | saved, the employee still active today, Mark exited gone | Pass |
+| A new employee joining on 1 January 2101 | "joining_date must be on or before 2100-12-31, got 2101-01-01" | Pass |
+
+### Dashboard and directory
+
+| Trigger | Shown | Result |
+| --- | --- | --- |
+| `?department=growth` | "Unknown department: growth" with Clear filters, in place of the cards | Pass |
+| A custom From after To | "From must be on or before To.", the last valid period kept | Pass |
+| A custom range in 2027 | accepted (D70), the state on 31 December 2027 | Pass |
+| Singapore and Legal, Pay gap | "fewer than 5 women" | Pass |
+| Legal, By level | "fewer than 5 men" on United States L1 and L4, "fewer than 5 women and fewer than 5 men" on Singapore's levels | Pass |
+| Singapore and Legal over April to December 2020 | Spent in period "USD—", "shown when each day has 5 people or more" | Pass |
+| The salary distribution exported there as CSV | one row, its headcount of 5, "fewer than 20 people" | Pass |
+| A search that finds no one | "0 employees match", "No employees match these filters. Clear a filter or change the search." | Pass |
+
+### Demo data
+
+| Trigger | Shown | Result |
+| --- | --- | --- |
+| Empty the database confirmed | the confirm dialog gives way to "Emptying the database…" with no buttons, so nothing can cancel it once confirmed | Pass |
+| The note on the base file | names the trend, the bridge and Spent in period | Pass (`a006e96`) |
 
 A known limit, listed under P1 (D77): search ignores case only for ASCII letters, as SQLite's matching does. "wiśniewska" and "müller" find their names. "WIŚNIEWSKA", a capital typed on a non-ASCII letter, does not find Wiśniewska.
 
@@ -126,6 +234,10 @@ A known limit, listed under P1 (D77): search ignores case only for ASCII letters
 - A cancelled revision shows "Cancelled on … by …" in its note column, in place of the note.
 - A row of promotions.xlsx that changes identity and pay at once counts as revised.
 - Focus moves to the page on each navigation, so Tab starts in the page and the nav is reached with Shift+Tab (D75).
+- A custom period in the future is accepted to 2100 (D70), and Spent in period then reads the pay on file carried forward.
+- An exit dated today leaves the employee active that day, since the last day is worked.
+- A scheduled revision does not change the current record, so a sheet staged before it applies as it was staged. D57's message needs the current pay to change. A staged row with no effective date that would need one is refused with "effective_from is required when amounts change" instead.
+- Help names the Audit tab and says that a period ending before September 2026 is converted at September 2026's rates (`1a30625`).
 
 ## Found and fixed
 
@@ -155,6 +267,7 @@ Found in this pass and fixed:
 | An applied batch's counts read 1000, not 1,000 | `f0b589e` |
 | After Sign out the login tab kept the last page's title | `c6f36c9` |
 | A page past the last showed the connection message | `0d22453` (D77) |
+| A 409's message read "detail scheduled revision on 2027-04-01 must be cancelled before exit", the response's key on screen | `5e95a51` |
 | An empty dashboard with no filter said to clear a filter | `52efca1` (D78) |
 | A page whose code was gone, as after a deploy, stayed on the error page | `58fc79a` (D78) |
 
@@ -169,6 +282,22 @@ Found in this pass and fixed:
 | A file over 10 MB, over 15,000 rows, or of another type | Covered without a browser | `frontend/src/pages/Imports.test.tsx`, `backend/tests/imports/` |
 | A CSV opened in Excel set to split on semicolons | No Excel on the machine | `backend/tests/exports/test_writers.py`, `backend/tests/security/test_exports_csv_semicolon_split_formula.py` |
 | A screen reader | Not run | Every field labelled, checked in each page's test with `expectEveryFieldLabelled` |
+| The reload once onto a new build after a deploy (`58fc79a`) | Only a tab already running a build with the handler meets it, and the live site has none until this deploy | `frontend/src/lib/preloadRecovery.test.ts` |
+| The busy dialog's line after 20 seconds | A local approve takes about 10 s | `frontend/src/components/busy/BusyProvider.test.tsx` (`counts the seconds, says why it may be slow after 20 s, warns before the page is left, and closes on the result`) |
+| A cell kept as a 256 character prefix and echoed as 64 (D56, D68) | The cut sits in a column off screen in the review grid | `backend/tests/imports/test_staging.py` (`test_a_long_cell_is_kept_as_a_256_character_prefix_and_echoed_as_64`) |
+| A last day before the current record, by import | Seen through the exit dialog instead | `backend/tests/compensation/test_validators.py` (`test_last_date_before_the_current_record`) |
+| An upload over 10 MB | A browser upload of 10 MB was not built | `backend/tests/imports/test_api.py` (`test_an_upload_over_ten_megabytes_is_a_413_before_it_is_read`), `frontend/src/pages/Imports.test.tsx` |
+| More than 15,000 data rows | As above | `backend/tests/imports/test_parser.py` (`test_more_than_fifteen_thousand_data_rows_are_refused_with_the_true_count`) |
+| An `.xlsx` unpacking past 50 MB, of more than 1,000 parts, too many XML elements, a row past 1,048,576 or wider than 200 cells | Crafted files, not built for the browser | `backend/tests/imports/test_parser.py` (`test_an_xlsx_that_unpacks_past_50_mb_is_refused_before_openpyxl_opens_it`, `test_a_workbook_with_too_many_parts_is_refused_before_any_is_read`, `test_the_element_budget_is_for_the_whole_file`, `test_a_row_past_excels_last_or_wider_than_200_cells_is_refused`) |
+| A second upload while one is being read | Needs two uploads at once | `backend/tests/imports/test_api.py` (`test_a_second_upload_while_one_is_being_read_is_a_409`) |
+| An upload or approve past 25,000 employees (D72) | Needs 10,001 new employees | `backend/tests/imports/test_staging.py` (`test_the_cap_is_25_000_and_its_message_says_so`) |
+| A reset while a file is read or applied | Needs both at once | `backend/tests/demo/test_api.py` (`test_a_reset_while_a_file_is_being_read_is_409`), `backend/tests/demo/test_services.py` (`test_a_reset_while_a_file_is_being_read_or_applied_is_a_conflict`) |
+| A generated sample file on an empty database | The page turns those downloads off | `backend/tests/demo/test_api.py` (`test_the_file_list_and_the_downloads`) |
+| A template for an unknown country | The template menu offers known countries alone | `backend/tests/imports/test_template.py` (`test_an_unknown_country_is_a_404`) |
+| An `on` before 1900, an insight period before 1 April 2020 or with From after To sent to the API | The UI never sends them | `backend/tests/core/test_dates.py` (`test_parse_on_starts_in_1900`), `backend/tests/insights/test_api.py` (`test_a_period_before_the_cut_off_is_a_400_where_the_dates_reach_back`) |
+| A malformed amount, a component twice, more lines than a country has, `employee_code` or `legacy_code` sent to the API | The forms never send them | `backend/tests/compensation/test_api.py` (`test_a_malformed_amount_is_keyed_by_its_index_in_lines`, `test_a_component_listed_twice_is_a_400`, `test_a_body_with_more_lines_than_any_country_has_is_refused`), `backend/tests/compensation/test_validators.py` (`test_the_api_never_sets_either_code`) |
+| Cancelling a record that is not scheduled, and a second exit | The page offers neither | `backend/tests/compensation/test_services.py` (`test_cancel_the_current_record_is_a_409`, `test_cancel_twice_is_a_409`), `backend/tests/compensation/test_validators.py` (`test_a_different_last_date_on_an_exited_employee_is_a_conflict`) |
+| A refresh that is not JSON, and the refresh throttle of 30 a minute | Sent by the client alone | `backend/tests/accounts/test_api.py` (`test_the_refresh_endpoint_takes_json_only`, `test_the_refresh_endpoint_is_throttled_per_client_address`) |
 | Safari, Firefox and phones | Chrome alone was driven, and the frame is at least 1024 px wide (D75) | none |
 
 ## Live pass

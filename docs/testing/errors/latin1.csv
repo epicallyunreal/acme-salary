@@ -1,0 +1,2 @@
+legacy_code,full_name,email,department,designation,level,country_code,gender,joining_date,last_date,effective_from,bonus_annual,BASE,AWS,HOLIDAY_ALLOWANCE,HRA,ALLOWANCES,TAX,CPF,NATIONAL_INSURANCE,SOCIAL_INSURANCE,EMPLOYER_CONTRIBUTION
+E2E-004,Zoë Müller,e2e.person.4@acme.example,engineering,Engineer,2,IN,female,2024-03-01,,2024-03-01,,900000,,,360000,200000,100000,,,,80000
