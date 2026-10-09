@@ -16,6 +16,7 @@ from django.core.management import CommandError, call_command
 from apps.audit.models import AuditLog
 from apps.compensation.models import CompensationRecord
 from apps.core.models import Country, ExchangeRate
+from apps.demo import services as demo_services
 from apps.employees.models import Employee
 from seed import profiles
 from seed.dump import dump_hash
@@ -137,15 +138,34 @@ def test_a_negative_count_or_leavers_with_nobody_on_staff_is_refused(active, exi
 
 
 def test_if_empty_leaves_a_database_emptied_on_the_demo_data_page_empty():
-    """The reset's one demo_reset entry marks it, so a restart never seeds behind it (D79)."""
-    AuditLog.objects.create(
-        action=AuditLog.Action.DEMO_RESET, entity_type="demo_database", entity_id=0, after={}
-    )
+    """The reset's one demo_reset entry marks it, so a restart never seeds behind it (D79). The
+    reset runs through its own service, so the entry it writes is the one the seed reads."""
+    seed(20, 10)
+    hr = get_user_model().objects.get(email=profiles.HR_MANAGER_EMAIL)
+    hr.set_password("e2e-reset-only")  # a dummy for this test, never a real credential
+    hr.save()
+    demo_services.reset_demo(actor=hr, password="e2e-reset-only", confirm="RESET")
+    assert not Employee.objects.exists()
 
     out = seed(20, 10, if_empty=True)
 
     assert "emptied on the Demo data page" in out
     assert not Employee.objects.exists()
+
+
+def test_if_empty_says_employees_exist_once_the_emptied_database_is_filled_again():
+    """After a reset and a base import, the message is about the employees, not the reset."""
+    seed(20, 10)
+    hr = get_user_model().objects.get(email=profiles.HR_MANAGER_EMAIL)
+    hr.set_password("e2e-reset-only")  # a dummy for this test, never a real credential
+    hr.save()
+    demo_services.reset_demo(actor=hr, password="e2e-reset-only", confirm="RESET")
+    seed(20, 10)
+
+    out = seed(20, 10, if_empty=True)
+
+    assert "employees exist, nothing to do" in out
+    assert "emptied" not in out
 
 
 def test_if_empty_seeds_a_fresh_database():

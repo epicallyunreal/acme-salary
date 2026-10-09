@@ -68,7 +68,7 @@ def reset_demo(*, actor, password: str, confirm: str) -> dict[str, int]:
                 deleted = counts()
                 truncate(profiles.PAY_TABLES)
                 audit.record(
-                    "demo_reset",
+                    AuditLog.Action.DEMO_RESET,
                     entity_type="demo_database",
                     entity_id=0,
                     actor=actor,
@@ -89,6 +89,12 @@ class SampleFile:
     description: str
     # The options of a generated file for the day it is made, or None for the committed one.
     options: Callable[[date], dict] | None
+
+
+def emptied_on_the_demo_data_page() -> bool:
+    """True while the reset's one demo_reset entry stands, the mark the boot seed reads so an
+    emptied database stays empty across restarts (D79). The reset above writes it."""
+    return AuditLog.objects.filter(action=AuditLog.Action.DEMO_RESET).exists()
 
 
 def next_april_first(day: date) -> date:
