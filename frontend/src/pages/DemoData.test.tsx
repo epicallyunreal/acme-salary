@@ -62,7 +62,9 @@ describe('DemoData', () => {
     expect(within(items[0]).getByText(/the scale test/)).toBeInTheDocument();
     expect(within(items[6]).getByRole('button', { name: 'Download fix-me.xlsx' })).toBeEnabled();
     expect(
-      screen.getByText(/no pay changes until revision files are imported/),
+      screen.getByText(
+        /no pay changes until revision files are imported, and Spent in period reads high, today's pay counted back to joining\./,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Empty the database and start with the base/)).toBeInTheDocument();
     const nav = screen.getByRole('navigation', { name: 'Main' });

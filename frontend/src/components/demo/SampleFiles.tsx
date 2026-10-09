@@ -7,7 +7,7 @@ import { useBusy } from '../busy/busyContext';
 import { ErrorState } from '../layout/ErrorState';
 
 const NOTES = [
-  'After a base import every employee has one record dated at joining, so the trend and the bridge show joins and exits but no pay changes until revision files are imported.',
+  "After a base import every employee has one record dated at joining, so the trend and the bridge show joins and exits but no pay changes until revision files are imported, and Spent in period reads high, today's pay counted back to joining.",
   'A revision file imported into an empty database creates its employees instead, and the base file then shows those rows as errors. Empty the database and start with the base.',
 ];
 
