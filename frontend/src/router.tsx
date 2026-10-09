@@ -5,6 +5,7 @@ import { AppShell } from './components/layout/AppShell';
 import { RequireAuth } from './components/layout/RequireAuth';
 import { Login } from './pages/Login';
 import { NotFound } from './pages/NotFound';
+import { RouteError } from './pages/RouteError';
 
 // Each page is its own chunk, loaded on first visit, so the grid and the charts ship only with
 // the pages that draw them (D73). The login and the shell stay in the first bundle, and each
@@ -19,40 +20,50 @@ export const routes: RouteObject[] = [
         element: <AppShell />,
         children: [
           {
-            index: true,
-            lazy: async () => ({ Component: (await import('./pages/Dashboard')).Dashboard }),
+            // One boundary for every page, inside the frame, so the nav stays (D76).
+            errorElement: <RouteError />,
+            children: [
+              {
+                index: true,
+                lazy: async () => ({ Component: (await import('./pages/Dashboard')).Dashboard }),
+              },
+              {
+                path: '/employees',
+                lazy: async () => ({ Component: (await import('./pages/Employees')).Employees }),
+              },
+              {
+                path: '/employees/new',
+                lazy: async () => ({
+                  Component: (await import('./pages/NewEmployee')).NewEmployee,
+                }),
+              },
+              {
+                path: '/employees/:id',
+                lazy: async () => ({
+                  Component: (await import('./pages/EmployeeDetail')).EmployeeDetail,
+                }),
+              },
+              {
+                path: '/imports',
+                lazy: async () => ({ Component: (await import('./pages/Imports')).Imports }),
+              },
+              {
+                path: '/imports/:id',
+                lazy: async () => ({
+                  Component: (await import('./pages/ImportReview')).ImportReview,
+                }),
+              },
+              {
+                path: '/demo',
+                lazy: async () => ({ Component: (await import('./pages/DemoData')).DemoData }),
+              },
+              {
+                path: '/help',
+                lazy: async () => ({ Component: (await import('./pages/Help')).Help }),
+              },
+              { path: '*', element: <NotFound /> },
+            ],
           },
-          {
-            path: '/employees',
-            lazy: async () => ({ Component: (await import('./pages/Employees')).Employees }),
-          },
-          {
-            path: '/employees/new',
-            lazy: async () => ({ Component: (await import('./pages/NewEmployee')).NewEmployee }),
-          },
-          {
-            path: '/employees/:id',
-            lazy: async () => ({
-              Component: (await import('./pages/EmployeeDetail')).EmployeeDetail,
-            }),
-          },
-          {
-            path: '/imports',
-            lazy: async () => ({ Component: (await import('./pages/Imports')).Imports }),
-          },
-          {
-            path: '/imports/:id',
-            lazy: async () => ({ Component: (await import('./pages/ImportReview')).ImportReview }),
-          },
-          {
-            path: '/demo',
-            lazy: async () => ({ Component: (await import('./pages/DemoData')).DemoData }),
-          },
-          {
-            path: '/help',
-            lazy: async () => ({ Component: (await import('./pages/Help')).Help }),
-          },
-          { path: '*', element: <NotFound /> },
         ],
       },
     ],

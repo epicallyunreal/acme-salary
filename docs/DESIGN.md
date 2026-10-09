@@ -657,7 +657,7 @@ Error and empty states, one sentence that says what to do next:
 | Directory, a filter the API refuses (400) | the API's own words under that filter's field, more than 20 titles on Designation, and above the grid for a parameter the bar has no field for (D61, D76) |
 | Dashboard, a link whose period cannot be read | the dashboard on Last 12 months, the URL replaced, and the line "This link's period could not be read, so the dashboard shows the last 12 months." (D76) |
 | Directory, Gross min above Gross max | "Gross min is above Gross max" under the two fields, the grid as the API answers (D76) |
-| A page that fails to render | "This page could not be shown." with Reload and Go to the dashboard, inside the frame (D76) |
+| A page that fails to render | "This page could not be shown." under the heading "Something went wrong", with Reload and Go to the dashboard, inside the frame (D76) |
 | Any failed load | "Could not load <thing>. Check your connection and try again." with a Retry button that refetches |
 | Approve disabled | tooltip "3 rows have errors. Skip them or fix the spreadsheet and upload again." |
 | Login failure | "Email or password is wrong." and on 429 "Too many attempts. Wait a minute and try again." |

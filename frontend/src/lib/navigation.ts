@@ -26,3 +26,8 @@ export function safeNext(next: string | null): string {
   if (url.origin !== window.location.origin || url.pathname.startsWith('//')) return '/';
   return `${url.pathname}${url.search}${url.hash}`;
 }
+
+/** A full reload, which also fetches the page's code again, as after a deploy. */
+export function reloadPage() {
+  window.location.reload();
+}
