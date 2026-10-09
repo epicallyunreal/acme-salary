@@ -689,10 +689,12 @@ describe('Employees', () => {
 
   it('counts the last page from a fresh page 1 when the list shrank, not the cached one (D77)', async () => {
     let total = 60;
+    const pages: number[] = [];
     server.use(
       http.get('/api/v1/employees/', ({ request }) => {
         const params = new URL(request.url).searchParams;
         const page = Number(params.get('page') ?? '1');
+        pages.push(page);
         const pageSize = Number(params.get('page_size') ?? '25');
         if ((page - 1) * pageSize >= total) {
           return HttpResponse.json({ detail: 'Invalid page.' }, { status: 404 });
@@ -715,6 +717,8 @@ describe('Employees', () => {
     await waitFor(() => expect(router.state.location.search).toBe('?country=IN&page=2'));
     expect(await screen.findByText('ACME-11')).toBeInTheDocument();
     expect(router.state.location.search).toBe('?country=IN&page=2');
+    // The cached count of 60 would have sent it to page 6 first, a page that is gone too.
+    expect(pages).not.toContain(6);
     expect(screen.queryByText(/Could not load/)).not.toBeInTheDocument();
   });
 
