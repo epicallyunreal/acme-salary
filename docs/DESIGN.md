@@ -581,7 +581,7 @@ Routes (`src/router.tsx`, `createBrowserRouter` from `react-router`, `RouterProv
 | `/help` | `pages/Help` | `AppShell` | none, the page is static (D75) |
 | `*` | `pages/NotFound` | `AppShell` | none |
 
-The pages sit under one pathless route whose `errorElement` is `RouteError`, so a page that fails to render shows the app's own page inside the frame, `This page could not be shown.` with Reload and Go to the dashboard, and never the router's own page with its stack (D76).
+The pages sit under one pathless route whose `errorElement` is `RouteError`, so a page that fails to render shows the app's own page inside the frame, `This page could not be shown.` with Reload and Go to the dashboard, and never the router's own page with its stack (D76). A tab opened before a deploy meets Vite's `vite:preloadError` when the old chunk files are gone: `lib/preloadRecovery.ts` reloads the page once, guarded by a `sessionStorage` key that a navigation settling without an error clears, so it can never loop, and the error page with Reload stays when a reload has already been tried (D78).
 
 Component tree:
 
