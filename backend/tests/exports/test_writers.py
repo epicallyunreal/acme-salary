@@ -69,6 +69,26 @@ def test_csv_puts_a_single_quote_after_a_semicolon_and_one_double_quote_a_formul
 @pytest.mark.parametrize(
     ("written", "read"),
     [
+        ("Ann\n=1+1", "Ann\n'=1+1"),
+        ("Ann\r\n=1+1", "Ann\r\n'=1+1"),
+        ("Ann\r=1+1", "Ann\r'=1+1"),
+        ('Ann\n"@x', "Ann\n'\"@x"),
+        ("Ann\nRao", "Ann\nRao"),
+    ],
+    ids=["newline", "crlf", "lone_cr", "after_a_quote", "no_formula"],
+)
+def test_csv_puts_a_single_quote_after_a_line_break_a_formula_start_follows(written, read):
+    """A reader that ignores quotes starts a record at a line break as readily as a cell at a
+    semicolon, so the formula after it would begin a cell (D76)."""
+    rows = list(csv.reader(io.StringIO(csv_text(("x",), [(written,)]).removeprefix(writers.BOM))))
+
+    (cell,) = rows[1]
+    assert cell == read
+
+
+@pytest.mark.parametrize(
+    ("written", "read"),
+    [
         ("Ann;=1+1;x", "Ann;'=1+1;x"),
         ("=1;+2;-3", "'=1;'+2;'-3"),
         ('Ann;"@x', "Ann;'\"@x"),

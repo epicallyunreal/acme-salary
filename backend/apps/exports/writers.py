@@ -29,10 +29,11 @@ BATCH = 100
 # What XML 1.0 cannot hold: the C0 controls but tab, newline and carriage return, and U+FFFE and
 # U+FFFF. openpyxl refuses the first and writes the last two into a file that will not open.
 XML_ILLEGAL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
-# A semicolon that a formula start follows, directly or after one double quote. A reader whose list
-# separator is ';', as Excel's is in Germany and the Netherlands, starts a cell there and reads the
-# doubled quote as an empty quoted start, so the formula would begin that cell (D76).
-SEMICOLON_FORMULA = re.compile(r';(?="?[=+\-@\t\r])')
+# A semicolon or a line break that a formula start follows, directly or after one double quote. A
+# reader whose list separator is ';', as Excel's is in Germany and the Netherlands, starts a cell
+# there and reads the doubled quote as an empty quoted start, and a reader that ignores quotes
+# starts a record at a line break as readily, so the formula would begin that cell (D76).
+SPLIT_FORMULA = re.compile(r'([;\r\n])(?="?[=+\-@\t\r])')
 
 
 def escape_cell(value: Any) -> Any:
@@ -49,18 +50,24 @@ class _Echo:
         return line
 
 
+def escape_csv_text(value: str) -> str:
+    """Text for a CSV cell: a leading quote where it starts like a formula, and one after a
+    semicolon or a line break a formula start follows (D76). The exports and make_import_file both
+    use it."""
+    return SPLIT_FORMULA.sub(r"\1'", escape_cell(value))
+
+
 def _csv_cell(value: Any) -> Any:
     if isinstance(value, Decimal):
         return to_str(value)
-    value = escape_cell(value)
-    return SEMICOLON_FORMULA.sub(";'", value) if isinstance(value, str) else value
+    return escape_csv_text(value) if isinstance(value, str) else value
 
 
 def csv_stream(header: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterator[bytes]:
     """The header, then the rows a hundred at a time, so a whole directory never sits in memory.
     Dates are ISO text and an empty value an empty cell. Every field is quoted, and a formula
-    start after a semicolon takes a single quote, so a spreadsheet that splits on semicolons
-    finds no cell that starts a formula."""
+    start after a semicolon or a line break takes a single quote, so a spreadsheet that splits on
+    semicolons or line breaks finds no cell that starts a formula."""
     writer = csv.writer(_Echo(), quoting=csv.QUOTE_ALL)
     yield (BOM + writer.writerow(header)).encode()
     for batch in batched(rows, BATCH, strict=False):  # the last batch may be short
