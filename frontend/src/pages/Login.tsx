@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { useLogin } from '../api/auth';
 import { ApiError } from '../api/client';
 import { useAccessToken } from '../lib/auth';
+import { Credit } from '../components/layout/Credit';
 import { safeNext } from '../lib/navigation';
 
 const loginSchema = z.object({
@@ -53,49 +54,63 @@ export function Login() {
 
   return (
     <Box component="main" sx={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', p: 4 }}>
-      <Paper sx={{ width: '100%', maxWidth: 400, p: 8 }}>
-        <Typography variant="h1" component="h1">
-          ACME Salary
-        </Typography>
-        <Typography color="text.secondary" sx={{ mt: 1, mb: 6 }}>
-          Sign in to manage compensation
-        </Typography>
-        <Box
-          component="form"
-          noValidate
-          aria-label="Sign in"
-          onSubmit={handleSubmit(onSubmit)}
-          sx={{ display: 'grid', gap: 4 }}
-        >
-          <TextField
-            label="Email"
-            type="email"
-            autoComplete="username"
-            autoFocus
-            inputRef={emailRef}
-            error={formState.errors.email !== undefined}
-            helperText={formState.errors.email?.message}
-            {...emailField}
-          />
-          <TextField
-            label="Password"
-            type="password"
-            autoComplete="current-password"
-            inputRef={passwordRef}
-            error={formState.errors.password !== undefined}
-            helperText={formState.errors.password?.message}
-            {...passwordField}
-          />
-          <Button type="submit" variant="contained" size="large" loading={signIn.isPending}>
-            Sign in
-          </Button>
-          {signIn.isError ? (
-            <Alert severity="error" variant="outlined" role="alert">
-              {loginMessage(signIn.error)}
-            </Alert>
-          ) : null}
-        </Box>
-      </Paper>
+      {/* The card and the credit are one centred column, so the page's grid has one child to
+          centre and does not share its height between them (D80). */}
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: 400,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 3,
+        }}
+      >
+        <Paper sx={{ width: '100%', p: 8 }}>
+          <Typography variant="h1" component="h1">
+            ACME Salary
+          </Typography>
+          <Typography color="text.secondary" sx={{ mt: 1, mb: 6 }}>
+            Sign in to manage compensation
+          </Typography>
+          <Box
+            component="form"
+            noValidate
+            aria-label="Sign in"
+            onSubmit={handleSubmit(onSubmit)}
+            sx={{ display: 'grid', gap: 4 }}
+          >
+            <TextField
+              label="Email"
+              type="email"
+              autoComplete="username"
+              autoFocus
+              inputRef={emailRef}
+              error={formState.errors.email !== undefined}
+              helperText={formState.errors.email?.message}
+              {...emailField}
+            />
+            <TextField
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              inputRef={passwordRef}
+              error={formState.errors.password !== undefined}
+              helperText={formState.errors.password?.message}
+              {...passwordField}
+            />
+            <Button type="submit" variant="contained" size="large" loading={signIn.isPending}>
+              Sign in
+            </Button>
+            {signIn.isError ? (
+              <Alert severity="error" variant="outlined" role="alert">
+                {loginMessage(signIn.error)}
+              </Alert>
+            ) : null}
+          </Box>
+        </Paper>
+        <Credit />
+      </Box>
     </Box>
   );
 }

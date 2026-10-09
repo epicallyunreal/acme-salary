@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw/http';
 import { describe, expect, it } from 'vitest';
@@ -70,6 +70,25 @@ describe('Login', () => {
 
     await screen.findByRole('button', { name: 'Sign in' });
     expect(document.title).toBe('Sign in · ACME Salary');
+  });
+
+  it('credits its builder under the card, after Sign in in the tab order, and still signs in (D80)', async () => {
+    const { router } = renderApp('/login');
+
+    const signInButton = await screen.findByRole('button', { name: 'Sign in' });
+    const credit = screen.getByRole('link', { name: 'Built by Nutan Prabhat, opens in a new tab' });
+    expect(
+      signInButton.compareDocumentPosition(credit) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // Nothing between them takes the focus.
+    const user = userEvent.setup();
+    signInButton.focus();
+    await user.tab();
+    expect(credit).toHaveFocus();
+
+    await signIn();
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
   });
 
   it('asks for both fields before sending anything', async () => {

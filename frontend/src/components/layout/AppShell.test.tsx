@@ -40,10 +40,6 @@ describe('AppShell', () => {
     const credit = within(nav).getByRole('link', {
       name: 'Built by Nutan Prabhat, opens in a new tab',
     });
-    expect(credit).toHaveTextContent('Built by Nutan Prabhat');
-    expect(credit).toHaveAttribute('href', 'https://nutanprabhat.dev');
-    expect(credit).toHaveAttribute('target', '_blank');
-    expect(credit).toHaveAttribute('rel', 'noopener noreferrer');
     // The last thing in the nav, after Help.
     const links = within(nav).getAllByRole('link');
     expect(links.at(-1)).toBe(credit);

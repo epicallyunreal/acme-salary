@@ -7,7 +7,6 @@ import {
   Box,
   Button,
   Divider,
-  Link,
   List,
   ListItemButton,
   ListItemIcon,
@@ -19,6 +18,7 @@ import { NavLink, Outlet, useLocation, useMatch, useNavigate } from 'react-route
 
 import { useLogout, useMe } from '../../api/auth';
 import { FRAME_MIN_WIDTH } from '../../lib/constants';
+import { Credit } from './Credit';
 
 const NAV_WIDTH = 208;
 
@@ -126,18 +126,7 @@ export function AppShell() {
           ))}
         </List>
         <Box sx={{ mt: 'auto', px: 5, pt: 4 }}>
-          <Link
-            href="https://nutanprabhat.dev"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Built by Nutan Prabhat, opens in a new tab"
-            variant="caption"
-            color="text.secondary"
-            underline="hover"
-            sx={{ '&:focus-visible': { textDecoration: 'underline' } }}
-          >
-            Built by Nutan Prabhat
-          </Link>
+          <Credit />
         </Box>
       </Box>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
