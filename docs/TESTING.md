@@ -285,7 +285,7 @@ Found by the step's four reviewers at the close and fixed, each with a test that
 | A link past the last page of a list that had shrunk was sent first to a page that was gone too, by page 1's cached count, found by the code reviewer | `d2318ff`, page 1's own fresh count only |
 | A refresh token from before a password change still rotated, its access tokens each refused, found by the security reviewer | `97819e6`, the refresh answers 401 |
 | `make_import_file`'s CSV files escaped a formula only at a cell's start, found by the code reviewer | `e33663a`, the exports' whole escape |
-| A refused country, as with `currency=local` and several countries, showed under the bar, not on its field, found by the spec checker | `3288916`, Department wired the same way |
+| A country the API refused on the directory showed under the bar, not on its field, found by the spec checker. The app's own links turn `currency=local` with several countries into USD, as the smoke check on v21 showed, so the UI never sends such a request and the tests produce the refusal | `3288916`, Department wired the same way |
 | After Empty the database and a fresh import, the boot seed said the database was emptied, found by the spec checker | `46dfd9c` (D79) |
 | Outside the count, a regression the close itself made: `46dfd9c` had `seed_data` import the demo services, which import from `seed_data`, so `seed_data` and `reset_demo` failed to load and the boot would have stopped. The gate passed it, since the tests import the demo services first. Found by the spec checker before any push | `0142ab1`, with a test that loads each command in a fresh process, as the boot does |
 

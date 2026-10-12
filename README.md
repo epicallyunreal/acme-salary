@@ -2,7 +2,22 @@
 
 Web replacement for an HR team's salary spreadsheets: import, review, maintain and query compensation for 10,000 employees across six countries. Django and Django REST Framework on SQLite, React with MUI, one container on Fly.io.
 
-Live: **https://acme.nutanprabhat.dev**. The demo video is linked here at the Ship step.
+Live: **https://acme.nutanprabhat.dev**. Demo video (14:58, Google Drive, anyone with the link can view): https://drive.google.com/drive/folders/1Wigz9A948q4moV9Ci3HY-AiiyWzPtaKC?usp=sharing
+
+Drive's player has no chapters, so here they are:
+
+- 0:00 Intro and login
+- 0:39 Starting from an empty system
+- 0:57 Importing the base file
+- 2:27 Employees list
+- 2:48 Employee detail and a scheduled revision
+- 3:35 Dashboard insights
+- 5:42 Periods, exited staff and local currency
+- 6:42 Why some figures are hidden
+- 7:33 Fixing a broken import
+- 10:30 Exports and help
+- 10:47 How it was built (GitHub)
+- 14:06 Wrap-up
 
 ## Signing in
 
@@ -93,13 +108,18 @@ flowchart TB
 
 Every business rule lives in a `services.py` or `queries.py` module and is tested without HTTP. Money is `Decimal(14, 2)`, converted at read time from dated exchange rates and never stored converted. Nothing deletes pay that has been in effect: employees are exited, records superseded, scheduled revisions cancelled, and every write lands in the audit log with before and after snapshots.
 
+## What's next
+
+What was specified but left for after Ship is P1, listed in SPEC section 16 (`docs/SPEC.md`): among it inline editing in the import review, correcting the current record in place, a global audit page, search that folds the case of accented capitals, a level history per record, and Playwright end-to-end tests.
+
 ## Documents
 
 - `docs/REQUIREMENTS.md`, the one-page requirements document with Incubyte's clarifications
 - `docs/SPEC.md`, the engineering spec, v2.25: data model, API, rules, acceptance criteria
-- `docs/DECISIONS.md`, why things are the way they are, D1 to D80
+- `docs/DECISIONS.md`, why things are the way they are, D1 to D81
 - `docs/PLAN.md` and `docs/DESIGN.md`, what was built, in what order, and how
 - `docs/PERFORMANCE.md`, measured timings, locally and on Fly
+- `docs/TESTING.md`, the end-to-end UI test of step 13 and the smoke check of the final release
 - `docs/reviews/`, the Engineering Manager spec reviews and the security audit with its triage
 - `docs/AI-WORKFLOW.md`, how this was built
 

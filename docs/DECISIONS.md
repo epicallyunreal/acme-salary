@@ -726,6 +726,14 @@ Decision: `frontend/public/` holds `favicon.svg`, a rounded square in the theme'
 
 Consequences: the tab carries ACME's icon on every route, and the credit is on every screen, the login included.
 
+## D81. Ship: the demo-order smoke test is the owner's recorded video, then reset_demo
+
+Context: PLAN's step 14 asked for a manual smoke test on the live URL in the order of the demo, which uploads, approves and revises. The alternative was a write pass by Claude Code in Chrome, which would have broken the read-only rule the live site kept through step 13.
+
+Decision: the test ran once on the live site, in PLAN's order, as the owner's recorded demo video (14:58, linked in the README with its chapters). Claude Code ran no write pass. Once the machine had idled ten minutes, the owner ran `reset_demo` on release 21 on 12 October at about 08:35 IST, which restored the seed of 15,000 employees in 61.5 s (PERFORMANCE).
+
+Consequences: the video is both the demo and the record of the last write test on the live build, and the live data a reviewer meets is the seed again. Any later write test on the live site goes the same way: run by the owner, then `reset_demo` after the machine has idled.
+
 ## Clarifications from Incubyte, 6 Oct 2026
 
 Five questions sent before building, answered the same day. Each answer is captured as a decision above or in `REQUIREMENTS.md`.
