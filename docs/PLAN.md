@@ -483,6 +483,8 @@ Commits:
 1. `docs: final decisions, performance notes and demo video link`
 2. `chore: ship (step 14)`
 
+Closed with the release v21 from `310adb2`, deployed by the owner, its smoke check in `35e3ca6`, and `96c5797` with the demo video, D81 and the reset of 61.5 s. The demo-order smoke test ran as the owner's recorded video, in the demo's own order (D81), and the four reviewers' points close in this step's last commit. Making the repository public is the owner's.
+
 Hours: 1.5, of which the demo recording is the owner's.
 
 Acceptance closed: SPEC section 14's demo video; REQUIREMENTS in-scope item 9 (live URL, Docker, recorded demo) and its three success criteria (on the deployed instance).

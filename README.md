@@ -2,7 +2,7 @@
 
 Web replacement for an HR team's salary spreadsheets: import, review, maintain and query compensation for 10,000 employees across six countries. Django and Django REST Framework on SQLite, React with MUI, one container on Fly.io.
 
-Live: **https://acme.nutanprabhat.dev**. Demo video (14:58, Google Drive, anyone with the link can view): https://drive.google.com/drive/folders/1Wigz9A948q4moV9Ci3HY-AiiyWzPtaKC?usp=sharing
+Live: **https://acme.nutanprabhat.dev**. Demo video (14:58, Google Drive, anyone with the link can view): https://drive.google.com/file/d/1jKeIuIVqDOUCvhZwPJgQmYw2oD1An6IO/view
 
 Drive's player has no chapters, so here they are:
 
